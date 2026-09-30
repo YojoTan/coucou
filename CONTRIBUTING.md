@@ -29,6 +29,12 @@ Check the optional idle animation's visibility, accessibility and timing rules:
 bash scripts/test-idle-animation.sh
 ```
 
+Check resting island dimensions on screens with and without a notch:
+
+```bash
+bash scripts/test-screen-geometry.sh
+```
+
 ## Good first contributions
 
 - A new integration (a poller + a pill + a detail card). Look at `StripePoller.swift` for a compact example.

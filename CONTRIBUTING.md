@@ -11,6 +11,12 @@ cd NotchBuddy && xcodegen && open NotchBuddy.xcodeproj
 
 Never edit `NotchBuddy.xcodeproj` by hand: change `project.yml` and run `xcodegen`.
 
+Check auto-close timing and live setting changes:
+
+```bash
+bash scripts/test-auto-close.sh
+```
+
 ## Good first contributions
 
 - A new integration (a poller + a pill + a detail card). Look at `StripePoller.swift` for a compact example.

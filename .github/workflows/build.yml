@@ -22,6 +22,9 @@ jobs:
       - name: Generate project
         run: cd NotchBuddy && xcodegen
 
+      - name: Test auto-close timing
+        run: bash scripts/test-auto-close.sh
+
       - name: Build
         run: |
           xcodebuild \

@@ -206,6 +206,8 @@ struct ExtrasSettingsSection: View {
             .padding(6)
         }
 
+        WorktreesSettingsSection()
+
         GroupBox("Custom Mochis") {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Make your own: a name, a colour, something to wear, and where its news comes from — a command it runs, a local URL your scripts call, or Shortcuts.")

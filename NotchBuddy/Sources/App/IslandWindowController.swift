@@ -404,6 +404,17 @@ final class IslandWindowController: NSWindowController {
             }
         }
 
+        // A menu item on the pet: the island comes to the pet's screen first.
+        NotificationCenter.default.addObserver(forName: .petBringIsland, object: nil, queue: .main) { [weak self] note in
+            let screenId = note.object as? CGDirectDisplayID
+            MainActor.assumeIsolated {
+                guard let self, let id = screenId, id != self.islandScreen?.displayID,
+                      let screen = NSScreen.screens.first(where: { $0.displayID == id }) else { return }
+                if self.state.mode == .expanded { self.collapse() }
+                self.moveIsland(to: screen)
+            }
+        }
+
         // Hook server compact reveal (non-alert work events: session start, tool use, etc.)
         NotificationCenter.default.addObserver(forName: .hookReveal, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }

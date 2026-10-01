@@ -458,9 +458,9 @@ struct IslandContentView: View {
                 ForEach(IslandView.allCases, id: \.self) { v in
                     let active = state.view == v
                     // Views that fill available height instead of the fixed 98pt content frame:
-                    // chat (prompt) is always flexible; mail is flexible only when active so
-                    // it doesn't push the ZStack taller when inactive.
-                    let isTall = v == .prompt || (v == .mail && active)
+                    // chat (prompt) is always flexible; mail and worktrees only when active so
+                    // they don't push the ZStack taller when inactive.
+                    let isTall = v == .prompt || ((v == .mail || v == .worktrees) && active)
                     let anim: Animation = active
                         ? .spring(response: 0.4, dampingFraction: 0.8).delay(0.16)
                         : .easeIn(duration: 0.16)
@@ -509,6 +509,8 @@ struct IslandHeader: View {
             #if !APPSTORE
             // Paired Mochis on the network, always at hand — no pill needed.
             NearbyMochisView(state: state)
+                .padding(.trailing, 10)
+            WorktreesHeaderButton(state: state)
                 .padding(.trailing, 14)
             #endif
 

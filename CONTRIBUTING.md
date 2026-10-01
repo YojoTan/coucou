@@ -23,6 +23,12 @@ Check gaze tracking across displays with different positions:
 bash scripts/test-gaze-geometry.sh
 ```
 
+Check the optional idle animation's visibility, accessibility and timing rules:
+
+```bash
+bash scripts/test-idle-animation.sh
+```
+
 ## Good first contributions
 
 - A new integration (a poller + a pill + a detail card). Look at `StripePoller.swift` for a compact example.

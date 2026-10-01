@@ -28,6 +28,9 @@ jobs:
       - name: Test multi-screen gaze geometry
         run: bash scripts/test-gaze-geometry.sh
 
+      - name: Test idle micro animations
+        run: bash scripts/test-idle-animation.sh
+
       - name: Build
         run: |
           xcodebuild \

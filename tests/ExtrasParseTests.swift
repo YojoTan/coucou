@@ -22,6 +22,12 @@ enum ExtrasParseTests {
         precondition(ExtrasParse.commandOutput("ERROR: disk full", exitCode: 0) == ("disk full", "error"), "prefix, any case")
         precondition(ExtrasParse.commandOutput("3 pods running", exitCode: 0) == ("3 pods running", "ok"), "exit 0")
         precondition(ExtrasParse.commandOutput("", exitCode: 2) == ("", "error"), "exit code")
+        // Seasonal outfits.
+        precondition(ExtrasParse.season(month: 10, day: 20, birthday: nil) == .pumpkin, "late October")
+        precondition(ExtrasParse.season(month: 10, day: 1, birthday: nil) == nil, "early October")
+        precondition(ExtrasParse.season(month: 12, day: 24, birthday: nil) == .santaHat, "December")
+        precondition(ExtrasParse.season(month: 10, day: 20, birthday: "10-20") == .partyHat, "birthday wins")
+        precondition(ExtrasParse.season(month: 3, day: 4, birthday: "10-20") == nil, "ordinary day")
         print("Extras parse tests passed")
     }
 }

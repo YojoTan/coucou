@@ -5,7 +5,7 @@ import Foundation
 // the login the user already has), or the Anthropic API with a key from Settings.
 
 enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini, api
+    case claude, codex, gemini, opencode, api
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
         case .claude: return "Claude Code"
         case .codex:  return "Codex"
         case .gemini: return "Gemini CLI"
+        case .opencode: return "opencode"
         case .api:    return "Anthropic API"
         }
     }
@@ -24,6 +25,7 @@ enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
         case .claude: return "Claude"
         case .codex:  return "Codex"
         case .gemini: return "Gemini"
+        case .opencode: return "opencode"
         case .api:    return "API"
         }
     }
@@ -34,6 +36,7 @@ enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
         case .claude: return "claude"
         case .codex:  return "codex"
         case .gemini: return "gemini"
+        case .opencode: return "opencode"
         case .api:    return nil
         }
     }
@@ -65,7 +68,7 @@ enum LocalCLI {
         let home = NSHomeDirectory()
         let fallback = [
             "\(home)/.local/bin", "\(home)/.claude/local", "\(home)/.npm-global/bin",
-            "\(home)/.bun/bin", "\(home)/.volta/bin",
+            "\(home)/.bun/bin", "\(home)/.volta/bin", "\(home)/.opencode/bin",
             "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin",
         ]
         var dirs: [String] = []
@@ -124,6 +127,9 @@ enum LocalCLI {
         env["PATH"] = searchPath
         for k in ["TERM_PROGRAM", "TERM_PROGRAM_VERSION", "VSCODE_PID", "CLAUDECODE"] { env[k] = nil }
         env["NO_COLOR"] = "1"
+        // coucou's own relay ignores runs marked like this, so the chat never shows
+        // up as a Claude Code session or asks the notch to approve itself.
+        env["COUCOU_INTERNAL"] = "1"
         return env
     }
 
@@ -238,8 +244,12 @@ final class LocalCLIChat {
                 if let url { prompt += ", URL: \(url)" }
                 prompt += "\n\n"
             case .file(let name, let url):
-                fileURL = url
-                if let url {
+                // Only Coucou's inbox copy is handed to the CLI (and its folder
+                // to --add-dir): never the folder the file was dragged from.
+                let inbox = HookServer.supportDir.appendingPathComponent("inbox").standardizedFileURL.path + "/"
+                let inInbox = url.map { $0.standardizedFileURL.path.hasPrefix(inbox) } ?? false
+                fileURL = inInbox ? url : nil
+                if let url, inInbox {
                     prompt += "The user attached a file: \(url.path) — read it to answer.\n\n"
                 } else {
                     prompt += "File: \(name)\n\n"
@@ -250,17 +260,20 @@ final class LocalCLIChat {
         prompt += query
 
         var args: [String]
+        var stdinText: String? = prompt
         switch engine {
         case .claude:
             args = ["-p", "--output-format", "json",
                     "--append-system-prompt", instructions,
+                    // --tools removes every other tool; --allowedTools pre-approves these.
+                    "--tools", "Read,WebSearch,WebFetch",
                     "--allowedTools", "WebSearch,WebFetch,Read"]
             if let resumeId { args += ["--resume", resumeId] }
             if let dir = fileURL?.deletingLastPathComponent().path { args += ["--add-dir", dir] }
         case .codex:
             args = ["exec"]
             if resumeId != nil { args += ["resume"] }
-            args += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode=\"read-only\""]
+            args += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode=\"read-only\"", "-c", "approval_policy=\"never\""]
             if let f = fileURL, ["png", "jpg", "jpeg", "gif", "webp"].contains(f.pathExtension.lowercased()) {
                 args += ["-i", f.path]
             }
@@ -270,11 +283,20 @@ final class LocalCLIChat {
             args = ["--output-format", "json"]
             if resumeId != nil { args += ["--resume", "latest"] }
             if let dir = fileURL?.deletingLastPathComponent().path { args += ["--include-directories", dir] }
+        case .opencode:
+            // `opencode run` takes the message as an argument, not on stdin. It
+            // starts with the instructions, so it can never look like a flag, and
+            // `--` ends option parsing before it anyway. The plan agent is read-only.
+            args = ["run", "--format", "json", "--agent", "plan", "--dir", workDir.path]
+            if let resumeId { args += ["--session", resumeId] }
+            if let f = fileURL { args += ["--file", f.path] }
+            args += ["--", prompt]
+            stdinText = nil
         case .api:
             return Reply(text: "Not a CLI engine.", isError: true)
         }
 
-        let r = await LocalCLI.run(path, args, cwd: workDir, stdin: prompt, timeout: 300)
+        let r = await LocalCLI.run(path, args, cwd: workDir, stdin: stdinText, timeout: 300)
         if r.timedOut {
             return Reply(text: "\(engine.label) took too long to answer.", isError: true)
         }
@@ -341,6 +363,28 @@ final class LocalCLIChat {
                 return Parsed(text: err["message"] as? String, isError: true)
             }
             return Parsed(text: obj["response"] as? String, sessionId: "latest")
+
+        case .opencode:
+            // JSONL: {"type":"text","sessionID":"…","part":{"text":"…"}}, {"type":"error",…}
+            var p = Parsed()
+            var text = ""
+            for line in raw.split(separator: "\n") {
+                guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                      let type = obj["type"] as? String else { continue }
+                if p.sessionId == nil { p.sessionId = obj["sessionID"] as? String }
+                switch type {
+                case "text":
+                    if let part = obj["part"] as? [String: Any], let t = part["text"] as? String { text += t }
+                case "error":
+                    p.isError = true
+                    let err = obj["error"] as? [String: Any]
+                    let data = err?["data"] as? [String: Any]
+                    p.text = data?["message"] as? String ?? err?["message"] as? String ?? "opencode reported an error."
+                default: break
+                }
+            }
+            if !p.isError { p.text = nilIfEmpty(text) }
+            return p
 
         case .api:
             return Parsed()

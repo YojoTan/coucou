@@ -838,6 +838,9 @@ private let nbHookPythonGitHub = """
 import sys, json, os, socket
 
 def main():
+    # Mochi's own chat runs the CLI headless: its hooks must not reach the notch.
+    if os.environ.get('COUCOU_INTERNAL'):
+        return
     try:
         raw = sys.stdin.buffer.read()
         if not raw:
@@ -941,6 +944,9 @@ private let nbHookPythonAppStore = """
 import sys, json, os, socket
 
 def main():
+    # Mochi's own chat runs the CLI headless: its hooks must not reach the notch.
+    if os.environ.get('COUCOU_INTERNAL'):
+        return
     try:
         raw = sys.stdin.buffer.read()
         if not raw:

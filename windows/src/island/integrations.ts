@@ -5,8 +5,8 @@
 import { onEvent, Bridge, type IntegrationUpdate } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
-import { t } from "../core/i18n";
 import type { Island } from "./island";
+import { ORCA_ID, consumeAsks, orcaEvent, orcaSettle } from "./orca";
 
 /** Which Credential Manager key backs each pill. */
 const KEY_FOR: Record<string, string> = {
@@ -63,14 +63,18 @@ function handle(island: Island, update: IntegrationUpdate) {
     configured: previous?.configured ?? true,
   };
 
-  const event = update.event;
+  let event = update.event;
+  // Orca: the island picks the alert (no double alerts), and the questions.
+  const orca = update.id === ORCA_ID && !update.error;
+  if (orca) {
+    event = orcaEvent(update.data);
+    consumeAsks(island, update.data);
+    if (!event) orcaSettle(update.data);
+  }
   if (event) {
     const task = State.tasks.find((x) => x.id === update.id);
     if (task) {
-      // Orca sends the worktree's name; the sentence is ours, so it can be translated.
-      const label = update.id === "integration_orca"
-        ? t(event.attention ? "{name} needs permission" : "{name} finished", { name: event.label })
-        : event.label;
+      const label = event.label;
       task.state = event.attention ? "approval" : event.success ? "finished" : "error";
       task.steps = event.detail ? [label, event.detail] : [label];
       task.stepIndex = task.steps.length - 1;

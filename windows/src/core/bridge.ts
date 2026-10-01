@@ -93,6 +93,12 @@ export const Bridge = {
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
   /** `orca open`: launches or focuses Orca. */
   openOrca: () => call<boolean>("open_orca"),
+  /** Orca card → a row: Orca on that worktree agent's terminal. */
+  orcaFocus: (id: string) => call<boolean>("orca_focus", { id }),
+  /** Orca card → ±: the worktree's changes as diffs in Orca. */
+  orcaOpenChanges: (id: string) => callOrThrow<void>("orca_open_changes", { id }),
+  /** The Orca question view: answers as the Run's coordinator; rejects with Orca's message. */
+  orcaAnswer: (id: string, text: string) => callOrThrow<void>("orca_answer", { id, text }),
   /** Drag-out of Mochi: captures the window under the cursor into the inbox. */
   attachWindow: () => callOrThrow<AttachedWindow>("attach_window"),
   /** Focuses the terminal window hosting a session; false → nothing found. */

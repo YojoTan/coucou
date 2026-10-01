@@ -7,7 +7,9 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { agentForTask, agentOf, cycle as cycleSession, taskIdFor } from "../island/sessions";
 import { Ticker } from "./ticker";
-import { isAgentTask, SOURCE_LABELS, State, type AgentTask, type LanPeer } from "../core/state";
+import { isAgentTask, SOURCE_LABELS, State, type AgentTask, type LanPeer, type OrcaAsk } from "../core/state";
+import { Bridge } from "../core/bridge";
+import { Sound } from "../core/sound";
 import { colorForProject, washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
@@ -36,6 +38,12 @@ export interface ViewActions {
   lanDone(): void;
   /** Header → a paired Mochi → "Send a file…": the picker, then the trip. */
   lanSendFile(id: string, name: string): void;
+  /** The Orca card's "N questions waiting": the ask view, on that one. */
+  orcaAskOpen(ask: OrcaAsk): void;
+  /** The ask view closes: answered, or put off with "Later". */
+  orcaAskDone(): void;
+  /** A click in a text field outside the chat: the island takes the keyboard. */
+  takeKeyboard(): void;
 }
 
 export interface ViewHost {
@@ -217,6 +225,10 @@ function buildOverview(actions: ViewActions): ViewHost {
       State.notify();
     },
     openSettings: () => actions.openSettingsWindow(),
+    openOrcaAsk: () => {
+      const ask = State.orcaAsks[0];
+      if (ask) actions.orcaAskOpen(ask);
+    },
   };
 
   return {
@@ -456,6 +468,72 @@ function buildQuestion(): ViewHost {
   };
 }
 
+// ── Orca question / gate ──────────────────────────────────────────────────────
+// What an Orca worker asks its Run, or a pending decision gate (island/orca.ts).
+// The answer leaves only on a click; Orca's refusal is shown as is.
+
+function buildOrcaAsk(actions: ViewActions): ViewHost {
+  const who = h("div");
+  const title = h("div", { class: "title clamp2" });
+  const error = h("div", { class: "detail clamp2" });
+  const row = h("div", { class: "actions" });
+  const later = h("button", { class: "link-btn orca-later", text: t("Later"), onclick: () => actions.orcaAskDone() });
+  const el = h("div", { class: "view" }, card("cyan", stack(116, 16, who, title, error, row, later)));
+  let shownId: string | null = null;
+  let sending = false;
+
+  function render(ask: OrcaAsk) {
+    clear(who);
+    who.append(agentWho(State.tasks.find((x) => x.id === "integration_orca") ?? null, t(ask.kind === "gate" ? "Decision gate" : "A worker is asking")));
+    title.textContent = ask.text;
+    title.title = ask.text;
+    error.textContent = "";
+    sending = false;
+    clear(row);
+    if (ask.options.length) {
+      for (const opt of ask.options.slice(0, 4)) row.append(btn(opt, "secondary", () => void send(ask, opt)));
+      return;
+    }
+    const input = h("input", { type: "text", class: "orca-answer", placeholder: t("Answer"), spellcheck: "false", maxlength: "4000" }) as HTMLInputElement;
+    const go = btn(t("Send"), "primary", () => void send(ask, input.value, go));
+    input.addEventListener("mousedown", () => actions.takeKeyboard());
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") void send(ask, input.value, go);
+    });
+    row.append(input, go);
+  }
+
+  async function send(ask: OrcaAsk, answer: string, button?: HTMLElement) {
+    answer = answer.trim();
+    if (!answer || sending) return;
+    sending = true;
+    error.textContent = "";
+    if (button) button.firstElementChild!.textContent = t("Sending…");
+    try {
+      await Bridge.orcaAnswer(ask.id, answer);
+      Sound.play("approve");
+      actions.orcaAskDone();
+    } catch (err) {
+      error.textContent = t(String(err).replace(/^Error:\s*/, ""));
+    } finally {
+      sending = false;
+      if (button) button.firstElementChild!.textContent = t("Send");
+    }
+  }
+
+  return {
+    el,
+    sync() {
+      const ask = State.orcaAsk;
+      if (ask && ask.id !== shownId) {
+        shownId = ask.id;
+        render(ask);
+      }
+      if (!ask) shownId = null;
+    },
+  };
+}
+
 // ── Error ─────────────────────────────────────────────────────────────────────
 
 function buildError(actions: ViewActions): ViewHost {
@@ -613,6 +691,7 @@ export function buildViews(
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
   map.set("question", buildQuestion());
+  map.set("orcaAsk", buildOrcaAsk(actions));
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());

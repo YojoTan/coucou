@@ -164,6 +164,15 @@ export interface DiscordPrefs {
   presence: boolean;
   mutedAlert: boolean;
 }
+/** A question an Orca worker asked its Run, or a pending decision gate. */
+export interface OrcaAsk {
+  id: string;
+  kind: "question" | "gate";
+  runId: string;
+  text: string;
+  /** Choices, when the worker or the gate gave some: answered with a click on one. */
+  options: string[];
+}
 export interface DiscordCallSummary { minutes: number; myShare: number; top: string | null; topShare: number; missed: number; endedAt: number }
 
 /** One line in the compact island for a few seconds ("Ana joined"). */
@@ -278,6 +287,10 @@ class AppState {
 
   isPinned = false;
   paused = false;
+
+  /** Orca: the question or gate shown in the `orcaAsk` view, and every one waiting. */
+  orcaAsk: OrcaAsk | null = null;
+  orcaAsks: OrcaAsk[] = [];
 
   /** Discord: the pill's snapshot, the call that just ended, "you're muted!". */
   discord: DiscordSnapshot | null = null;

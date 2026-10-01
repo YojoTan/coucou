@@ -78,6 +78,24 @@ function prune(now: number) {
   }
 }
 
+/** Windows paths compare without case, whichever slash Orca or the hook used. */
+function normalizePath(p: string): string {
+  return p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+}
+
+/** Whether a live session runs in this directory or below it (Orca: no double alerts). */
+export function covers(path: string): boolean {
+  if (!path) return false;
+  const dir = normalizePath(path);
+  const now = Date.now();
+  for (const s of sessions.values()) {
+    if (now - s.lastSeen > STALE_MS || !s.cwd) continue;
+    const cwd = normalizePath(s.cwd);
+    if (cwd === dir || cwd.startsWith(dir + "\\")) return true;
+  }
+  return false;
+}
+
 /** Finds or creates the session an event belongs to, and marks it active. */
 export function touch(agent: AgentKind, sessionId: string, project: string, cwd: string): AgentSession {
   const now = Date.now();

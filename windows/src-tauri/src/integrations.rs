@@ -665,31 +665,21 @@ async fn poll_orca(app: AppHandle) {
             error: Some(err),
             event: None,
         }),
-        Ok(rows) => {
+        Ok((rows, asks)) => {
+            // The island raises the alerts itself: it knows which worktrees its
+            // own hooks already report (no double alerts).
             let changes = crate::orca::diff(&rows);
-            // A permission beats a finish: it is the one that needs the user.
-            let event = changes
-                .attention
-                .first()
-                .map(|w| IntegrationEvent {
-                    success: false,
-                    attention: true,
-                    label: w.name.clone(),
-                    detail: Some(if w.tool.is_empty() { w.prompt.clone() } else { format!("{} · {}", w.tool, w.prompt) }),
-                })
-                .or_else(|| {
-                    changes.finished.first().map(|w| IntegrationEvent {
-                        success: true,
-                        attention: false,
-                        label: w.name.clone(),
-                        detail: Some(if w.last_message.is_empty() { w.prompt.clone() } else { w.last_message.clone() }),
-                    })
-                });
+            let ids = |list: &[crate::orca::Worktree]| list.iter().map(|w| w.id.clone()).collect::<Vec<_>>();
             emit(&app, IntegrationUpdate {
                 id: "integration_orca",
-                data: json!({ "worktrees": rows.into_iter().take(6).collect::<Vec<_>>() }),
+                data: json!({
+                    "worktrees": rows,
+                    "asks": asks,
+                    "attention": ids(&changes.attention),
+                    "finished": ids(&changes.finished),
+                }),
                 error: None,
-                event,
+                event: None,
             });
         }
     }

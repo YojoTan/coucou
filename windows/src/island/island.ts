@@ -10,7 +10,7 @@ import {
   type IslandMode, type IslandViewName,
 } from "../core/layout";
 import { Sound } from "../core/sound";
-import { isAgentTask, State } from "../core/state";
+import { isAgentTask, State, type OrcaAsk } from "../core/state";
 import { approvalResolved } from "./hooks";
 import { agentOf, byKey, taskIdFor } from "./sessions";
 import { t } from "../core/i18n";
@@ -185,6 +185,9 @@ export class Island {
         this.fsm.pinned = false;
         this.setView(State.defaultView());
       },
+      orcaAskOpen: (ask) => this.openOrcaAsk(ask),
+      orcaAskDone: () => this.orcaAskDone(),
+      takeKeyboard: () => void Bridge.focusWindow(true),
       // The ↗ button — same targets as openAgentTarget() on macOS.
       openTarget: () => {
         const task = State.focusTask;
@@ -453,10 +456,26 @@ export class Island {
     State.notify();
   }
 
-  /** An approval or a LAN code/file waits for a click: those pins are not ours to drop. */
+  /** An approval, an Orca question or a LAN code/file waits for a click: those pins are not ours to drop. */
   private decisionPending(): boolean {
     const lan = State.lanPrompt;
-    return !!State.pendingApproval || (lan != null && (lan.kind === "pair" || lan.kind === "file"));
+    return !!State.pendingApproval || (lan != null && (lan.kind === "pair" || lan.kind === "file"))
+      || (State.orcaAsk != null && State.view === "orcaAsk");
+  }
+
+  /** An Orca question or gate: open on it, pinned until answered or put off. */
+  openOrcaAsk(ask: OrcaAsk) {
+    State.orcaAsk = ask;
+    State.isPinned = true;
+    this.alert("orcaAsk");
+  }
+
+  /** The ask view closes: answered here, "Later", or answered elsewhere. */
+  orcaAskDone() {
+    State.orcaAsk = null;
+    State.isPinned = false;
+    this.fsm.pinned = false;
+    this.setView(State.defaultView());
   }
 
   private pinForDrop(view: IslandViewName) {
@@ -1050,10 +1069,10 @@ export class Island {
       if (on) view.sync();
     }
 
-    // The chat is the only view with a text field, so it is the only time the
-    // island is allowed to take keyboard focus.
+    // The chat takes keyboard focus when it opens; the Orca answer field when
+    // it is clicked. Leaving either hands the keyboard back.
     if (this.lastSyncedView !== State.view) {
-      const wasChat = this.lastSyncedView === "prompt";
+      const wasChat = this.lastSyncedView === "prompt" || this.lastSyncedView === "orcaAsk";
       this.lastSyncedView = State.view;
       if (State.view === "prompt") {
         void Bridge.focusWindow(true);

@@ -399,6 +399,8 @@ export interface IntegrationCardHooks {
   openDetail(): void;
   closeDetail(): void;
   openSettings(): void;
+  /** Orca's "N questions waiting". */
+  openOrcaAsk(): void;
 }
 
 /** True when this integration has data worth showing instead of the idle card. */
@@ -453,7 +455,7 @@ export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHoo
     case "integration_calcom":
       return calcomCard();
     case "integration_orca":
-      return orcaCard();
+      return orcaCard(hooks.openOrcaAsk);
     case "integration_spotify":
       return spotifyCard();
     case "integration_discord":
@@ -508,36 +510,72 @@ const ORCA_STATUS: Record<string, string> = {
   inactive: "idle",
 };
 
-/** Worktrees Orca is running; a permission is answered in Orca itself. */
-function orcaCard(): HTMLElement {
+/** The top row's second part: what its agent is doing or last said (OrcaCardView.detail). */
+function orcaDetail(w: Record<string, unknown>): string {
+  const status = String(w.status ?? "");
+  if (status === "permission" || status === "working") return [w.tool, w.prompt].filter(Boolean).join(" · ");
+  return String(w.lastMessage || w.prompt || "");
+}
+
+/**
+ * Worktrees Orca is running. A permission is answered in Orca itself: a row
+ * click shows that agent's terminal there, ± its changes; questions and gates
+ * of a Run open the ask view.
+ */
+function orcaCard(openAsk: () => void): HTMLElement {
   const worktrees = arr("integration_orca", "worktrees");
   const rows = h("div", { class: "int-rows" });
   if (worktrees.length === 0) {
     rows.append(h("div", { class: "int-sub", text: t("No worktrees in Orca right now.") }));
   }
-  worktrees.slice(0, 3).forEach((w, i) => {
+  // Two rows fit beside the actions here (three on the Mac's taller card).
+  worktrees.slice(0, 2).forEach((w, i) => {
+    const id = String(w.id ?? "");
     const status = String(w.status ?? "");
     const accent = ORCA_COLORS[status] ?? "#8E939C";
     const cells: Node[] = [
-      // The worktree's name is what identifies it: the prompt gives way first.
+      // The worktree's name is what identifies it: the detail gives way first.
       h("span", { class: "int-name", style: "flex:0 1 auto;max-width:50%", text: String(w.name || w.repo || "worktree") }),
       h("span", { class: "int-ago", text: t(ORCA_STATUS[status] ?? status) }),
     ];
-    const what = status === "permission" ? [w.tool, w.prompt].filter(Boolean).join(" · ") : String(w.prompt ?? "");
-    if (i === 0 && what) cells.push(h("span", { class: "int-sub", style: "flex:1 1 0", text: what }));
-    rows.append(listRow(accent, i === 0, ...cells));
+    const what = orcaDetail(w);
+    cells.push(h("span", { class: "int-sub", style: "flex:1 1 0", text: i === 0 ? what : "" }));
+    cells.push(h("button", {
+      class: "mini-btn",
+      title: t("Open changes in Orca"),
+      text: "±",
+      onclick: (e: Event) => {
+        e.stopPropagation();
+        Bridge.orcaOpenChanges(id).catch((err) => State.showToast(t(String(err).replace(/^Error:\s*/, "")), "#8B5CF6"));
+      },
+    }));
+    const row = listRow(accent, i === 0, ...cells);
+    row.classList.add("clickable");
+    row.title = (what ? `${what}
+` : "") + t("Show this terminal in Orca");
+    row.addEventListener("click", () => void Bridge.orcaFocus(id));
+    rows.append(row);
   });
   const waiting = worktrees.filter((w) => w.status === "permission").length;
-  const extra = waiting
-    ? h("span", { class: "int-total" }, h("i", { class: "pulse" }), h("span", { text: String(waiting) }))
-    : undefined;
-  const open = h("button", {
+  const extra = h("span", { class: "int-head-extra" });
+  if (waiting) extra.append(h("span", { class: "int-total" }, h("i", { class: "pulse" }), h("span", { text: String(waiting) })));
+  if (worktrees.length > 2) extra.append(h("span", { class: "int-ago", text: `+${worktrees.length - 2}` }));
+  const actions = h("div", { class: "int-actions" }, h("button", {
     class: "link-btn",
     style: "color:#8B5CF6",
     text: t("Open Orca"),
     onclick: () => void Bridge.openOrca(),
-  });
-  return h("div", { class: "int-card" }, header("#8B5CF6", "Orca", t("Worktrees"), extra), rows, h("div", { class: "int-actions" }, open));
+  }));
+  const asks = State.orcaAsks.length;
+  if (asks) {
+    actions.append(h("button", {
+      class: "link-btn",
+      style: "color:#22D3EE",
+      text: asks === 1 ? t("1 question waiting") : t("{n} questions waiting", { n: asks }),
+      onclick: openAsk,
+    }));
+  }
+  return h("div", { class: "int-card" }, header("#8B5CF6", "Orca", t("Worktrees"), extra), rows, actions);
 }
 
 export { clear };

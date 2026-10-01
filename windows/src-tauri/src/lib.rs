@@ -493,6 +493,25 @@ fn open_orca() -> bool {
     orca::open_app()
 }
 
+/// Orca card → a worktree row: Orca's window, on that agent's terminal.
+#[tauri::command]
+fn orca_focus(id: String) -> bool {
+    orca::focus(&id)
+}
+
+/// Orca card → ±: the worktree's changes as diffs in Orca's editor.
+#[tauri::command]
+async fn orca_open_changes(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || orca::open_changes(&id)).await.map_err(|e| e.to_string())?
+}
+
+/// The Orca question view → Send / a choice: the answer, as the Run's
+/// coordinator, for a question or gate the last poll read from Orca.
+#[tauri::command]
+async fn orca_answer(id: String, text: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || orca::answer(&id, &text)).await.map_err(|e| e.to_string())?
+}
+
 // ── Mochis on the network (lan/) ─────────────────────────────────────────────
 
 /// A paired Mochi asks this one: answered by an engine that can't read this
@@ -954,6 +973,9 @@ pub fn run() {
             hotkey_choices,
             hotkey_set,
             open_orca,
+            orca_focus,
+            orca_open_changes,
+            orca_answer,
             github_auth,
             attach_window,
             focus_session,

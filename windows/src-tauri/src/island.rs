@@ -16,11 +16,11 @@ use windows::Win32::Foundation::{HWND, POINT};
 use windows::core::BOOL;
 use windows::Win32::Foundation::LPARAM;
 use windows::Win32::System::Ole::RevokeDragDrop;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WindowFromPoint, GetAncestor, GA_ROOT, GA_ROOTOWNER,
+    WS_EX_TOOLWINDOW, WindowFromPoint, GetAncestor, GA_ROOT, GetWindowThreadProcessId,
 };
 
 /// Logical size of the full window — the largest island view, like the macOS panel.
@@ -198,6 +198,26 @@ fn left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
+fn right_button_down() -> bool {
+    unsafe { (GetAsyncKeyState(VK_RBUTTON.0 as i32) as u16 & 0x8000) != 0 }
+}
+
+/// Whether the window under the cursor is another of Coucou's own (the
+/// settings window, the desktop pet, a native menu of the island…): a click
+/// there is not a click "outside".
+fn on_own_window(island: HWND, cx: f64, cy: f64) -> bool {
+    unsafe {
+        let hit = WindowFromPoint(POINT { x: cx as i32, y: cy as i32 });
+        let root = GetAncestor(hit, GA_ROOT);
+        if root.0.is_null() || root.0 == island.0 {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(root, Some(&mut pid));
+        pid == std::process::id()
+    }
+}
+
 fn monitor_contains(m: &Monitor, x: f64, y: f64) -> bool {
     let p = m.position();
     let s = m.size();
@@ -309,6 +329,61 @@ fn current_screen_key(app: &AppHandle) -> Option<(i32, i32, u32, u32, u64)> {
     Some((p.x, p.y, size.width, size.height, m.scale_factor().to_bits()))
 }
 
+/// The island follows the cursor's screen (macOS followCursorScreen), with the
+/// "cursor" display setting and more than one screen: when the cursor settles
+/// on another screen for half a second, or at once when it is within 60 px of
+/// that screen's top edge (where the island is, and where a click looks for
+/// it). Never while the island is open. A short look twice a second, only then.
+pub fn spawn_screen_follow(app: AppHandle, gate: Arc<PollGate>) {
+    std::thread::spawn(move || {
+        let mut pending: Option<((i32, i32), std::time::Instant)> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(250));
+            let follow = app
+                .try_state::<crate::Shared>()
+                .is_some_and(|s| s.settings.lock().unwrap().screen == "cursor");
+            let Some(win) = window(&app).filter(|_| follow) else {
+                std::thread::sleep(Duration::from_secs(1));
+                continue;
+            };
+            let monitors = app.available_monitors().unwrap_or_default();
+            if monitors.len() < 2 {
+                pending = None;
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+            // Open: it stays where the user is working with it.
+            let open = !gate.collapsed.load(Ordering::Relaxed) && gate.rect.lock().unwrap().h > 60.0;
+            let (Some((cx, cy)), Ok(pos), Ok(size)) = (cursor_physical(), win.outer_position(), win.outer_size()) else { continue };
+            let centre = (pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + 1.0);
+            let here = monitors.iter().find(|m| monitor_contains(m, centre.0, centre.1));
+            let Some(there) = monitors.iter().find(|m| monitor_contains(m, cx, cy)) else { continue };
+            if open || here.is_some_and(|h| h.position() == there.position()) {
+                pending = None;
+                continue;
+            }
+            let key = (there.position().x, there.position().y);
+            let near_top = cy - (there.position().y as f64) < 60.0 * there.scale_factor();
+            let settled = match pending {
+                Some((k, since)) if k == key => since.elapsed() >= Duration::from_millis(500),
+                _ => {
+                    pending = Some((key, std::time::Instant::now()));
+                    false
+                }
+            };
+            if near_top || settled {
+                pending = None;
+                let collapsed = gate.collapsed.load(Ordering::Relaxed);
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    apply_geometry(&handle, "cursor", collapsed);
+                    let _ = handle.emit_to(WINDOW_LABEL, "screen-changed", ());
+                });
+            }
+        }
+    });
+}
+
 /// Emits `cursor` (window-logical coordinates) at ~60 Hz while the island is
 /// visible. Parked on a condvar the rest of the time.
 pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
@@ -319,6 +394,7 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
         loop {
             gate.wait_until_active();
             let mut was_down = left_button_down();
+            let mut was_right = right_button_down();
             let mut outside_click = OutsideClick::default();
             let mut last = (f64::MIN, f64::MIN);
             let mut ticks: u32 = 0;
@@ -357,17 +433,20 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 let down = left_button_down();
                 let pressed = down && !was_down;
                 let r = *gate.rect.lock().unwrap();
-                // Native select popups belong to our window even when their
-                // menu extends beyond the island's painted bounds.
-                let press_outside = outside_press(r, x, y, down, was_down)
-                    && !win.hwnd().is_ok_and(|hwnd| unsafe {
-                        let hit = WindowFromPoint(POINT { x: cx as i32, y: cy as i32 });
-                        GetAncestor(hit, GA_ROOT).0 != hwnd.0 as *mut _
-                            && GetAncestor(hit, GA_ROOTOWNER).0 == hwnd.0 as *mut _
-                    });
+                // Coucou's own windows don't count: native select popups (they
+                // belong to us even beyond the island's painted bounds), the
+                // settings window, the desktop pet.
+                let own = win.hwnd().is_ok_and(|hwnd| on_own_window(HWND(hwnd.0 as *mut _), cx, cy));
+                let press_outside = outside_press(r, x, y, down, was_down) && !own;
                 if outside_click.tick(press_outside, down, was_down, x, y) {
                     let _ = win.emit("outside-click", ());
                 }
+                // A right click elsewhere closes it too (there is no drag to protect).
+                let right = right_button_down();
+                if right && !was_right && outside_press(r, x, y, true, false) && !own {
+                    let _ = win.emit("outside-click", ());
+                }
+                was_right = right;
                 if was_down && !down {
                     let _ = win.emit("mouse-up", CursorPayload { x, y, down });
                 }

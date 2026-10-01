@@ -530,7 +530,9 @@ export class Island {
   /** Explicit outside click closes the panel, while approval cards stay actionable. */
   dismissOutside() {
     // A click (Rust only reports clicks, never the start of a drag) closes the
-    // island — the Drop view's pin included, but never a pending decision.
+    // island — the Drop view's pin included, but never a pending decision, nor
+    // a file on its way (uploading, or choosing where it goes).
+    if (State.view === "uploading" || State.view === "choose") return;
     if (State.mode === "expanded" && (!State.isPinned || (this.dropPinned && !this.decisionPending()))) this.collapse();
   }
 

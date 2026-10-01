@@ -277,7 +277,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeIntegrations: [
     "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   ],
-  screen: "primary",
+  screen: "cursor",
   autostart: false,
   hooksInstalled: false,
   model: "claude-opus-5",

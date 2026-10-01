@@ -107,7 +107,8 @@ impl Default for Settings {
                 "integration_vercel".into(),
                 "integration_github".into(),
             ],
-            screen: "primary".into(),
+            // The island follows the cursor's screen (macOS: on by default).
+            screen: "cursor".into(),
             autostart: false,
             hooks_installed: false,
             model: default_model(),

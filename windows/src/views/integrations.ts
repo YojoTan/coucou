@@ -11,6 +11,7 @@ import { isAgentTask, State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { discordCard } from "./discord";
 import { calendarCard, customCard, systemCard, weatherCard } from "./extras";
+import { worktreesCard } from "./worktrees";
 
 /** Same shape as the Swift `timeAgo` computed properties. */
 export function timeAgo(value: unknown): string {
@@ -402,6 +403,8 @@ export interface IntegrationCardHooks {
   openSettings(): void;
   /** Orca's "N questions waiting". */
   openOrcaAsk(): void;
+  /** The Worktrees card's Open. */
+  openWorktrees(): void;
 }
 
 /** True when this integration has data worth showing instead of the idle card. */
@@ -438,6 +441,7 @@ export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHoo
   if (task.id === "integration_calendar") return calendarCard();
   if (task.id === "integration_system") return systemCard();
   if (task.id === "integration_weather") return weatherCard();
+  if (task.id === "integration_worktrees") return worktreesCard(hooks.openWorktrees);
   if (task.id === "integration_n8n") {
     const hasActivity = task.steps.length > 0 && (task.state === "finished" || task.state === "error");
     return hooks.detailOpen && hasActivity

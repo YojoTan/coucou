@@ -2,6 +2,7 @@
 
 import { callSilences, registerDiscordHandlers } from "./island/discord";
 import { registerExtrasHandlers } from "./island/extras";
+import { registerWorktreeHandlers } from "./island/worktrees";
 import { registerLanHandlers } from "./island/lan";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
@@ -91,6 +92,7 @@ async function main() {
   registerLanHandlers(island);
   registerDiscordHandlers(island);
   registerExtrasHandlers(island);
+  registerWorktreeHandlers(island);
 
   island.launch();
 

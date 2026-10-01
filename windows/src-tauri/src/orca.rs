@@ -406,7 +406,7 @@ pub fn diff(rows: &[Worktree]) -> Changes {
 
 /// Orca's native CLI launcher. Never `orca.cmd`: cmd.exe reparses its
 /// arguments, and Orca's own shim refuses message bodies for that reason.
-fn cli_exe() -> Option<PathBuf> {
+pub(crate) fn cli_exe() -> Option<PathBuf> {
     let on_path = std::env::var_os("PATH").and_then(|dirs| {
         std::env::split_paths(&dirs).map(|d| d.join("orca.exe")).find(|p| p.is_file())
     });

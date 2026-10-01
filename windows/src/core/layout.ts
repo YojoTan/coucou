@@ -22,6 +22,7 @@ export type IslandViewName =
   | "result"
   | "note"
   | "lan"
+  | "worktrees"
   | "settings"
   | "greeting";
 
@@ -90,6 +91,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   result: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   lan: { height: 184, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
+  worktrees: { height: 300, botX: 54, botY: 96, botDiameter: 44, agentMode: "none" },
   settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
 };

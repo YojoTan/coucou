@@ -15,6 +15,7 @@ import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
 import { buildLan, lanCard, peerStatusText } from "./lan";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
+import { buildWorktrees, worktreesHeaderButton } from "./worktrees";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 
 export interface ViewActions {
@@ -44,6 +45,8 @@ export interface ViewActions {
   orcaAskDone(): void;
   /** A click in a text field outside the chat: the island takes the keyboard. */
   takeKeyboard(): void;
+  /** The worktrees view, on the list (the header's shortcut, a card's Open). */
+  worktreesOpen(): void;
 }
 
 export interface ViewHost {
@@ -154,6 +157,9 @@ export function buildHeader(actions: ViewActions): ViewHost {
     pruneMiniBots();
   }
 
+  // Worktrees, when a repo is set up: no pill slot needed (WorktreesHeaderButton).
+  const wtBtn = worktreesHeaderButton(() => { actions.blip(); actions.worktreesOpen(); });
+
   const el = h(
     "div",
     { id: "header" },
@@ -161,6 +167,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     h("div", { class: "grow" }),
     nearby,
     menu,
+    wtBtn,
     h("div", { class: "header-actions" }, gearBtn, soundBtn),
   );
 
@@ -177,6 +184,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
       clear(soundBtn);
       soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
       el.style.opacity = v === "confused" ? "0" : "1";
+      wtBtn.style.display = (State.settings.worktreeRepos?.length ?? 0) > 0 ? "" : "none";
+      wtBtn.classList.toggle("on", v === "worktrees");
       syncNearby();
     },
   };
@@ -229,6 +238,7 @@ function buildOverview(actions: ViewActions): ViewHost {
       const ask = State.orcaAsks[0];
       if (ask) actions.orcaAskOpen(ask);
     },
+    openWorktrees: () => actions.worktreesOpen(),
   };
 
   return {
@@ -697,6 +707,7 @@ export function buildViews(
   map.set("confused", buildConfused());
   map.set("note", buildNote());
   map.set("lan", buildLan(actions));
+  map.set("worktrees", buildWorktrees(actions));
   map.set("settings", buildSettings(actions));
   map.set("prompt", buildPrompt(onChatHeightChange));
   map.set("upload", buildUpload());

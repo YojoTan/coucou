@@ -6,7 +6,7 @@ import type { DiscordSnapshot, LanView } from "../core/state";
 import { setLanguage, t } from "../core/i18n";
 import "./settings.css";
 import { Bridge, onEvent, type EngineInfo, type HookStatus, type HookTarget } from "../core/bridge";
-import { DEFAULT_SETTINGS, type CustomMochi, type Settings } from "../core/state";
+import { DEFAULT_SETTINGS, type CustomMochi, type Settings, type WtRepo } from "../core/state";
 import { WEARABLE, type MochiAccessory } from "../mochi/accessories";
 import { ACCESSORY_LABELS, nextTrophy, petLevel, unlocked } from "../island/extras";
 import { h, clear } from "../views/dom";
@@ -1166,6 +1166,73 @@ function customMochisSection(): HTMLElement {
   );
 }
 
+/** Worktrees from Mochi: repos and their provider commands (docs/WORKTREES.md). */
+function worktreesSection(): HTMLElement {
+  let repos: WtRepo[] = (settings.worktreeRepos ?? []).map((r) => ({ ...r }));
+  const list = h("div", { style: "display:flex;flex-direction:column;gap:8px" });
+  const note = h("div", { class: "hint" });
+
+  function render() {
+    clear(list);
+    for (const r of repos) {
+      const name = h("input", { type: "text", value: r.name, maxlength: "60", style: "width:150px" }) as HTMLInputElement;
+      name.addEventListener("input", () => { r.name = name.value; });
+      const provider = h("input", {
+        type: "text", value: r.provider, spellcheck: "false", maxlength: "1000",
+        placeholder: t("Provider command (optional) — e.g. bash tools/worktrees-provider.sh"),
+        style: "flex:1 1 auto;font-family:var(--mono);font-size:11.5px",
+      }) as HTMLInputElement;
+      provider.addEventListener("input", () => { r.provider = provider.value; });
+      list.append(h("div", { style: "display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:8px;background:rgba(255,255,255,0.04)" },
+        h("div", { class: "row" }, name, h("code", { style: "flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", text: r.path }),
+          h("button", { class: "danger", text: t("Remove"), onclick: () => { repos = repos.filter((x) => x.id !== r.id); void commit(); } })),
+        h("div", { class: "row" }, provider),
+      ));
+    }
+  }
+
+  async function commit() {
+    for (const r of repos) {
+      r.name = r.name.trim();
+      r.provider = r.provider.trim();
+    }
+    settings.worktreeRepos = repos.map((r) => ({ ...r }));
+    await save();
+    void Bridge.worktreesRefresh();
+    note.textContent = t("✓ Saved.");
+    render();
+  }
+
+  async function add() {
+    try {
+      const picked = await Bridge.worktreesPickRepo();
+      if (!picked) return;
+      const [path, name] = picked;
+      if (repos.some((r) => r.path.toLowerCase() === path.toLowerCase())) {
+        note.textContent = t("That repo is already here.");
+        return;
+      }
+      repos.push({ id: crypto.randomUUID(), name, path, provider: "" });
+      await commit();
+    } catch (err) {
+      note.textContent = "❌ " + t(String(err).replace(/^Error:\s*/, ""));
+    }
+  }
+
+  render();
+  return h("section", {},
+    h("h2", {}, h("span", { text: t("Worktrees") })),
+    h("div", { class: "hint", text: t("Manage a repo's worktrees from Mochi — the island, the pill or the desktop pet. Without a provider: the list and a terminal in each. With one, its own actions (create, tear down…) as forms — see docs/WORKTREES.md to write one for your repo. Everything here stays in this PC's settings.") }),
+    h("div", { class: "hint", text: t("The provider runs in cmd in the repo's folder: a script there is written .\\tools\\provider.cmd, and a bash one (bash tools/provider.sh) needs Git Bash or WSL on PATH.") }),
+    list,
+    h("div", { class: "row" },
+      h("button", { text: t("Add a repo…"), onclick: () => void add() }),
+      h("button", { class: "primary", text: t("Save"), onclick: () => void commit() }),
+      note,
+    ),
+  );
+}
+
 /** The Weather pill's city (Open-Meteo, free, no account). */
 function weatherSection(): HTMLElement {
   const city = h("input", { type: "text", value: settings.weatherPlace?.name ?? "", placeholder: t("City"), style: "flex:1 1 auto" }) as HTMLInputElement;
@@ -1254,7 +1321,7 @@ async function main() {
     ["agents", t("Agents"), [claudeSection(status), hooksSection("codex", codexStatus), opencodeSection()]],
     ["integrations", t("Integrations"), [integrationsSection(present), discordSection(present)]],
     ["lan", t("Mochis"), [lanSection()]],
-    ["extras", t("Extras"), [customMochisSection(), weatherSection(), petSection()]],
+    ["extras", t("Extras"), [customMochisSection(), worktreesSection(), weatherSection(), petSection()]],
   ];
   const bar = h("div", { class: "tabs", role: "tablist" });
   const panes = h("div", { class: "tab-panes" });

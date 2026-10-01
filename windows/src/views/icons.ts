@@ -12,6 +12,8 @@ export const ICONS = {
   pause: "M6.5 4.5h4v15h-4zm7 0h4v15h-4z",
   previous: "M5 5h2.4v14H5zm2.4 7L19 4.8v14.4L7.4 12z",
   next: "M16.6 5H19v14h-2.4zM5 4.8 16.6 12 5 19.2V4.8z",
+  // arrow.triangle.branch (Worktrees)
+  branch: "M7 2.8a2.6 2.6 0 0 1 .95 5.02v8.36a2.6 2.6 0 1 1-1.9 0V7.82A2.6 2.6 0 0 1 7 2.8zm10 0a2.6 2.6 0 0 1 .95 5.02c-.1 3.9-2.6 5.9-7.15 6.5l-.85.11v-1.92l.6-.08c3.5-.47 5.4-1.8 5.5-4.6A2.6 2.6 0 0 1 17 2.8z",
   // house.fill
   house: "M12 3.2 2.8 10.6V21h6.6v-5.4h5.2V21h6.6V10.6L12 3.2z",
   // bubble.left.fill

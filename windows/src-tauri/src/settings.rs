@@ -72,6 +72,10 @@ pub struct Settings {
     /// Mochi says things out loud (finished sessions, meetings): off by default.
     #[serde(default)]
     pub voice: bool,
+    /// Worktrees from Mochi (worktrees.rs): repos and their provider commands,
+    /// changed by the settings window only.
+    #[serde(default)]
+    pub worktree_repos: Vec<crate::worktrees::Repo>,
 }
 
 fn default_focus_mode() -> String {
@@ -128,6 +132,7 @@ impl Default for Settings {
             weather_place: None,
             pet: Default::default(),
             voice: false,
+            worktree_repos: Vec::new(),
         }
     }
 }

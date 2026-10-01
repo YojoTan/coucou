@@ -27,6 +27,7 @@ mod transcript;
 mod tuning;
 mod tray;
 mod win_user;
+mod worktrees;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -126,12 +127,14 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             settings.local_url = current.local_url;
             settings.weather_place = current.weather_place.clone();
             settings.voice = current.voice;
+            settings.worktree_repos = current.worktree_repos.clone();
             // The island keeps the pet's count; Settings only picks what it wears.
             settings.pet.wearing = current.pet.wearing.clone();
         } else {
             settings.pet = extras::Pet { wearing: settings.pet.wearing.clone(), ..current.pet.clone() };
         }
         settings.custom_mochis = extras::sanitize_customs(std::mem::take(&mut settings.custom_mochis));
+        settings.worktree_repos = worktrees::sanitize_repos(std::mem::take(&mut settings.worktree_repos));
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
         let engine_changed = current.chat_engine != settings.chat_engine
@@ -663,6 +666,62 @@ fn local_url_token(webview: Webview) -> Result<Option<String>, String> {
     Ok(extras::local_url::token())
 }
 
+// ── Worktrees (worktrees.rs) ──────────────────────────────────────────────────
+
+#[tauri::command]
+fn worktrees_state() -> Vec<worktrees::RepoState> {
+    worktrees::snapshot()
+}
+
+/// The view or the pet's menu shows the worktrees: keep them fresh meanwhile.
+#[tauri::command]
+fn worktrees_watch(app: AppHandle, open: bool) {
+    worktrees::watch(&app, open);
+}
+
+#[tauri::command]
+async fn worktrees_refresh(app: AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || worktrees::refresh(&app, true)).await;
+}
+
+/// A form's Run, a row's action, or a forced rerun after a typed confirmation.
+#[tauri::command]
+fn worktrees_run(
+    app: AppHandle,
+    repo: String,
+    action: String,
+    worktree: Option<String>,
+    values: serde_json::Map<String, serde_json::Value>,
+    force: bool,
+    confirm: Option<String>,
+) -> Result<u64, String> {
+    worktrees::run(&app, &repo, &action, worktree.as_deref(), &values, force, confirm.as_deref())
+}
+
+#[tauri::command]
+fn worktrees_cancel() {
+    worktrees::cancel();
+}
+
+#[tauri::command]
+fn worktrees_reveal(repo: String, path: String) -> bool {
+    worktrees::reveal(&repo, &path)
+}
+
+/// A worktree's ⋯ → Open in VS Code (only one the last refresh listed).
+#[tauri::command]
+fn worktrees_vscode(repo: String, path: String) -> bool {
+    worktrees::known_path(&repo, &path) && open_in_vscode(Some(path))
+}
+
+/// Settings › Extras › Worktrees → Add a repo…: the folder picker.
+#[tauri::command]
+async fn worktrees_pick_repo(app: AppHandle, webview: Webview) -> Result<Option<(String, String)>, String> {
+    only(&webview, SETTINGS_LABEL, "worktrees_pick_repo")?;
+    let owner = app.get_webview_window(SETTINGS_LABEL).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+    tauri::async_runtime::spawn_blocking(move || worktrees::pick_repo(owner)).await.map_err(|e| e.to_string())?
+}
+
 /// Settings → Connect to Discord: the approval window in the Discord app.
 #[tauri::command]
 fn discord_connect(webview: Webview) -> Result<(), String> {
@@ -1042,6 +1101,14 @@ pub fn run() {
             lan_pick_file,
             discord_state,
             discord_connect,
+            worktrees_state,
+            worktrees_watch,
+            worktrees_refresh,
+            worktrees_run,
+            worktrees_cancel,
+            worktrees_reveal,
+            worktrees_vscode,
+            worktrees_pick_repo,
             extras_geocode,
             extras_refresh,
             custom_run,
@@ -1092,6 +1159,7 @@ pub fn run() {
             lan::init(&handle, &loaded.lan);
             discord::start(&handle);
             extras::start(&handle);
+            worktrees::start(handle.clone());
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -101,13 +101,56 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   // macOS calls it "Mac".
   task("integration_system", "PC", "#94A3B8", "n8n"),
   task("integration_weather", "Weather", "#38BDF8", "n8n"),
+  task("integration_worktrees", "Worktrees", "#F97316", "n8n"),
 ];
 
 export const TOGGLEABLE_INTEGRATION_IDS = [
   "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan", "integration_discord",
-  "integration_calendar", "integration_system", "integration_weather",
+  "integration_calendar", "integration_system", "integration_weather", "integration_worktrees",
 ];
+
+/** Worktrees from Mochi (Rust worktrees.rs; the protocol is docs/WORKTREES.md). */
+export interface WtRepo { id: string; name: string; path: string; provider: string }
+export type WtValue = string | string[] | boolean;
+export interface WtField {
+  id: string;
+  type: "text" | "choice" | "multi" | "bool";
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  pattern?: string;
+  options?: { value: string; label: string }[];
+  default?: WtValue;
+}
+export interface WtAction { id: string; label: string; scope: "repo" | "worktree"; danger?: boolean; fields?: WtField[] }
+export interface WtWorktree { slug: string; path: string; branch?: string; note?: string }
+export interface WtStatus { dirty: number; unpushed: number; lastCommit: number | null }
+export interface WtRepoState {
+  id: string;
+  name: string;
+  path: string;
+  hasProvider: boolean;
+  description: { version: number; actions: WtAction[] };
+  worktrees: WtWorktree[];
+  status: Record<string, WtStatus>;
+  error: string | null;
+}
+export type WtEvent =
+  | { type: "progress"; text: string }
+  | { type: "terminal"; command: string; cwd: string | null; title: string | null }
+  | { type: "done"; ok: boolean; text: string; risk: string[]; canForce: boolean };
+/** A form being filled, or an action running, in the worktrees view. */
+export interface WtRun {
+  repoId: string;
+  action: WtAction;
+  worktree: WtWorktree | null;
+  values: Record<string, WtValue>;
+  stage: "form" | "running" | "finished" | "confirmForce";
+  log: string[];
+  result: Extract<WtEvent, { type: "done" }> | null;
+  runId: number | null;
+}
 
 /** Mochi as a pet (MochiPet), as saved: the island keeps the count. */
 export interface PetSave {
@@ -267,6 +310,7 @@ export interface Settings {
   pet?: PetSave;
   /** Mochi says things out loud: off by default. */
   voice?: boolean;
+  worktreeRepos?: WtRepo[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -311,6 +355,11 @@ class AppState {
 
   isPinned = false;
   paused = false;
+
+  /** Worktrees: each repo's state, the form or run on screen, the repo picked. */
+  worktrees: WtRepoState[] = [];
+  wtRun: WtRun | null = null;
+  wtRepoId: string | null = null;
 
   /** Orca: the question or gate shown in the `orcaAsk` view, and every one waiting. */
   orcaAsk: OrcaAsk | null = null;

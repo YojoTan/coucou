@@ -2,7 +2,7 @@
 // page is opened in a plain browser, so the island can be iterated on with
 // `npm run dev` alone.
 
-import type { DiscordSnapshot, LanView } from "./state";
+import type { DiscordSnapshot, LanView, WtRepoState, WtValue } from "./state";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -91,6 +91,19 @@ export const Bridge = {
   /** Clipboard text — only ever read on an explicit click in the chat. */
   clipboardText: () => call<string | null>("clipboard_text"),
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
+  // ── Worktrees ─────────────────────────────────────────────────────────────
+  worktreesState: () => call<WtRepoState[]>("worktrees_state"),
+  /** The view or the pet's menu shows them: keep them fresh meanwhile. */
+  worktreesWatch: (open: boolean) => call<void>("worktrees_watch", { open }),
+  worktreesRefresh: () => call<void>("worktrees_refresh"),
+  /** Runs an action; rejects with why not. Events arrive as `worktrees-run`. */
+  worktreesRun: (repo: string, action: string, worktree: string | null, values: Record<string, WtValue>, force: boolean, confirm: string | null) =>
+    callOrThrow<number>("worktrees_run", { repo, action, worktree, values, force, confirm }),
+  worktreesCancel: () => call<void>("worktrees_cancel"),
+  worktreesReveal: (repo: string, path: string) => call<boolean>("worktrees_reveal", { repo, path }),
+  worktreesVscode: (repo: string, path: string) => call<boolean>("worktrees_vscode", { repo, path }),
+  /** Settings › Add a repo…: [path, name], null when cancelled; rejects for a non-git folder. */
+  worktreesPickRepo: () => callOrThrow<[string, string] | null>("worktrees_pick_repo"),
   // ── Extras ────────────────────────────────────────────────────────────────
   /** Settings › Extras → City: the place Open-Meteo knows by that name. */
   extrasGeocode: (city: string, language: string) => call<{ name: string; lat: number; lon: number } | null>("extras_geocode", { city, language }),

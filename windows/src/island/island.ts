@@ -193,6 +193,11 @@ export class Island {
         this.setView(State.defaultView());
       },
       orcaAskOpen: (ask) => this.openOrcaAsk(ask),
+      worktreesOpen: () => {
+        State.wtRun = null;
+        this.alert("worktrees");
+        void Bridge.worktreesRefresh();
+      },
       orcaAskDone: () => this.orcaAskDone(),
       takeKeyboard: () => void Bridge.focusWindow(true),
       // The ↗ button — same targets as openAgentTarget() on macOS.
@@ -1078,10 +1083,12 @@ export class Island {
       if (on) view.sync();
     }
 
-    // The chat takes keyboard focus when it opens; the Orca answer field when
-    // it is clicked. Leaving either hands the keyboard back.
+    // The chat takes keyboard focus when it opens; the Orca answer field and the
+    // worktrees' forms when clicked. Leaving any of them hands the keyboard back.
     if (this.lastSyncedView !== State.view) {
-      const wasChat = this.lastSyncedView === "prompt" || this.lastSyncedView === "orcaAsk";
+      // The worktrees stay fresh while their view shows.
+      if (State.view === "worktrees" || this.lastSyncedView === "worktrees") void Bridge.worktreesWatch(State.view === "worktrees");
+      const wasChat = this.lastSyncedView === "prompt" || this.lastSyncedView === "orcaAsk" || this.lastSyncedView === "worktrees";
       this.lastSyncedView = State.view;
       if (State.view === "prompt") {
         void Bridge.focusWindow(true);

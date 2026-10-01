@@ -374,6 +374,16 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
 
                 let _ = win.emit("cursor", CursorPayload { x, y });
             }
+            // Parking: the island just collapsed to its wake strip, and the strip
+            // must take the mouse. The tick that ran as it collapsed may have
+            // queued click-through back on *after* set_collapsed cleared it — the
+            // strip then let every hover pass straight through and the island
+            // never woke (upstream issue #28). This thread's setters go through
+            // the same queue, so clearing it here always lands last.
+            if let Some(win) = window(&app) {
+                let _ = win.set_ignore_cursor_events(false);
+            }
+            gate.ignoring.store(false, Ordering::Relaxed);
         }
     });
 }

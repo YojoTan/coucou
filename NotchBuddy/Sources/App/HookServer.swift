@@ -159,11 +159,9 @@ final class HookServer: @unchecked Sendable {
         // Claude Code sessions are filtered to VS Code, as upstream; Codex and
         // opencode run anywhere, so every one of their sessions counts.
         if agent == .claude {
-            let termProgram = payload["term_program"] as? String ?? ""
-            let bundleId    = payload["bundle_id"]    as? String ?? ""
-            let isVSCode = termProgram.lowercased().contains("vscode") ||
-                           bundleId.lowercased().contains("vscode")
-            guard isVSCode else {
+            guard Self.isSupportedClient(payload) else {
+                let termProgram = payload["term_program"] as? String ?? ""
+                let bundleId    = payload["bundle_id"]    as? String ?? ""
                 nbLog("Ignored \(name) from \(termProgram.isEmpty ? bundleId : termProgram) (\(projectName))")
                 return
             }
@@ -316,11 +314,7 @@ final class HookServer: @unchecked Sendable {
         let agent = CodingAgent.from(payload["coucou_agent"] as? String)
 
         if agent == .claude {
-            let termProgram = payload["term_program"] as? String ?? ""
-            let bundleId    = payload["bundle_id"]    as? String ?? ""
-            let isVSCode = termProgram.lowercased().contains("vscode") ||
-                           bundleId.lowercased().contains("vscode")
-            guard isVSCode else {
+            guard Self.isSupportedClient(payload) else {
                 Task.detached { [weak self] in
                     self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
                     close(fd)
@@ -370,6 +364,18 @@ final class HookServer: @unchecked Sendable {
             // "ask" → nb-hook outputs nothing → the agent re-asks rather than denying
             self.sendApprovalDecision("ask")
         }
+    }
+
+    /// Claude Code clients the notch follows: VS Code, as upstream, and the
+    /// Claude desktop app's Code tab (upstream issue #32), whose hooks carry an
+    /// empty TERM_PROGRAM, bundle id com.anthropic.claudefordesktop and
+    /// CLAUDE_CODE_ENTRYPOINT=claude-desktop.
+    static func isSupportedClient(_ payload: [String: Any]) -> Bool {
+        let termProgram = (payload["term_program"] as? String ?? "").lowercased()
+        let bundleId    = (payload["bundle_id"]    as? String ?? "").lowercased()
+        let entrypoint  = (payload["entrypoint"]   as? String ?? "").lowercased()
+        return termProgram.contains("vscode") || bundleId.contains("vscode")
+            || bundleId == "com.anthropic.claudefordesktop" || entrypoint == "claude-desktop"
     }
 
     /// What the card shows for a request: the whole thing Allow would authorise.
@@ -994,6 +1000,7 @@ def main():
     payload.setdefault('iterm_session_id', env.get('ITERM_SESSION_ID', ''))
     payload.setdefault('term_session_id', env.get('TERM_SESSION_ID', ''))
     payload.setdefault('bundle_id', env.get('__CFBundleIdentifier', ''))
+    payload.setdefault('entrypoint', env.get('CLAUDE_CODE_ENTRYPOINT', ''))
     if 'cwd' not in payload or not payload['cwd']:
         payload['cwd'] = os.getcwd()
 
@@ -1103,6 +1110,7 @@ def main():
     payload.setdefault('iterm_session_id', env.get('ITERM_SESSION_ID', ''))
     payload.setdefault('term_session_id', env.get('TERM_SESSION_ID', ''))
     payload.setdefault('bundle_id', env.get('__CFBundleIdentifier', ''))
+    payload.setdefault('entrypoint', env.get('CLAUDE_CODE_ENTRYPOINT', ''))
     if 'cwd' not in payload or not payload['cwd']:
         payload['cwd'] = os.getcwd()
 

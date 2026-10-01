@@ -1169,18 +1169,25 @@ function customMochisSection(): HTMLElement {
 /** Mochi out of the island, on the desktop (pet.rs), and who follows the cursor's screen. */
 function desktopMochiSection(): HTMLElement {
   const note = h("div", { class: "hint" });
-  const set = (on: boolean, follow: boolean) => {
-    settings.desktopMochi = on;
-    settings.petFollow = follow;
-    Bridge.petSet(on, follow).catch((err) => { note.textContent = "❌ " + String(err); });
+  const set = (change: Partial<Pick<Settings, "desktopMochi" | "petFollow" | "petWalker" | "petShake" | "petHide">>) => {
+    Object.assign(settings, change);
+    Bridge.petSet(settings.desktopMochi ?? false, settings.petFollow ?? true, settings.petWalker ?? false, settings.petShake ?? true, settings.petHide ?? true)
+      .catch((err) => { note.textContent = "❌ " + String(err); });
   };
   return h("section", {},
     h("h2", {}, h("span", { text: t("Desktop Mochi") })),
     h("div", { class: "hint", text: t("Mochi out of the island, as a companion on your desktop: drag it anywhere, it follows you from screen to screen, says its news in a bubble. Click it for its menu (island, chat, worktrees, settings), double-click to send it home. You can also drag Mochi out of the island and drop it where there's no window.") }),
     h("div", { class: "row" }, h("label", { text: t("Mochi on the desktop") }),
-      toggle(settings.desktopMochi ?? false, (v) => set(v, settings.petFollow ?? true))),
+      toggle(settings.desktopMochi ?? false, (v) => set({ desktopMochi: v }))),
     h("div", { class: "row" }, h("label", { text: t("It follows me to the screen I'm on") }),
-      toggle(settings.petFollow ?? true, (v) => set(settings.desktopMochi ?? false, v))),
+      toggle(settings.petFollow ?? true, (v) => set({ petFollow: v }))),
+    h("div", { class: "row" }, h("label", { text: t("It walks on top of my windows") }),
+      toggle(settings.petWalker ?? false, (v) => set({ petWalker: v }))),
+    h("div", { class: "row" }, h("label", { text: t("Shake the mouse to call it") }),
+      toggle(settings.petShake ?? true, (v) => set({ petShake: v }))),
+    h("div", { class: "row" }, h("label", { text: t("It hides while I present or share my screen") }),
+      toggle(settings.petHide ?? true, (v) => set({ petHide: v }))),
+    h("div", { class: "hint", text: t("Throw it: let go of a drag with speed. Leave it against a side edge and it peeks. Wiggle the cursor over it to pet it. Drop a file on it. Right-click or click it for its menu.") }),
     h("div", { class: "row" }, h("label", { text: t("The island follows me to the screen I'm on") }),
       toggle(settings.screen === "cursor", (v) => { settings.screen = v ? "cursor" : "primary"; void save(); })),
     note,
@@ -1300,6 +1307,25 @@ function petSection(): HTMLElement {
     h("div", { style: "font-weight:600", text: t("Level {level} · {sessions} sessions · 🔥 {streak}-day streak (best {best})", { level: petLevel(p), sessions: p.sessions, streak: p.streak, best: p.bestStreak }) }),
     next ? h("div", { class: "hint", text: t("Next trophy: {name} at {n} sessions.", { name: t(ACCESSORY_LABELS[next[1]]), n: next[0] }) }) : null,
     h("div", { class: "row" }, h("label", { text: t("Wears") }), wears),
+    h("div", { class: "row" },
+      h("label", { text: t("Seasonal outfits") }),
+      toggle(settings.seasonal ?? true, (v) => { settings.seasonal = v; void save(); }),
+      h("span", { class: "hint", text: t("A pumpkin in late October, a Santa hat in December.") }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: t("Your birthday") }),
+      (() => {
+        const b = h("input", { type: "text", value: settings.birthday ?? "", placeholder: "MM-DD", maxlength: "5", style: "width:70px" }) as HTMLInputElement;
+        b.addEventListener("change", () => {
+          const v = b.value.trim();
+          if (v && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v)) { b.value = settings.birthday ?? ""; return; }
+          settings.birthday = v;
+          void save();
+        });
+        return b;
+      })(),
+      h("span", { class: "hint", text: t("A party hat and confetti that day.") }),
+    ),
     h("div", { class: "row" },
       h("label", { text: t("Mochi speaks") }),
       toggle(settings.voice ?? false, (v) => { settings.voice = v; void save(); }),

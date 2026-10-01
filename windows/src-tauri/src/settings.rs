@@ -85,6 +85,23 @@ pub struct Settings {
     /// Where it sits on each screen, relative to the work area (0…1).
     #[serde(default)]
     pub pet_positions: std::collections::HashMap<String, [f64; 2]>,
+    /// The pet walks on top of your windows (off), comes when you shake the
+    /// mouse (on), steps out of sight while you present or share (on).
+    #[serde(default)]
+    pub pet_walker: bool,
+    #[serde(default = "default_true")]
+    pub pet_shake: bool,
+    #[serde(default = "default_true")]
+    pub pet_hide: bool,
+    /// Seasonal outfits (pumpkin, Santa hat, party hat): on by default.
+    #[serde(default = "default_true")]
+    pub seasonal: bool,
+    /// The user's birthday, "MM-dd" (empty: none).
+    #[serde(default)]
+    pub birthday: String,
+    /// The year the birthday's confetti last went off (Rust only).
+    #[serde(default)]
+    pub birthday_party_year: i32,
 }
 
 fn default_true() -> bool {
@@ -149,6 +166,12 @@ impl Default for Settings {
             desktop_mochi: false,
             pet_follow: true,
             pet_positions: Default::default(),
+            pet_walker: false,
+            pet_shake: true,
+            pet_hide: true,
+            seasonal: true,
+            birthday: String::new(),
+            birthday_party_year: 0,
         }
     }
 }

@@ -5,7 +5,10 @@
   "windows": [
     "pet",
     "pet-bubble",
-    "pet-menu"
+    "pet-menu",
+    "pet-approval",
+    "pet-squad",
+    "pet-visitor"
   ],
   "permissions": [
     "core:event:default"

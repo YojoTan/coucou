@@ -131,6 +131,58 @@ pub struct Pet {
 
 // ── ExtrasParse ───────────────────────────────────────────────────────────────
 
+/// The seasonal outfit for a day: a party hat on the birthday ("MM-dd"), a
+/// pumpkin the last two weeks of October, a Santa hat in December, else none.
+pub fn season(month: u32, day: u32, birthday: Option<&str>) -> Option<&'static str> {
+    if birthday.is_some_and(|b| b == format!("{month:02}-{day:02}")) {
+        return Some("partyHat");
+    }
+    if month == 10 && day >= 15 {
+        return Some("pumpkin");
+    }
+    (month == 12).then_some("santaHat")
+}
+
+/// A birthday as Settings keeps it: "MM-dd", a real day of the year.
+pub fn valid_birthday(b: &str) -> bool {
+    let Some((m, d)) = b.split_once('-') else { return false };
+    let (Ok(m), Ok(d)) = (m.parse::<u32>(), d.parse::<u32>()) else { return false };
+    b.len() == 5 && (1..=12).contains(&m) && d >= 1 && d <= [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m as usize - 1]
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Season {
+    pub outfit: Option<&'static str>,
+    /// The birthday's confetti and toast: true once that year.
+    pub party: bool,
+}
+
+/// Today's outfit, by the PC's local date; the first ask on the birthday says party.
+pub fn season_now(app: &AppHandle) -> Season {
+    use tauri::{Emitter, Manager};
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    let Some(shared) = app.try_state::<crate::Shared>() else { return Season { outfit: None, party: false } };
+    let (on, birthday, party_year) = {
+        let s = shared.settings.lock().unwrap();
+        (s.seasonal, s.birthday.clone(), s.birthday_party_year)
+    };
+    if !on {
+        return Season { outfit: None, party: false };
+    }
+    let outfit = season(t.wMonth as u32, t.wDay as u32, Some(birthday.as_str()).filter(|b| valid_birthday(b)));
+    let party = outfit == Some("partyHat") && party_year != t.wYear as i32;
+    if party {
+        let s = {
+            let mut current = shared.settings.lock().unwrap();
+            current.birthday_party_year = t.wYear as i32;
+            current.clone()
+        };
+        let _ = crate::settings::save(&s);
+        let _ = app.emit("settings-changed", s);
+    }
+    Season { outfit, party }
+}
+
 /// The video-call link in an event's URL, location or notes: Meet, Zoom, Teams,
 /// Webex, Around (ExtrasParse.meetingLink, without a regex engine).
 pub fn meeting_link(texts: &[Option<&str>]) -> Option<String> {
@@ -262,6 +314,18 @@ mod tests {
         assert_eq!(command_output("3 pods running", 0), ("3 pods running".into(), "ok"), "exit 0");
         assert_eq!(command_output("", 2), ("".into(), "error"), "exit code");
         assert_eq!(command_output("\r\nok: fine\r\n", 1), ("fine".into(), "ok"), "Windows line ends");
+    }
+
+    #[test]
+    fn seasonal_outfits_by_date_and_birthday() {
+        // tests/ExtrasParseTests.swift, line for line.
+        assert_eq!(season(10, 20, None), Some("pumpkin"), "late October");
+        assert_eq!(season(10, 1, None), None, "early October");
+        assert_eq!(season(12, 24, None), Some("santaHat"), "December");
+        assert_eq!(season(10, 20, Some("10-20")), Some("partyHat"), "birthday wins");
+        assert_eq!(season(3, 4, Some("10-20")), None, "ordinary day");
+        assert!(valid_birthday("02-29") && valid_birthday("12-31"));
+        assert!(!valid_birthday("13-01") && !valid_birthday("04-31") && !valid_birthday("4-1") && !valid_birthday(""));
     }
 
     #[test]

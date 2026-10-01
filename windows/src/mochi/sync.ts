@@ -92,8 +92,8 @@ export function applyExtras(e: BotEngine, taskId: string | null, isMain: boolean
         accessory = "glasses";
         break;
       default:
-        // The trophy, unless the focused pill already dresses Mochi.
-        if (accessory === "none" && !(taskId ?? "").startsWith("custom_")) accessory = x.pet?.worn ?? "none";
+        // The season's outfit, else the trophy — unless the focused pill already dresses Mochi.
+        if (accessory === "none" && !(taskId ?? "").startsWith("custom_")) accessory = x.season ?? x.pet?.worn ?? "none";
     }
   }
   e.accessory = accessory;

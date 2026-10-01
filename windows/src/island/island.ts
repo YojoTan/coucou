@@ -224,21 +224,7 @@ export class Island {
       openUrl: (url) => {
         if (url) void Bridge.openUrl(url);
       },
-      decide: (d) => {
-        const req = State.pendingApproval;
-        void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
-        if (!req) return;
-        Sound.play(d === "allow" ? "approve" : "blip");
-        // "terminal": no decision at all — Claude Code asks there, in full.
-        if (d === "terminal") void Bridge.approvalDecline(req.requestId);
-        else void Bridge.approvalDecision(req.requestId, d);
-        State.pendingApproval = null;
-        State.isPinned = false;
-        this.fsm.pinned = false;
-        approvalResolved(req.sessionKey);
-        State.setPillBadge(taskIdFor(agentOf(req.agent)), null);
-        this.setView(State.defaultView());
-      },
+      decide: (d) => this.decideApproval(d),
       toggleSound: () => {
         State.settings.soundEnabled = !State.settings.soundEnabled;
         Sound.setEnabled(State.settings.soundEnabled);
@@ -485,6 +471,69 @@ export class Island {
     State.lastActivity = performance.now();
     this.homeCollapseAt = null;
     State.notify();
+  }
+
+  /** The island's card or the pet's: the one place a permission is answered. */
+  private decideApproval(d: "allow" | "deny" | "terminal") {
+    const req = State.pendingApproval;
+    void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
+    if (!req) return;
+    Sound.play(d === "allow" ? "approve" : "blip");
+    // "terminal": no decision at all — Claude Code asks there, in full.
+    if (d === "terminal") void Bridge.approvalDecline(req.requestId);
+    else void Bridge.approvalDecision(req.requestId, d);
+    State.pendingApproval = null;
+    State.isPinned = false;
+    this.fsm.pinned = false;
+    approvalResolved(req.sessionKey);
+    State.setPillBadge(taskIdFor(agentOf(req.agent)), null);
+    this.setView(State.defaultView());
+  }
+
+  /**
+   * The pet's permission card was clicked. The island's rules again, here: the
+   * request must be the one pending, and Allow only when the card showed the
+   * whole command and has been up for 0.7 s.
+   */
+  petDecide(requestId: string, d: "allow" | "deny" | "terminal", fits: boolean, shownAt: number | null) {
+    const req = State.pendingApproval;
+    if (!req || req.requestId !== requestId) return;
+    if (d === "allow" && (!fits || shownAt == null || performance.now() - shownAt < 700)) return;
+    this.decideApproval(d);
+  }
+
+  /** A file dropped on the desktop pet: the island asks what to do with it. */
+  petDropped(path: string) {
+    const name = path.split(/[\\/]/).pop() || "file";
+    State.droppedFile = { name, path };
+    State.promptContext = { kind: "file", name, path };
+    State.chatHistory = [];
+    void Bridge.chatReset();
+    Sound.play("gulp");
+    this.alert("choose");
+    void Bridge.ingestFile(path)
+      .then((file) => {
+        State.droppedFile = { name: file.name, path: file.path };
+        State.promptContext = { kind: "file", name: file.name, path: file.path };
+        State.notify();
+      })
+      .catch((err) => {
+        State.noteMessage = String(err).replace(/^Error:\s*/, "");
+        this.setView("note");
+        Sound.play("error");
+      });
+  }
+
+  /** A squad member was clicked: that session's window, or that Orca terminal. */
+  async petOpenSquad(id: string) {
+    if (id.startsWith("orca:")) {
+      void Bridge.orcaFocus(id.slice(5));
+      return;
+    }
+    const s = byKey(id);
+    if (!s) return;
+    if (s.host?.length && (await Bridge.focusSession(s.host, s.cwd || null))) return;
+    void Bridge.openInVSCode(s.cwd || null);
   }
 
   /** An approval, an Orca question or a LAN code/file waits for a click: those pins are not ours to drop. */

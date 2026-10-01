@@ -8,7 +8,9 @@ import type { BotEngine } from "./engine";
 /** ExtrasParse.MochiAccessory — same names, so settings and scripts agree. */
 export type MochiAccessory =
   | "none" | "cap" | "hardhat" | "crown" | "bow" | "antenna"
-  | "glasses" | "sunglasses" | "sleepMask" | "umbrella" | "scarf";
+  | "glasses" | "sunglasses" | "sleepMask" | "umbrella" | "scarf"
+  // Seasonal (Rust extras::season): late October, December, the birthday.
+  | "pumpkin" | "santaHat" | "partyHat";
 
 /** The ones a custom Mochi can pick (the others belong to weather, mode, trophies). */
 export const WEARABLE: MochiAccessory[] = ["none", "cap", "hardhat", "crown", "bow", "antenna", "glasses", "sunglasses", "scarf"];
@@ -233,6 +235,89 @@ export function drawAccessory(e: BotEngine, x: CanvasRenderingContext2D, body: P
         x.ellipse(cx - r * 1.25 + i * r * 1.2 + R * 0.025, top + k * ry * 1.6 + R * 0.06, R * 0.025, R * 0.06, 0, 0, Math.PI * 2);
         x.fill();
       }
+      break;
+    }
+    case "pumpkin": {
+      // A carved pumpkin worn as a helmet: ribbed orange shell, a stalk, a grin.
+      const top = -ry * 1.32, base = -ry * 0.6;
+      const shell = new Path2D();
+      shell.moveTo(-rx * 0.86, base);
+      shell.bezierCurveTo(-rx * 0.95, top, rx * 0.95, top, rx * 0.86, base);
+      shell.closePath();
+      const g = x.createLinearGradient(0, top, 0, base);
+      g.addColorStop(0, "#FFA23A");
+      g.addColorStop(1, "#E8650C");
+      x.fillStyle = g;
+      x.fill(shell);
+      x.strokeStyle = "rgba(184,74,6,0.55)";
+      x.lineWidth = line * 0.8;
+      for (const k of [-0.45, 0, 0.45]) {
+        x.beginPath();
+        x.moveTo(rx * k * 0.6, top + ry * 0.12);
+        x.quadraticCurveTo(rx * k * 1.25, (top + base) / 2, rx * k, base);
+        x.stroke();
+      }
+      x.fillStyle = "#4D7C2A";
+      x.beginPath();
+      x.roundRect(-R * 0.05, top - R * 0.02, R * 0.1, R * 0.22, R * 0.03);
+      x.fill();
+      x.strokeStyle = "#3A1A00";
+      x.lineWidth = line * 1.2;
+      x.beginPath();
+      x.moveTo(-rx * 0.32, base - ry * 0.18);
+      x.quadraticCurveTo(0, base - ry * 0.02, rx * 0.32, base - ry * 0.18);
+      x.stroke();
+      x.fillStyle = "#3A1A00";
+      for (const sd of [-1, 1]) {
+        x.beginPath();
+        x.moveTo(sd * rx * 0.3, base - ry * 0.48);
+        x.lineTo(sd * rx * 0.18, base - ry * 0.32);
+        x.lineTo(sd * rx * 0.42, base - ry * 0.32);
+        x.closePath();
+        x.fill();
+      }
+      break;
+    }
+    case "santaHat": {
+      // A tall cone that flops over to the right, its pompom swinging.
+      const tipX = rx * 1.05 + Math.sin(t * 1.4) * R * 0.05, tipY = -ry * 1.22;
+      const hat = new Path2D();
+      hat.moveTo(-rx * 0.7, -ry * 0.76);
+      hat.bezierCurveTo(-rx * 0.45, -ry * 1.75, rx * 0.55, -ry * 2.05, tipX, tipY);
+      hat.bezierCurveTo(rx * 0.7, -ry * 1.5, rx * 0.45, -ry * 1.15, rx * 0.66, -ry * 0.78);
+      hat.closePath();
+      const g = x.createLinearGradient(0, -ry * 1.6, 0, -ry * 0.76);
+      g.addColorStop(0, "#F04848");
+      g.addColorStop(1, "#B91C1C");
+      x.fillStyle = g;
+      x.fill(hat);
+      x.fillStyle = "#FFFFFF";
+      x.beginPath();
+      x.roundRect(-rx * 0.8, -ry * 0.86, rx * 1.6, ry * 0.2, ry * 0.1);
+      x.fill();
+      ellipse(x, tipX, tipY, R * 0.12, R * 0.12);
+      x.fill();
+      break;
+    }
+    case "partyHat": {
+      const cone = new Path2D();
+      cone.moveTo(-rx * 0.38, -ry * 0.84);
+      cone.lineTo(rx * 0.08, -ry * 1.7);
+      cone.lineTo(rx * 0.46, -ry * 0.8);
+      cone.closePath();
+      const g = x.createLinearGradient(0, -ry * 1.7, 0, -ry * 0.8);
+      g.addColorStop(0, "#A78BFA");
+      g.addColorStop(1, "#7C3AED");
+      x.fillStyle = g;
+      x.fill(cone);
+      ["#FBBF24", "#34D399", "#F472B6"].forEach((c, i) => {
+        x.fillStyle = c;
+        ellipse(x, rx * (0.02 - i * 0.04) + R * 0.045, -ry * (0.98 + i * 0.22) + R * 0.045, R * 0.045, R * 0.045);
+        x.fill();
+      });
+      x.fillStyle = "#FBBF24";
+      ellipse(x, rx * 0.08, -ry * 1.7, R * 0.1, R * 0.1);
+      x.fill();
       break;
     }
     case "scarf": {

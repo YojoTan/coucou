@@ -95,7 +95,8 @@ export const Bridge = {
   /** Mochi dropped out of the island: true when it went to the desktop (no window there). */
   petDrop: () => call<boolean>("pet_drop"),
   /** Settings › Extras: out on the desktop, and whether it follows the cursor's screen. */
-  petSet: (on: boolean, follow: boolean) => callOrThrow<void>("pet_set", { on, follow }),
+  petSet: (on: boolean, follow: boolean, walker: boolean, shake: boolean, hide: boolean) =>
+    callOrThrow<void>("pet_set", { on, follow, walker, shake, hide }),
   // ── Worktrees ─────────────────────────────────────────────────────────────
   worktreesState: () => call<WtRepoState[]>("worktrees_state"),
   /** The view or the pet's menu shows them: keep them fresh meanwhile. */
@@ -112,6 +113,8 @@ export const Bridge = {
   // ── Extras ────────────────────────────────────────────────────────────────
   /** Settings › Extras → City: the place Open-Meteo knows by that name. */
   extrasGeocode: (city: string, language: string) => call<{ name: string; lat: number; lon: number } | null>("extras_geocode", { city, language }),
+  /** Today's seasonal outfit; `party` is true once on the birthday. */
+  extrasSeason: () => call<{ outfit: string | null; party: boolean }>("extras_season"),
   /** A city or calendar address changed: fetch now. */
   extrasRefresh: (what: "weather" | "calendar") => call<void>("extras_refresh", { what }),
   /** A custom Mochi's card → Run now. */

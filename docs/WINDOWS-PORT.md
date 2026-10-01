@@ -8,7 +8,7 @@ it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
 ## State
 
 Windows column updated from the commits on `main` (Windows 0.4.0, "Windows
-parity" 1/n to 8/n). "Done" means built and unit-tested on Windows; what still
+parity" 1/n to 9/n). "Done" means built and unit-tested on Windows; what still
 wants a live check on a real setup is said in the row.
 
 | Feature | macOS | Windows |
@@ -28,9 +28,9 @@ wants a live check on a real setup is said in the row.
 | Coucou's sounds in a call: smart, never lost (#5) | done | done (parity 3/n) |
 | Worktrees from Mochi: the provider protocol, island view, pill, header shortcut (#6) | done | done (parity 7/n; providers run in cmd) |
 | The desktop pet's own menu (#6) | done | done (parity 8/n) |
-| The pet as a companion: approve from it, drop files on it, ask it, the squad, hide while presenting (#7) | done | — |
-| The pet's physics and moods: throw, peek, pet, "come here", the window walker (#7) | done | — |
-| Seasonal outfits and LAN visitors (#7) | done | — |
+| The pet as a companion: approve from it, drop files on it, ask it, the squad, hide while presenting (#7) | done | done (parity 9/n; the card keeps the island's rules: no Always, Allow only when the whole command shows) |
+| The pet's physics and moods: throw, peek, pet, "come here", the window walker (#7) | done | done (parity 9/n) — wants a live try |
+| Seasonal outfits and LAN visitors (#7) | done | done (parity 9/n) |
 
 ## Step 0 — build, and check the LAN fix (do this first)
 

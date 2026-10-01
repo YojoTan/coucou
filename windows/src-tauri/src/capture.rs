@@ -243,6 +243,77 @@ fn safe_stem(s: &str) -> String {
     if cut.is_empty() { "window".into() } else { cut }
 }
 
+/// A top-level window of another app, as the desktop pet sees it.
+#[derive(Clone, Debug)]
+pub struct TopWindow {
+    pub hwnd: isize,
+    /// Left, top, right, bottom (DWM frame bounds, physical pixels).
+    pub rect: (i32, i32, i32, i32),
+    pub titled: bool,
+    /// An always-on-top or tool window (an overlay, a palette), not an ordinary one.
+    pub floating: bool,
+    /// The process's exe file name, lowercase ("powerpnt.exe").
+    pub exe: String,
+}
+
+struct Collect {
+    me: u32,
+    out: Vec<TopWindow>,
+    exes: std::collections::HashMap<u32, String>,
+}
+
+unsafe extern "system" fn collect_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST};
+    let c = unsafe { &mut *(lparam.0 as *mut Collect) };
+    if !unsafe { IsWindowVisible(hwnd) }.as_bool() || unsafe { IsIconic(hwnd) }.as_bool() {
+        return true.into();
+    }
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    if pid == c.me || NOT_A_WINDOW.contains(&class_name(hwnd).as_str()) {
+        return true.into();
+    }
+    let mut cloaked = 0u32;
+    if unsafe { DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, (&mut cloaked as *mut u32).cast(), 4).is_ok() } && cloaked != 0 {
+        return true.into();
+    }
+    let Some(r) = bounds(hwnd) else { return true.into() };
+    let ex = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    let exe = c
+        .exes
+        .entry(pid)
+        .or_insert_with(|| exe_of(pid).and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase())).unwrap_or_default())
+        .clone();
+    c.out.push(TopWindow {
+        hwnd: hwnd.0 as isize,
+        rect: (r.left, r.top, r.right, r.bottom),
+        titled: !window_title(hwnd).trim().is_empty(),
+        floating: ex & (WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0) != 0,
+        exe,
+    });
+    true.into()
+}
+
+/// Every shown window of other apps, front to back.
+pub fn top_windows() -> Vec<TopWindow> {
+    let mut c = Collect { me: std::process::id(), out: Vec::new(), exes: Default::default() };
+    unsafe {
+        let _ = EnumWindows(Some(collect_window), LPARAM(&mut c as *mut Collect as isize));
+    }
+    c.out
+}
+
+/// Where a window is now, while it is still shown (the pet's perch).
+pub fn window_rect(hwnd: isize) -> Option<(i32, i32, i32, i32)> {
+    let h = HWND(hwnd as *mut _);
+    unsafe {
+        if !windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(h)).as_bool() || !IsWindowVisible(h).as_bool() || IsIconic(h).as_bool() {
+            return None;
+        }
+    }
+    bounds(h).map(|r| (r.left, r.top, r.right, r.bottom))
+}
+
 /// Whether a window (not the desktop, not the taskbar) is under the cursor.
 pub fn window_under_cursor() -> bool {
     let mut point = POINT::default();

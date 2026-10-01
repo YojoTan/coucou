@@ -183,6 +183,12 @@ export function mirror(agent: AgentKind) {
   task.sessionKey = s.key;
 }
 
+/** Every live session, newest first (the desktop pet's squad). */
+export function liveSessions(): AgentSession[] {
+  const now = Date.now();
+  return [...sessions.values()].filter((s) => now - s.lastSeen <= STALE_MS).sort((a, b) => b.seq - a.seq);
+}
+
 /** Looks a session up again by key (a timer may outlive it). */
 export function byKey(key: string): AgentSession | null {
   return sessions.get(key) ?? null;

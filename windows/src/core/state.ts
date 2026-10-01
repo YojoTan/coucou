@@ -197,6 +197,8 @@ export interface Extras {
   customStatus: Record<string, { text: string; state: string; at: number }>;
   calendarError?: string | null;
   weatherError?: string | null;
+  /** Today's seasonal outfit, if any (Rust extras::season). */
+  season?: MochiAccessory | null;
 }
 
 /** Discord (Rust discord.rs). */
@@ -308,12 +310,18 @@ export interface Settings {
   localUrl?: boolean;
   weatherPlace?: { name: string; lat: number; lon: number } | null;
   pet?: PetSave;
+  /** Seasonal outfits (on by default) and the user's birthday, "MM-dd". */
+  seasonal?: boolean;
+  birthday?: string;
   /** Mochi says things out loud: off by default. */
   voice?: boolean;
   worktreeRepos?: WtRepo[];
   /** The desktop Mochi is out (Rust pet.rs changes it; Settings › Extras too). */
   desktopMochi?: boolean;
   petFollow?: boolean;
+  petWalker?: boolean;
+  petShake?: boolean;
+  petHide?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

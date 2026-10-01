@@ -20,6 +20,7 @@ mod mic;
 mod openai_chat;
 mod opencode;
 mod pet;
+mod pet_brain;
 mod orca;
 mod pipe;
 mod secrets;
@@ -134,13 +135,20 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             // The desktop Mochi comes out and goes home through Rust (pet.rs).
             settings.desktop_mochi = current.desktop_mochi;
             settings.pet_follow = current.pet_follow;
+            settings.pet_walker = current.pet_walker;
+            settings.pet_shake = current.pet_shake;
+            settings.pet_hide = current.pet_hide;
         } else {
             settings.pet = extras::Pet { wearing: settings.pet.wearing.clone(), ..current.pet.clone() };
         }
         settings.custom_mochis = extras::sanitize_customs(std::mem::take(&mut settings.custom_mochis));
         settings.worktree_repos = worktrees::sanitize_repos(std::mem::take(&mut settings.worktree_repos));
-        // Only Rust remembers where the pet sits.
+        // Only Rust remembers where the pet sits, and when the birthday was last celebrated.
         settings.pet_positions = current.pet_positions.clone();
+        settings.birthday_party_year = current.birthday_party_year;
+        if !settings.birthday.is_empty() && !extras::valid_birthday(&settings.birthday) {
+            settings.birthday = current.birthday.clone();
+        }
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
         let engine_changed = current.chat_engine != settings.chat_engine
@@ -653,6 +661,12 @@ async fn extras_geocode(webview: Webview, city: String, language: String) -> Res
     Ok(extras::weather::geocode(&city, if language.is_empty() { "en" } else { &language }).await)
 }
 
+/// Today's seasonal outfit (and, once on the birthday, its party).
+#[tauri::command]
+fn extras_season(app: AppHandle) -> extras::Season {
+    extras::season_now(&app)
+}
+
 /// A city or a calendar address changed: fetch now rather than in 15 minutes.
 #[tauri::command]
 async fn extras_refresh(app: AppHandle, what: String) {
@@ -766,15 +780,51 @@ fn pet_menu_choose(app: AppHandle, choice: serde_json::Value) {
     pet::choose(&app, choice);
 }
 
-/// Settings › Extras › "Mochi on the desktop" and "it follows me".
+/// "Ask Mochi…" was clicked: the menu takes the keyboard while it shows.
 #[tauri::command]
-fn pet_set(app: AppHandle, webview: Webview, on: bool, follow: bool) -> Result<(), String> {
+fn pet_menu_keyboard(app: AppHandle) {
+    pet::menu_keyboard(&app);
+}
+
+/// The island shows or hides the pet's permission card or squad.
+#[tauri::command]
+fn pet_card(app: AppHandle, kind: String, show: bool, count: usize) {
+    pet::card(&app, &kind, show, count);
+}
+
+/// A toast, a permission, an answer: a peeking pet comes out for a moment.
+#[tauri::command]
+fn pet_news(app: AppHandle) {
+    pet::news(&app);
+}
+
+/// The pet's menu → "Hide 15 min".
+#[tauri::command]
+fn pet_hide_for(app: AppHandle, seconds: u64) {
+    pet::hide_for(&app, seconds);
+}
+
+/// A paired Mochi sent a file or a message: its Mochi walks in to say so.
+#[tauri::command]
+fn pet_visit(app: AppHandle, name: String, saying: String) {
+    let name: String = name.chars().take(40).collect();
+    let saying: String = saying.chars().take(140).collect();
+    pet::visit(&app, &name, &saying);
+}
+
+/// Settings › Extras › Desktop Mochi: out, follows me, walks on windows,
+/// comes on a shake, hides while presenting.
+#[tauri::command]
+fn pet_set(app: AppHandle, webview: Webview, on: bool, follow: bool, walker: bool, shake: bool, hide: bool) -> Result<(), String> {
     only(&webview, SETTINGS_LABEL, "pet_set")?;
     if let Some(shared) = app.try_state::<Shared>() {
         let s = {
             let mut current = shared.settings.lock().unwrap();
             current.desktop_mochi = on;
             current.pet_follow = follow;
+            current.pet_walker = walker;
+            current.pet_shake = shake;
+            current.pet_hide = hide;
             current.clone()
         };
         let _ = settings::save(&s);
@@ -964,8 +1014,21 @@ fn ingest_file(webview: Webview, dropped: State<Dropped>, path: String) -> Resul
 }
 
 /// Remembers what the OS dropped on the island, for `ingest_file`.
+/// A file over the desktop pet, or dropped on it (a file, not a folder).
+fn pet_drop_event(app: &AppHandle, event: &DragDropEvent) {
+    match event {
+        DragDropEvent::Enter { .. } | DragDropEvent::Over { .. } => pet::file_drop(app, true, None),
+        DragDropEvent::Drop { paths, .. } => {
+            if let Some(p) = paths.iter().find(|p| p.is_file()) {
+                pet::file_drop(app, false, Some(p.to_string_lossy().to_string()));
+            }
+        }
+        _ => {}
+    }
+}
+
 fn remember_drop(app: &AppHandle, label: &str, paths: &[std::path::PathBuf]) {
-    if label != island::WINDOW_LABEL {
+    if label != island::WINDOW_LABEL && label != pet::PET {
         return;
     }
     let dropped = app.state::<Dropped>();
@@ -1113,6 +1176,11 @@ pub fn run() {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
                 remember_drop(window.app_handle(), window.label(), paths);
             }
+            if window.label() == pet::PET {
+                if let WindowEvent::DragDrop(d) = event {
+                    pet_drop_event(window.app_handle(), d);
+                }
+            }
             // The pet was dragged: its bubble follows, its spot is saved.
             if let (WindowEvent::Moved(_), pet::PET) = (event, window.label()) {
                 pet::moved(window.app_handle());
@@ -1121,6 +1189,11 @@ pub fn run() {
         .on_webview_event(|webview, event| {
             if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
                 remember_drop(webview.app_handle(), webview.label(), paths);
+            }
+            if webview.label() == pet::PET {
+                if let WebviewEvent::DragDrop(d) = event {
+                    pet_drop_event(webview.app_handle(), d);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1173,6 +1246,11 @@ pub fn run() {
             pet_menu_toggle,
             pet_menu_size,
             pet_menu_choose,
+            pet_menu_keyboard,
+            pet_card,
+            pet_news,
+            pet_hide_for,
+            pet_visit,
             pet_set,
             worktrees_state,
             worktrees_watch,
@@ -1184,6 +1262,7 @@ pub fn run() {
             worktrees_pick_repo,
             extras_geocode,
             extras_refresh,
+            extras_season,
             custom_run,
             local_url_token,
             discord_sign_out,

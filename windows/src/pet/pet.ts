@@ -4,9 +4,10 @@
 // click opens its menu, a right click too, a double click sends it home.
 
 import "./pet.css";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { BotEngine, hexToRGB } from "../mochi/engine";
+import { Ease } from "../core/anim";
 import type { BotStateName } from "../core/layout";
 import type { MochiAccessory } from "../mochi/accessories";
 import { t } from "../core/i18n";
@@ -96,6 +97,15 @@ void listen<boolean>("pet-teleport", (e) => {
     engine.eyeOverrideUntil = now() + 0.4;
   }
 });
+// A throw hit an edge.
+void listen("pet-bump", () => engine.squash());
+// A file over it: surprised; dropped: it gulps it.
+void listen("pet-hungry", () => engine.triggerEmote("surprised"));
+void listen("pet-gulp", () => {
+  engine.squash();
+  engine.eyeOverride = "happy";
+  engine.eyeOverrideUntil = now() + 1.2;
+});
 void listen<PetFx>("pet-fx", (e) => {
   const fx = e.payload;
   if (fx.kind === "greet") engine.greet();
@@ -152,6 +162,34 @@ document.addEventListener("mouseup", (e) => {
     clickTimer = null;
     void invoke("pet_menu_toggle");
   }, 380);
+});
+// Petting: five quick back-and-forths of the cursor over Mochi → hearts.
+const strokes: { t: number; dir: number }[] = [];
+let lastX: number | null = null;
+let lastPetted = 0;
+document.addEventListener("mousemove", (e) => {
+  if (e.buttons !== 0) return;
+  const x = e.screenX;
+  const t = performance.now() / 1000;
+  if (lastX != null && Math.abs(x - lastX) > 2) {
+    const dir = x > lastX ? 1 : -1;
+    if (strokes.at(-1)?.dir !== dir) strokes.push({ t, dir });
+    while (strokes.length && t - strokes[0].t > 1.2) strokes.shift();
+    if (strokes.length >= 5 && t - lastPetted > 2) {
+      lastPetted = t;
+      strokes.length = 0;
+      engine.emit("heart", 5);
+      engine.eyeOverride = "happy";
+      engine.eyeOverrideUntil = t + 1.6;
+      engine.anim("blush", [[1, 200, Ease.out], [1, 900, Ease.lin], [0, 500, Ease.inOut]]);
+      void emitTo("island", "pet-sound", "love");
+    }
+  }
+  lastX = x;
+});
+document.addEventListener("mouseleave", () => {
+  lastX = null;
+  strokes.length = 0;
 });
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();

@@ -115,7 +115,22 @@ export function petSessionFinished() {
 export const ACCESSORY_LABELS: Record<MochiAccessory, string> = {
   none: "Nothing", cap: "Cap", hardhat: "Hard hat", crown: "Crown", bow: "Bow", antenna: "Antenna",
   glasses: "Glasses", sunglasses: "Sunglasses", sleepMask: "Sleep mask", umbrella: "Umbrella", scarf: "Scarf",
+  pumpkin: "Pumpkin", santaHat: "Santa hat", partyHat: "Party hat",
 };
+
+/** Today's outfit (Rust reads the date); on the birthday, confetti and a toast once that day. */
+async function refreshSeason() {
+  const s = await Bridge.extrasSeason();
+  if (!s) return;
+  State.extras.season = (s.outfit ?? null) as MochiAccessory | null;
+  if (s.party) {
+    window.setTimeout(() => {
+      for (const fn of petListeners) fn();
+      State.showToast(t("🎂 Happy birthday!"), "#A78BFA", 6);
+    }, 1000);
+  }
+  State.notify();
+}
 
 // ── Custom Mochis ─────────────────────────────────────────────────────────────
 
@@ -240,8 +255,12 @@ function onWeather(u: { weather: WeatherNow | null; error: string | null }) {
 
 export function registerExtrasHandlers(island: Island) {
   refreshPet();
-  // Scruffy comes with the days.
-  window.setInterval(refreshPet, 60 * 60 * 1000);
+  void refreshSeason();
+  // Scruffy comes with the days, and so do the seasons.
+  window.setInterval(() => {
+    refreshPet();
+    void refreshSeason();
+  }, 60 * 60 * 1000);
   State.subscribe(() => {
     const p = State.settings.pet;
     if (p && (p.sessions !== State.extras.pet?.sessions || worn(petSave()) !== State.extras.pet?.worn)) refreshPet();

@@ -78,6 +78,17 @@ function render() {
     h("i", { style: `background:${data.color}` }),
     h("div", {}, h("b", { text: "Mochi" }), h("span", { text: data.status })),
   ));
+  // A quick question: the answer shows in the pet's bubble (and in the island's chat).
+  const question = h("input", { type: "text", class: "pm-ask-input", placeholder: t("Ask Mochi…"), spellcheck: "false", maxlength: "2000" }) as HTMLInputElement;
+  question.addEventListener("mousedown", () => void invoke("pet_menu_keyboard"));
+  question.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const q = question.value.trim();
+    if (!q) return;
+    question.value = "";
+    choose({ kind: "ask", text: q });
+  });
+  card.append(h("div", { class: "pm-ask" }, h("span", { class: "pm-spark", text: "✦" }), question));
   const shortcuts = h("div", { class: "pm-shortcuts" },
     shortcut(ICONS.house, t("Island"), () => choose({ kind: "island" })),
     shortcut(ICONS.bubble, t("Chat"), () => choose({ kind: "chat" })),
@@ -86,7 +97,11 @@ function render() {
   shortcuts.append(shortcut(ICONS.gear, t("Settings"), () => choose({ kind: "settings" })));
   card.append(shortcuts);
   for (const repo of data.repos) card.append(repoBlock(repo));
-  card.append(h("div", { class: "pm-foot" }, h("button", { text: `↥ ${t("Back to the island")}`, onclick: () => void invoke("pet_dock") })));
+  card.append(h("div", { class: "pm-foot" },
+    h("button", { text: `◌ ${t("Hide 15 min")}`, onclick: () => { void invoke("pet_menu_toggle"); void invoke("pet_hide_for", { seconds: 900 }); } }),
+    h("span", { class: "grow" }),
+    h("button", { text: `↥ ${t("Back to the island")}`, onclick: () => void invoke("pet_dock") }),
+  ));
   root.append(card);
   // Rust sizes the window to the card.
   requestAnimationFrame(() => void invoke("pet_menu_size", { height: Math.ceil(card.getBoundingClientRect().height) }));

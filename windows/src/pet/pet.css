@@ -309,3 +309,149 @@ body.pet-page {
 .pm-foot button:hover {
   color: #c5c8cd;
 }
+
+/* The bubble saying something longer (an answer): a rounded block, up to 5 lines. */
+.bubble.say {
+  white-space: normal;
+  border-radius: 12px;
+  padding: 7px 11px;
+  max-width: 250px;
+  line-height: 1.35;
+}
+
+.bubble.say span {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+#bubble-row {
+  align-items: center;
+}
+
+/* The menu's question field and its foot. */
+.pm-ask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pm-spark {
+  color: #a5b4fc;
+  font-size: 11px;
+}
+
+.pm-ask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: 400 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  outline: none;
+  cursor: text;
+}
+
+.pm-ask-input::placeholder {
+  color: #8e939c;
+}
+
+.pm-foot {
+  align-items: center;
+}
+
+.pm-foot .grow {
+  flex: 1 1 auto;
+}
+
+/* The permission card beside the pet. */
+.pa-card {
+  box-sizing: border-box;
+  width: 300px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(15, 17, 19, 0.97);
+  border: 1px solid rgba(245, 165, 36, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pa-who {
+  font: 600 11.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pa-code {
+  font: 400 11px "Cascadia Mono", Consolas, monospace;
+  color: #e8e9ec;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  /* Transparent borders instead of vertical padding: overflow is clipped at the
+     padding edge, so no sliver of a third line shows (and the fit test is exact). */
+  padding: 0 8px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  line-height: 15px;
+  max-height: 30px;
+  overflow: hidden;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.pa-row {
+  display: flex;
+  gap: 6px;
+}
+
+.pa-btn {
+  border: 0;
+  font: 600 11.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: default;
+}
+
+.pa-btn.allow {
+  background: rgba(48, 164, 108, 0.4);
+}
+
+.pa-btn.allow.live {
+  background: #30a46c;
+}
+
+.pa-btn.review {
+  background: #3b82f6;
+}
+
+/* The squad: a capsule of tiny Mochis. */
+.squad {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.squad-bot {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  cursor: default;
+}

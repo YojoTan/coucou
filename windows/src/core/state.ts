@@ -97,12 +97,28 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_spotify", "Spotify", "#1DB954", "n8n"),
   task("integration_lan", "Mochis", "#F472B6", "n8n"),
   task("integration_discord", "Discord", "#5865F2", "n8n"),
+  task("integration_calendar", "Calendar", "#FF6B6B", "n8n"),
+  // macOS calls it "Mac".
+  task("integration_system", "PC", "#94A3B8", "n8n"),
+  task("integration_weather", "Weather", "#38BDF8", "n8n"),
 ];
 
 export const TOGGLEABLE_INTEGRATION_IDS = [
   "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan", "integration_discord",
+  "integration_calendar", "integration_system", "integration_weather",
 ];
+
+/** Mochi as a pet (MochiPet), as saved: the island keeps the count. */
+export interface PetSave {
+  sessions: number;
+  streak: number;
+  bestStreak: number;
+  /** yyyy-MM-dd (local) of the last finished session. */
+  lastDay: string;
+  /** null: the best trophy unlocked. */
+  wearing: MochiAccessory | null;
+}
 
 /** What an integration poller last reported. */
 export interface IntegrationInfo {
@@ -133,9 +149,11 @@ export interface CustomMochi {
 export interface Extras {
   weather: { place: string; temperature: number; code: number; day: boolean; rainChance: number; accessory: MochiAccessory } | null;
   system: { cpu: number; battery: number | null; charging: boolean; diskFreePercent: number; diskFreeGB: number; building: string | null } | null;
-  calendarNext: { title: string; start: number; end: number; link: string | null } | null;
+  calendarNext: { id: string; title: string; start: number; end: number; link: string | null } | null;
   pet: { level: number; streak: number; sessions: number; worn: MochiAccessory; scruffy: boolean } | null;
   customStatus: Record<string, { text: string; state: string; at: number }>;
+  calendarError?: string | null;
+  weatherError?: string | null;
 }
 
 /** Discord (Rust discord.rs). */
@@ -243,6 +261,12 @@ export interface Settings {
   focusMode: FocusMode;
   customMochis?: CustomMochi[];
   discord?: DiscordPrefs;
+  /** The local URL scripts call (127.0.0.1:47823): off by default. */
+  localUrl?: boolean;
+  weatherPlace?: { name: string; lat: number; lon: number } | null;
+  pet?: PetSave;
+  /** Mochi says things out loud: off by default. */
+  voice?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -426,8 +450,21 @@ class AppState {
       if (shouldLoad && idx < 0) this.tasks.push({ ...proto, steps: [] });
       if (!shouldLoad && idx >= 0) this.tasks.splice(idx, 1);
     }
+    // Custom Mochis: a pill each, named and coloured as in Settings › Extras.
+    const customs = this.settings.customMochis ?? [];
+    this.tasks = this.tasks.filter((t) => !t.id.startsWith("custom_") || (this.settings.activeIntegrations.includes(t.id) && customs.some((m) => m.id === t.id)));
+    for (const m of customs) {
+      if (!this.settings.activeIntegrations.includes(m.id)) continue;
+      const existing = this.tasks.find((t) => t.id === m.id);
+      if (existing) {
+        existing.name = m.name;
+        existing.color = m.color;
+      } else {
+        this.tasks.push({ ...task(m.id, m.name, m.color, "n8n"), steps: [] });
+      }
+    }
     // Keep the declared order so pills never shuffle.
-    const order = INTEGRATION_AGENTS.map((t) => t.id);
+    const order = [...INTEGRATION_AGENTS.map((t) => t.id), ...customs.map((m) => m.id)];
     this.tasks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     if (!this.focusId) this.focusId = "integration_claude";
     this.notify();

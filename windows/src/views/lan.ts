@@ -10,6 +10,26 @@ import { ICONS } from "./icons";
 import { Bridge } from "../core/bridge";
 import { State, type LanPeer, type LanPrompt } from "../core/state";
 import type { ViewActions, ViewHost } from "./views";
+import { createMiniBot, miniEngineOf } from "../mochi/minibots";
+import { colorForProject } from "../core/layout";
+import { Ease } from "../core/anim";
+
+/**
+ * The sender's Mochi walks in from the right to deliver it (GuestMochiView): in
+ * its owner's colour, hopping, looking at the card, and a wave once there.
+ */
+function guestMochi(name: string): HTMLElement {
+  const slot = createMiniBot({ id: `guest:${name}`, name, color: colorForProject(name), state: "idle", stepIndex: 0, steps: [], source: "n8n", isIntegration: true }, 32);
+  slot.classList.add("lan-guest");
+  slot.title = name;
+  const e = miniEngineOf(slot);
+  if (e) {
+    e.lookX = -0.7;
+    e.anim("oy", Array.from({ length: 6 }).flatMap(() => [[-0.12, 120, Ease.out], [0, 120, Ease.inOut]] as const));
+    window.setTimeout(() => e.greet(), 1300);
+  }
+  return slot;
+}
 
 function sizeLabel(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -38,10 +58,11 @@ export function buildLan(actions: ViewActions): ViewHost {
   const sub = h("div", { class: "sub" });
   const code = h("div", { class: "lan-code" });
   const row = h("div", { class: "actions" });
+  const guest = h("div", { class: "lan-guest-lane" });
   const el = h(
     "div",
     { class: "view" },
-    h("div", { class: "card" }, h("div", { class: "stack", style: "padding:0 18px 0 98px" }, title, sub, code, row)),
+    h("div", { class: "card" }, h("div", { class: "stack", style: "padding:0 18px 0 98px" }, title, sub, code, row), guest),
   );
   let rendered: LanPrompt | null = null;
   let waiting = false;
@@ -56,6 +77,9 @@ export function buildLan(actions: ViewActions): ViewHost {
 
   function render(p: LanPrompt) {
     clear(row);
+    // Who's visiting: the peer behind a file, a message or a pairing.
+    clear(guest);
+    if (p.kind === "pair" || p.kind === "file" || p.kind === "message" || p.kind === "received") guest.append(guestMochi(p.peer));
     code.textContent = "";
     code.style.display = "none";
     waiting = false;

@@ -25,6 +25,8 @@ pub const KNOWN_KEYS: &[&str] = &[
     "resend-api-key",
     "notion-api-key",
     "calcom-api-key",
+    // The Calendar pill's iCal address (extras/ical.rs): whoever has it reads the calendar.
+    "calendar-ical-url",
 ];
 
 fn entry(key: &str) -> Option<Entry> {

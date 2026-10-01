@@ -1868,3 +1868,108 @@ input[type="range"]::-webkit-slider-thumb {
   color: #8e939c;
   font-size: 11px;
 }
+
+/* Extras' cards: a custom Mochi, the calendar, the PC, the weather. */
+.ex-chip {
+  font: 500 11px var(--font);
+  color: #c5c8cd;
+  padding: 3px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.ex-hint {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.ex-times {
+  padding-left: 8px;
+  color: #6b7079;
+}
+
+.ex-join {
+  border: 0;
+  font: 600 11px var(--font);
+  color: #fff;
+  background: #23a55a;
+  border-radius: 999px;
+  padding: 3px 12px;
+  cursor: default;
+}
+
+.ex-gauges {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding-top: 4px;
+}
+
+.ex-gauge {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  color: #94a3b8;
+}
+
+.ex-gauge i {
+  font: 500 10px var(--font);
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.ex-gauge b {
+  font: 600 12px var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-gauge.alarm {
+  color: #f87171;
+}
+
+.ex-weather {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ex-weather .ex-icon {
+  font-size: 18px;
+}
+
+.ex-weather b {
+  font: 600 20px var(--font);
+  color: #fff;
+}
+
+.ex-weather span:last-child {
+  font: 400 11px var(--font);
+  color: #c5c8cd;
+}
+
+/* The LAN prompt's visitor: a peer's Mochi walking in from the right edge. */
+.lan-guest-lane {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.lan-guest {
+  animation: lan-guest-in 1.2s ease-out both;
+  pointer-events: auto;
+}
+
+@keyframes lan-guest-in {
+  from { transform: translateX(260px); }
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lan-guest { animation: none; }
+}

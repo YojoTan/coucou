@@ -56,6 +56,22 @@ pub struct Settings {
     /// Interface language: "auto" (follow Windows), "en", "es" or "pt-BR".
     #[serde(default = "default_language")]
     pub language: String,
+    /// Custom Mochis (extras/): only the settings window may change them, since
+    /// each one can carry a command.
+    #[serde(default)]
+    pub custom_mochis: Vec<crate::extras::CustomMochi>,
+    /// The local URL scripts call (127.0.0.1:47823): off by default.
+    #[serde(default)]
+    pub local_url: bool,
+    /// The Weather pill's city, looked up once in Settings.
+    #[serde(default)]
+    pub weather_place: Option<crate::extras::Place>,
+    /// Mochi as a pet: sessions, streak, what it wears.
+    #[serde(default)]
+    pub pet: crate::extras::Pet,
+    /// Mochi says things out loud (finished sessions, meetings): off by default.
+    #[serde(default)]
+    pub voice: bool,
 }
 
 fn default_focus_mode() -> String {
@@ -106,6 +122,11 @@ impl Default for Settings {
             discord: Default::default(),
             hotkey: default_hotkey(),
             language: default_language(),
+            custom_mochis: Vec::new(),
+            local_url: false,
+            weather_place: None,
+            pet: Default::default(),
+            voice: false,
         }
     }
 }

@@ -1,6 +1,7 @@
 // Entry point: boot the bridge, wire the island, start the greeting.
 
 import { callSilences, registerDiscordHandlers } from "./island/discord";
+import { registerExtrasHandlers } from "./island/extras";
 import { registerLanHandlers } from "./island/lan";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
@@ -89,6 +90,7 @@ async function main() {
   registerIntegrationHandlers(island);
   registerLanHandlers(island);
   registerDiscordHandlers(island);
+  registerExtrasHandlers(island);
 
   island.launch();
 

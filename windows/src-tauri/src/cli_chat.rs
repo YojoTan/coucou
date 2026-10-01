@@ -598,10 +598,10 @@ pub struct RunOutput {
 /// A Job Object that kills every process in it when it is closed or terminated.
 /// npm-installed CLIs are `.cmd` shims that start node, so killing only the
 /// direct child would leave the real process running after a timeout.
-struct Job(HANDLE);
+pub(crate) struct Job(HANDLE);
 
 impl Job {
-    fn new() -> Option<Job> {
+    pub(crate) fn new() -> Option<Job> {
         unsafe {
             let job = CreateJobObjectW(None, PCWSTR::null()).ok()?;
             let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -620,7 +620,7 @@ impl Job {
         }
     }
 
-    fn adopt(&self, child: &std::process::Child) {
+    pub(crate) fn adopt(&self, child: &std::process::Child) {
         unsafe {
             let _ = AssignProcessToJobObject(self.0, HANDLE(child.as_raw_handle()));
         }

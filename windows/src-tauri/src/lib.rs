@@ -4,6 +4,7 @@ mod capture;
 mod claude;
 mod clipboard;
 mod discord;
+mod extras;
 mod cli_chat;
 mod files;
 mod github;
@@ -101,7 +102,7 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut settings: Settings) {
-    let (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed) = {
+    let (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed, local_url_changed) = {
         let mut current = shared.settings.lock().unwrap();
         // The island saves its own preferences (sound, volume, auto-close), but
         // where the chat sends a conversation is the settings window's call
@@ -119,7 +120,18 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             // Mochi, is the settings window's call alone.
             settings.lan = current.lan.clone();
             settings.hooks_installed = current.hooks_installed;
+            // A custom Mochi carries a command, the local URL listens, the
+            // weather sends a city out, the voice speaks: Settings' calls too.
+            settings.custom_mochis = current.custom_mochis.clone();
+            settings.local_url = current.local_url;
+            settings.weather_place = current.weather_place.clone();
+            settings.voice = current.voice;
+            // The island keeps the pet's count; Settings only picks what it wears.
+            settings.pet.wearing = current.pet.wearing.clone();
+        } else {
+            settings.pet = extras::Pet { wearing: settings.pet.wearing.clone(), ..current.pet.clone() };
         }
+        settings.custom_mochis = extras::sanitize_customs(std::mem::take(&mut settings.custom_mochis));
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
         let engine_changed = current.chat_engine != settings.chat_engine
@@ -131,9 +143,13 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             || current.anthropic_model != settings.anthropic_model;
         let hotkey_changed = current.hotkey != settings.hotkey;
         let lan_changed = current.lan != settings.lan;
+        let local_url_changed = current.local_url != settings.local_url;
         *current = settings.clone();
-        (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed)
+        (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed, local_url_changed)
     };
+    if local_url_changed {
+        extras::local_url::apply(&app);
+    }
     if lan_changed {
         let prefs = settings.lan.clone();
         std::thread::spawn(move || lan::apply(&prefs));
@@ -613,6 +629,40 @@ fn discord_state() -> Option<discord::Snapshot> {
     discord::snapshot()
 }
 
+// ── Extras (extras/) ──────────────────────────────────────────────────────────
+
+/// Settings › Extras → City → Set: the place Open-Meteo knows by that name. The
+/// settings window then saves it like any setting.
+#[tauri::command]
+async fn extras_geocode(webview: Webview, city: String, language: String) -> Result<Option<extras::Place>, String> {
+    only(&webview, SETTINGS_LABEL, "extras_geocode")?;
+    let language: String = language.chars().filter(|c| c.is_ascii_alphabetic() || *c == '-').take(8).collect();
+    Ok(extras::weather::geocode(&city, if language.is_empty() { "en" } else { &language }).await)
+}
+
+/// A city or a calendar address changed: fetch now rather than in 15 minutes.
+#[tauri::command]
+async fn extras_refresh(app: AppHandle, what: String) {
+    match what.as_str() {
+        "weather" => extras::weather::tick(&app, true).await,
+        "calendar" => extras::ical::tick(&app, true).await,
+        _ => {}
+    }
+}
+
+/// A custom Mochi's card → Run now.
+#[tauri::command]
+fn custom_run(app: AppHandle, id: String) -> bool {
+    extras::custom::run_now(&app, &id)
+}
+
+/// Settings › Extras shows the curl line with this PC's own token.
+#[tauri::command]
+fn local_url_token(webview: Webview) -> Result<Option<String>, String> {
+    only(&webview, SETTINGS_LABEL, "local_url_token")?;
+    Ok(extras::local_url::token())
+}
+
 /// Settings → Connect to Discord: the approval window in the Discord app.
 #[tauri::command]
 fn discord_connect(webview: Webview) -> Result<(), String> {
@@ -992,6 +1042,10 @@ pub fn run() {
             lan_pick_file,
             discord_state,
             discord_connect,
+            extras_geocode,
+            extras_refresh,
+            custom_run,
+            local_url_token,
             discord_sign_out,
             discord_set,
             discord_open,
@@ -1036,6 +1090,7 @@ pub fn run() {
             integrations::start(handle.clone());
             lan::init(&handle, &loaded.lan);
             discord::start(&handle);
+            extras::start(&handle);
             Ok(())
         })
         .run(tauri::generate_context!())

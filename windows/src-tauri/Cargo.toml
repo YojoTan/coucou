@@ -37,6 +37,11 @@ windows = { version = "0.61", features = [
   "Foundation_Collections",
   "Media_Control",
   "Win32_Foundation",
+  # Calendar times with a TZID (extras/ical.rs): Windows' own ICU.
+  "Win32_Globalization",
+  # The PC pill (extras/system.rs): battery, free disk.
+  "Win32_Storage_FileSystem",
+  "Win32_System_Power",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_Graphics_Imaging",

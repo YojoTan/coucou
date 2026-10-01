@@ -10,6 +10,7 @@ import { ICONS } from "./icons";
 import { isAgentTask, State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { discordCard } from "./discord";
+import { calendarCard, customCard, systemCard, weatherCard } from "./extras";
 
 /** Same shape as the Swift `timeAgo` computed properties. */
 export function timeAgo(value: unknown): string {
@@ -432,6 +433,11 @@ export function hasIntegrationData(id: string): boolean {
 }
 
 export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHooks): HTMLElement {
+  // The extras always have something to say, if only why they wait.
+  if (task.id.startsWith("custom_")) return customCard(task, hooks.openSettings);
+  if (task.id === "integration_calendar") return calendarCard();
+  if (task.id === "integration_system") return systemCard();
+  if (task.id === "integration_weather") return weatherCard();
   if (task.id === "integration_n8n") {
     const hasActivity = task.steps.length > 0 && (task.state === "finished" || task.state === "error");
     return hooks.detailOpen && hasActivity

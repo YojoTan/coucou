@@ -91,6 +91,15 @@ export const Bridge = {
   /** Clipboard text — only ever read on an explicit click in the chat. */
   clipboardText: () => call<string | null>("clipboard_text"),
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
+  // ── Extras ────────────────────────────────────────────────────────────────
+  /** Settings › Extras → City: the place Open-Meteo knows by that name. */
+  extrasGeocode: (city: string, language: string) => call<{ name: string; lat: number; lon: number } | null>("extras_geocode", { city, language }),
+  /** A city or calendar address changed: fetch now. */
+  extrasRefresh: (what: "weather" | "calendar") => call<void>("extras_refresh", { what }),
+  /** A custom Mochi's card → Run now. */
+  customRun: (id: string) => call<boolean>("custom_run", { id }),
+  /** Settings › Extras: this PC's token for the local URL. */
+  localUrlToken: () => call<string | null>("local_url_token"),
   /** `orca open`: launches or focuses Orca. */
   openOrca: () => call<boolean>("open_orca"),
   /** Orca card → a row: Orca on that worktree agent's terminal. */

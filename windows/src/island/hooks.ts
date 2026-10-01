@@ -12,6 +12,8 @@ import { State } from "../core/state";
 import { revealInvisible } from "../views/dom";
 import type { Island } from "./island";
 import * as Sessions from "./sessions";
+import { petSessionFinished, say } from "./extras";
+import { t } from "../core/i18n";
 
 /** Clears the approval card if no decision was made before the hook gave up. */
 let pendingTimeout: number | null = null;
@@ -232,6 +234,9 @@ function handleHook(island: Island, payload: HookPayload) {
       Sessions.setState(s, "finished");
       if (payload.message) Sessions.addStep(s, payload.message.slice(0, 60));
       Sound.play("finish");
+      // Every finished session feeds Mochi (MochiPet), and Mochi may say so.
+      petSessionFinished();
+      say(t("Done with {project}", { project: s.project }));
       if (focused && isShown()) surface("finished", true);
       else State.setPillBadge(TASK, "finished");
       const key = s.key;

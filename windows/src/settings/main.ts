@@ -6,7 +6,9 @@ import type { DiscordSnapshot, LanView } from "../core/state";
 import { setLanguage, t } from "../core/i18n";
 import "./settings.css";
 import { Bridge, onEvent, type EngineInfo, type HookStatus, type HookTarget } from "../core/bridge";
-import { DEFAULT_SETTINGS, type Settings } from "../core/state";
+import { DEFAULT_SETTINGS, type CustomMochi, type Settings } from "../core/state";
+import { WEARABLE, type MochiAccessory } from "../mochi/accessories";
+import { ACCESSORY_LABELS, nextTrophy, petLevel, unlocked } from "../island/extras";
 import { h, clear } from "../views/dom";
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
@@ -592,6 +594,12 @@ const INTEGRATIONS: IntegrationDef[] = [
     fields: [{ key: "notion-api-key", label: "Integration token", placeholder: t("ntn_…"), secret: true }] },
   { id: "integration_calcom", name: "Cal.com", color: "#C9956A",
     fields: [{ key: "calcom-api-key", label: "API key", placeholder: t("cal_…"), secret: true }] },
+  // Extras. The calendar is an iCal address: Google's "secret address in iCal
+  // format", Outlook's "publish calendar". Whoever has it reads the calendar.
+  { id: "integration_calendar", name: t("Calendar"), color: "#FF6B6B",
+    fields: [{ key: "calendar-ical-url", label: t("iCal address"), placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics", secret: true }] },
+  { id: "integration_system", name: t("PC"), color: "#94A3B8", fields: [] },
+  { id: "integration_weather", name: t("Weather"), color: "#38BDF8", fields: [] },
 ];
 
 const MAX_ACTIVE = 4;
@@ -637,6 +645,7 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
         try {
           await Bridge.secretSet(field.key, value);
           present[field.key] = value.length > 0;
+          if (field.key === "calendar-ical-url") void Bridge.extrasRefresh("calendar");
           input.value = "";
           input.placeholder = value ? "••••••••  (stored)" : field.placeholder;
           dotEl.style.background = value ? "#22c55e" : "#f4505e";
@@ -653,6 +662,11 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
     }
 
     if (def.id === "integration_github") rows.append(githubStatus());
+    if (def.id === "integration_calendar") {
+      rows.append(h("div", { class: "hint", text: t("Your next meeting, with a Join button for Meet, Zoom, Teams or Webex, a heads-up 5 minutes before and a nervous Mochi at 1. Google Calendar: Settings › your calendar › Secret address in iCal format. Outlook: Settings › Calendar › Shared calendars › Publish a calendar (ICS link).") }));
+    }
+    if (def.id === "integration_system") rows.append(h("div", { class: "hint", text: t("CPU, battery, free disk and running builds, read on this PC.") }));
+    if (def.id === "integration_weather") rows.append(h("div", { class: "hint", text: t("Set your city in the Extras tab.") }));
 
     list.append(
       h("div", { style: "display:flex;gap:12px;align-items:flex-start" },
@@ -1018,6 +1032,194 @@ function generalSection(): HTMLElement {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
+// ── Extras (macOS ExtrasSettingsSection) ──────────────────────────────────────
+
+function newCustomId(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return "custom_" + Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
+
+/** What the URL calls a Mochi: lowercase, no accents, dashes (CustomMochi.slug). */
+function slug(name: string): string {
+  return name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+}
+
+/** Custom Mochis: a name, a colour, something to wear, and where its news comes from. */
+function customMochisSection(): HTMLElement {
+  let mochis: CustomMochi[] = (settings.customMochis ?? []).map((m) => ({ ...m }));
+  let editing: string | null = null;
+  const list = h("div", { style: "display:flex;flex-direction:column;gap:8px" });
+  const note = h("div", { class: "hint" });
+  const urlBox = h("div", { style: "display:flex;flex-direction:column;gap:6px" });
+
+  const accessorySelect = (value: MochiAccessory, onChange: (v: MochiAccessory) => void) => {
+    const sel = h("select", {}) as HTMLSelectElement;
+    for (const a of WEARABLE) sel.append(h("option", { value: a, text: t(ACCESSORY_LABELS[a]) }));
+    sel.value = value;
+    sel.addEventListener("change", () => onChange(sel.value as MochiAccessory));
+    return sel;
+  };
+
+  function render() {
+    clear(list);
+    for (const m of mochis) {
+      const open = editing === m.id;
+      const saved = (settings.customMochis ?? []).some((x) => x.id === m.id);
+      const pill = toggle(settings.activeIntegrations.includes(m.id), (on) => {
+        const active = settings.activeIntegrations.filter((x) => x !== m.id);
+        if (on && active.length >= MAX_ACTIVE) {
+          note.textContent = t("Up to {max} pills at once — turn another one off first.", { max: MAX_ACTIVE });
+          render();
+          return;
+        }
+        settings.activeIntegrations = on ? [...active, m.id] : active;
+        void save();
+      });
+      if (!saved) pill.setAttribute("disabled", "");
+      const row = h("div", { class: "row" },
+        pill,
+        h("i", { class: "dot", style: `background:${m.color};width:10px;height:10px` }),
+        h("span", { style: "font-weight:500", text: m.name }),
+        h("span", { class: "hint", text: m.command ? t("every {n} s", { n: m.interval }) : t("local URL") }),
+        h("span", { class: "spacer" }),
+        h("button", { text: open ? t("Done") : t("Edit"), onclick: () => { editing = open ? null : m.id; render(); } }),
+      );
+      const box = h("div", { style: "display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;background:rgba(255,255,255,0.04)" }, row);
+      if (open) {
+        const name = h("input", { type: "text", value: m.name, maxlength: "40", style: "flex:1 1 auto" }) as HTMLInputElement;
+        name.addEventListener("input", () => { m.name = name.value; });
+        const color = h("input", { type: "color", value: m.color }) as HTMLInputElement;
+        color.addEventListener("input", () => { m.color = color.value.toUpperCase(); });
+        const command = h("input", {
+          type: "text", value: m.command, spellcheck: "false", maxlength: "2000",
+          placeholder: t("Command (optional) — e.g. curl -s https://my.app/health"), style: "flex:1 1 auto;font-family:var(--mono);font-size:11.5px",
+        }) as HTMLInputElement;
+        command.addEventListener("input", () => { m.command = command.value; });
+        const every = h("input", { type: "number", min: "5", max: "3600", step: "5", value: String(m.interval), style: "width:80px" }) as HTMLInputElement;
+        every.addEventListener("input", () => { m.interval = Number(every.value) || 60; });
+        box.append(
+          h("div", { class: "row" }, h("label", { text: t("Name") }), name),
+          h("div", { class: "row" }, h("label", { text: t("Colour") }), color, h("label", { style: "min-width:0", text: t("Wears") }), accessorySelect(m.accessory, (v) => { m.accessory = v; })),
+          h("div", { class: "row" }, h("label", { text: t("Command") }), command),
+          h("div", { class: "row" }, h("label", { text: t("Every (seconds)") }), every),
+          h("div", { class: "hint", text: t("Runs in cmd /C on this PC while its pill is on, killed after 30 s. The first line of the output is the news.") }),
+          h("div", { class: "row" }, h("button", { class: "danger", text: t("Delete {name}", { name: m.name }), onclick: () => { mochis = mochis.filter((x) => x.id !== m.id); void commit(); } })),
+        );
+      }
+      list.append(box);
+    }
+    void renderUrl();
+  }
+
+  async function commit() {
+    for (const m of mochis) {
+      m.name = m.name.trim() || "Mochi";
+      m.interval = Math.min(3600, Math.max(5, Math.round(m.interval)));
+      m.command = m.command.trim();
+    }
+    settings.customMochis = mochis.map((m) => ({ ...m }));
+    const ids = new Set(mochis.map((m) => m.id));
+    settings.activeIntegrations = settings.activeIntegrations.filter((x) => !x.startsWith("custom_") || ids.has(x));
+    await save();
+    note.textContent = t("✓ Saved.");
+    render();
+  }
+
+  async function renderUrl() {
+    clear(urlBox);
+    const on = settings.localUrl ?? false;
+    urlBox.append(
+      h("div", { class: "row" },
+        h("label", { text: t("Local URL") }),
+        toggle(on, (v) => { settings.localUrl = v; void save().then(renderUrl); }),
+        h("span", { class: "hint", text: "http://127.0.0.1:47823" }),
+      ),
+      h("div", { class: "hint", text: t("Off by default. When on, scripts, Task Scheduler or Power Automate on this PC can give a custom Mochi its news, and set Mochi's mode. Only this PC can call it, and only with the token below.") }),
+    );
+    if (!on) return;
+    const token = (await Bridge.localUrlToken()) ?? "…";
+    const first = mochis[0] ? slug(mochis[0].name) : "my-mochi";
+    urlBox.append(
+      h("code", { text: `curl -H "X-Coucou-Token: ${token}" -d "Build OK" http://127.0.0.1:47823/mochi/${first}` }),
+      h("code", { text: `curl -X POST -H "X-Coucou-Token: ${token}" http://127.0.0.1:47823/mode/doNotDisturb` }),
+      h("div", { class: "hint", text: t("The output or the body may start with ok:, working:, warning: or error: to set the mood (JSON works too: {\"text\": \"…\", \"state\": \"working\"}). Modes: normal, doNotDisturb, work, sleep.") }),
+    );
+  }
+
+  render();
+  return h("section", {},
+    h("h2", {}, h("span", { text: t("Custom Mochis") })),
+    h("div", { class: "hint", text: t("Make your own: a name, a colour, something to wear, and where its news comes from — a command it runs, or the local URL your scripts call. Its switch puts its pill next to Mochi.") }),
+    list,
+    h("div", { class: "row" },
+      h("button", { text: t("Add a Mochi"), onclick: () => {
+        const m: CustomMochi = { id: newCustomId(), name: t("My Mochi"), color: "#14B8A6", accessory: "cap", command: "", interval: 60 };
+        mochis.push(m);
+        editing = m.id;
+        render();
+      } }),
+      h("button", { class: "primary", text: t("Save"), onclick: () => void commit() }),
+      note,
+    ),
+    urlBox,
+  );
+}
+
+/** The Weather pill's city (Open-Meteo, free, no account). */
+function weatherSection(): HTMLElement {
+  const city = h("input", { type: "text", value: settings.weatherPlace?.name ?? "", placeholder: t("City"), style: "flex:1 1 auto" }) as HTMLInputElement;
+  const note = h("div", { class: "hint" });
+  const set = async () => {
+    const c = city.value.trim();
+    if (!c) return;
+    note.textContent = "…";
+    const place = await Bridge.extrasGeocode(c, (settings.language === "auto" ? navigator.language : settings.language).slice(0, 2));
+    if (!place) {
+      note.textContent = t("❌ City not found.");
+      return;
+    }
+    settings.weatherPlace = place;
+    await save();
+    city.value = place.name;
+    note.textContent = t("✓ Weather for {name}.", { name: place.name });
+    void Bridge.extrasRefresh("weather");
+  };
+  city.addEventListener("keydown", (e) => { if (e.key === "Enter") void set(); });
+  return h("section", {},
+    h("h2", {}, h("span", { text: t("Weather") })),
+    h("div", { class: "hint", text: t("Open-Meteo (free, no account) for your city: an umbrella when rain is coming, a scarf in the cold, sunglasses in the sun. Only the city's name, to find it, and its coordinates leave this PC.") }),
+    h("div", { class: "row" }, city, h("button", { text: t("Set"), onclick: () => void set() })),
+    note,
+  );
+}
+
+/** Mochi as a pet: level, streak, trophies; and its voice. */
+function petSection(): HTMLElement {
+  const p = { sessions: 0, streak: 0, bestStreak: 0, lastDay: "", wearing: null, ...(settings.pet ?? {}) };
+  const next = nextTrophy(p);
+  const wears = h("select", {}) as HTMLSelectElement;
+  wears.append(h("option", { value: "", text: t("Best trophy") }));
+  for (const a of ["none", ...unlocked(p)] as MochiAccessory[]) wears.append(h("option", { value: a, text: t(ACCESSORY_LABELS[a]) }));
+  wears.value = p.wearing ?? "";
+  wears.disabled = unlocked(p).length === 0;
+  wears.addEventListener("change", () => {
+    settings.pet = { ...p, wearing: (wears.value || null) as MochiAccessory | null };
+    void save();
+  });
+  return h("section", {},
+    h("h2", {}, h("span", { text: t("Mochi") })),
+    h("div", { style: "font-weight:600", text: t("Level {level} · {sessions} sessions · 🔥 {streak}-day streak (best {best})", { level: petLevel(p), sessions: p.sessions, streak: p.streak, best: p.bestStreak }) }),
+    next ? h("div", { class: "hint", text: t("Next trophy: {name} at {n} sessions.", { name: t(ACCESSORY_LABELS[next[1]]), n: next[0] }) }) : null,
+    h("div", { class: "row" }, h("label", { text: t("Wears") }), wears),
+    h("div", { class: "row" },
+      h("label", { text: t("Mochi speaks") }),
+      toggle(settings.voice ?? false, (v) => { settings.voice = v; void save(); }),
+      h("span", { class: "hint", text: t("Finished sessions and meetings, in a Windows voice. Never in Do Not Disturb, nor over a call.") }),
+    ),
+  );
+}
+
 async function main() {
   const boot = await Bridge.boot();
   if (boot) {
@@ -1039,7 +1241,7 @@ async function main() {
 
   const keys = [
     "stripe-api-key", "github-token", "vercel-token",
-    "n8n-url", "n8n-api-key", "resend-api-key", "notion-api-key", "calcom-api-key",
+    "n8n-url", "n8n-api-key", "resend-api-key", "notion-api-key", "calcom-api-key", "calendar-ical-url",
   ];
   const present: Record<string, boolean> = {};
   for (const k of keys) present[k] = (await Bridge.secretPresent(k)) ?? false;
@@ -1052,6 +1254,7 @@ async function main() {
     ["agents", t("Agents"), [claudeSection(status), hooksSection("codex", codexStatus), opencodeSection()]],
     ["integrations", t("Integrations"), [integrationsSection(present), discordSection(present)]],
     ["lan", t("Mochis"), [lanSection()]],
+    ["extras", t("Extras"), [customMochisSection(), weatherSection(), petSection()]],
   ];
   const bar = h("div", { class: "tabs", role: "tablist" });
   const panes = h("div", { class: "tab-panes" });

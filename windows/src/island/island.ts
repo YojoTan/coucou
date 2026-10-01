@@ -17,6 +17,7 @@ import { t } from "../core/i18n";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { applyDiscord, applyExtras, applyMusic } from "../mochi/sync";
 import { callStartedAt, DISCORD_ID, onDiscordEffect } from "./discord";
+import { onPetEvent } from "./extras";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -131,6 +132,12 @@ export class Island {
         case "highFive": e.greet(); e.emit("star", 6); break;
         case "talkingMuted": e.greet(); e.triggerEmote("surprised"); break;
       }
+      this.ensureRunning();
+    });
+    // A trophy or a new level: confetti and a wave (BotCanvasView's petEvent).
+    onPetEvent(() => {
+      this.engine.react("confetti");
+      this.engine.greet();
       this.ensureRunning();
     });
     this.greeting.onComplete = () => this.fsm.greetComplete();

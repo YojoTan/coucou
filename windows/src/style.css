@@ -469,6 +469,9 @@ body {
 }
 
 .ticker-row .tick-text {
+  /* Block, so the shimmer and the dim copy sit on exactly the same line and a
+     long step ends in "…" instead of being cut mid-word. */
+  display: block;
   font: 500 13px var(--font);
   white-space: nowrap;
   overflow: hidden;
@@ -616,6 +619,19 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   user-select: text;
+}
+
+/* The approval box: what Allow authorises. Wraps anywhere and keeps the
+   command's own line breaks, up to the two lines the card has room for
+   (2 × 15 px + 10 px padding + 2 px border). Anything taller is not approved
+   from the island at all, so nothing is ever hidden behind a scroll. */
+.code.review {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  line-height: 15px;
+  max-height: 42px;
+  overflow: hidden;
 }
 
 .stack {

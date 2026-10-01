@@ -20,7 +20,8 @@ export interface ViewActions {
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
-  decide(d: "allow" | "deny"): void;
+  /** "terminal" hands the request back: Claude Code asks there, in full. */
+  decide(d: "allow" | "deny" | "terminal"): void;
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
@@ -288,31 +289,66 @@ function buildEmpty(actions: ViewActions): ViewHost {
 
 // ── Approval ──────────────────────────────────────────────────────────────────
 
+/**
+ * The card springs open under wherever the pointer happens to be. A click that
+ * was already on its way — aimed at a tab or a window behind — must not land on
+ * Allow, so Allow only counts once the card has been up this long (the same
+ * idea as a browser's permission-prompt delay). Deny is never delayed.
+ */
+const ALLOW_ARM_MS = 700;
+
 function buildApproval(actions: ViewActions): ViewHost {
   const who = h("div");
-  const code = h("div", { class: "code" });
+  // `review`: wraps instead of clipping with an ellipsis, up to the two lines
+  // the 108 px card has room for. Whatever does not fit is never approved from
+  // here (see `fits` below), because a scroll box would hide the end of the
+  // command — exactly where `; curl … | sh` goes.
+  const code = h("div", { class: "code review" });
   const row = h("div", { class: "actions" });
   const el = h("div", { class: "view" }, card("amber", stack(116, 16, who, code, row)));
-  let rowKey = "";
+  let shownId: string | null = null;
+  let armedAt = 0;
+  let fits = false;
+
+  // Built once. Rebuilding them between a mouse-down and a mouse-up would
+  // swallow the click; only which one shows changes, and only per request.
+  // "Always" is gone until the remembered-rules list exists to back it.
+  const allow = btn("Allow", "primary", () => {
+    refit();
+    if (!fits || performance.now() < armedAt) return;
+    actions.decide("allow");
+  }, "Y");
+  const review = btn("Review in terminal", "primary", () => actions.decide("terminal"));
+  row.append(btn("Deny", "secondary", () => actions.decide("deny"), "N"), allow, review);
+
+  /** Does the whole text fit the two-line box at the card's current width? */
+  function refit() {
+    fits = code.scrollHeight <= code.clientHeight + 1;
+    allow.style.display = fits ? "" : "none";
+    review.style.display = fits ? "none" : "";
+  }
+  // The card grows with the island's expand animation, so the answer changes
+  // while it opens; re-measure whenever the box itself changes size.
+  new ResizeObserver(refit).observe(code);
+
   return {
     el,
     sync() {
       clear(who);
       who.append(agentWho(State.focusTask, "needs permission"));
-      // The whole point of approving here rather than in the terminal: this line
-      // is the command, the file path or the URL being authorised, not just the
-      // name of the tool asking.
-      code.textContent = State.pendingApproval?.command || State.pendingApproval?.tool || "…";
-      // Two buttons, built once. Rebuilding them between a mouse-down and a
-      // mouse-up would swallow the click, and there is nothing left to vary:
-      // "Always" is gone until the remembered-rules list exists to back it.
-      if (rowKey === "built") return;
-      rowKey = "built";
-      clear(row);
-      row.append(
-        btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-        btn("Allow", "primary", () => actions.decide("allow"), "Y"),
-      );
+      const req = State.pendingApproval;
+      // The whole point of approving here rather than in the terminal: this box
+      // is the command, the file path or the URL being authorised, in full,
+      // not just the name of the tool asking.
+      code.textContent = req?.command || req?.tool || "…";
+      code.title = code.textContent;
+      if ((req?.requestId ?? null) !== shownId) {
+        shownId = req?.requestId ?? null;
+        armedAt = performance.now() + ALLOW_ARM_MS;
+      }
+      // The view is laid out (it fades with opacity, never display:none), so
+      // this is the real wrapped height against the two-line box.
+      refit();
     },
   };
 }

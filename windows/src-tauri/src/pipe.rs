@@ -19,14 +19,20 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{LocalFree, HLOCAL};
+use windows::Win32::Security::Authorization::{
+    ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+};
+use windows::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
 
 use crate::island::WINDOW_LABEL;
 use crate::log;
@@ -39,6 +45,13 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(108);
 /// see for nearly two minutes.
 const ACK_TIMEOUT: Duration = Duration::from_millis(800);
 const MAX_PAYLOAD: usize = 1 << 20;
+/// coucou-hook writes its whole line straight after connecting. A client that
+/// connects and then says nothing is not a hook, and must not hold a task open.
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// Connections served at once. Each PermissionRequest holds one for up to
+/// DECISION_TIMEOUT; anything past this is dropped rather than queued, so a
+/// flood of connections cannot exhaust handles or memory.
+const MAX_CONNECTIONS: usize = 64;
 
 /// What the island can say about a permission request.
 pub enum Reply {
@@ -63,25 +76,70 @@ pub fn pipe_name() -> String {
     format!(r"\\.\pipe\coucou-{key}")
 }
 
+/// The pipe's DACL: full access for our own account and for SYSTEM, nothing for
+/// anybody else. Without it the pipe gets the default descriptor, which lets
+/// Everyone and the anonymous account open it for reading — enough for another
+/// account on this machine to connect and tie up instances.
+fn pipe_sddl(sid: &str) -> String {
+    format!("D:P(A;;GA;;;{sid})(A;;GA;;;SY)")
+}
+
+/// Creates one pipe instance that only our own account can open.
+/// Fails closed: no SID or no descriptor means no pipe, never a default one.
+fn create_instance(name: &str, first: bool) -> std::io::Result<NamedPipeServer> {
+    let sid = crate::win_user::current_user_sid()
+        .ok_or_else(|| std::io::Error::other("cannot read our own SID"))?;
+    let sddl: Vec<u16> = pipe_sddl(&sid).encode_utf16().chain(std::iter::once(0)).collect();
+
+    let mut descriptor = PSECURITY_DESCRIPTOR::default();
+    unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            PCWSTR(sddl.as_ptr()),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            None,
+        )
+    }
+    .map_err(|e| std::io::Error::other(format!("pipe security descriptor: {e}")))?;
+
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor.0,
+        bInheritHandle: false.into(),
+    };
+    let mut options = ServerOptions::new();
+    // first_pipe_instance also means we refuse to join a pipe somebody else
+    // already owns under our name, rather than serving on top of it.
+    options.first_pipe_instance(first).reject_remote_clients(true);
+    // SAFETY: `attributes` is a valid SECURITY_ATTRIBUTES whose descriptor stays
+    // alive until after the call returns; CreateNamedPipeW copies it.
+    let result = unsafe {
+        options.create_with_security_attributes_raw(name, (&mut attributes as *mut SECURITY_ATTRIBUTES).cast())
+    };
+    unsafe {
+        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+    }
+    result
+}
+
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let name = pipe_name();
-        // first_pipe_instance also means we refuse to join a pipe somebody else
-        // already owns under our name, rather than serving on top of it.
-        let mut server = match ServerOptions::new().first_pipe_instance(true).create(&name) {
+        let mut server = match create_instance(&name, true) {
             Ok(s) => s,
             Err(err) => {
                 log::line(format!("cannot open the relay pipe: {err}"));
                 return;
             }
         };
+        let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
         loop {
             if server.connect().await.is_err() {
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
             // Hand the connected instance to a task and listen on a fresh one.
-            let next = match ServerOptions::new().create(&name) {
+            let next = match create_instance(&name, false) {
                 Ok(s) => s,
                 Err(err) => {
                     log::line(format!("cannot reopen the relay pipe: {err}"));
@@ -89,35 +147,61 @@ pub fn start(app: AppHandle) {
                 }
             };
             let connected = std::mem::replace(&mut server, next);
+            let Ok(slot) = slots.clone().try_acquire_owned() else {
+                // Full: drop this one. The relay exits 0 and Claude Code carries on.
+                let _ = connected.disconnect();
+                continue;
+            };
             let app = app.clone();
-            tauri::async_runtime::spawn(async move { handle(app, connected).await });
+            tauri::async_runtime::spawn(async move {
+                handle(app, connected).await;
+                drop(slot);
+            });
         }
     });
 }
 
-async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
+/// Reads one line, under READ_TIMEOUT and MAX_PAYLOAD.
+async fn read_line(pipe: &mut NamedPipeServer) -> Option<Vec<u8>> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
-    loop {
-        match pipe.read(&mut chunk).await {
-            Ok(0) => break,
-            Ok(n) => {
-                buf.extend_from_slice(&chunk[..n]);
-                if buf.contains(&b'\n') || buf.len() > MAX_PAYLOAD {
-                    break;
+    let read = async {
+        loop {
+            match pipe.read(&mut chunk).await {
+                Ok(0) => return true,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if buf.contains(&b'\n') {
+                        return true;
+                    }
+                    // Oversized: refuse it rather than parse a cut-off line.
+                    if buf.len() > MAX_PAYLOAD {
+                        return false;
+                    }
                 }
+                Err(_) => return false,
             }
-            Err(_) => return,
         }
-    }
-    let line = match buf.iter().position(|b| *b == b'\n') {
-        Some(i) => &buf[..i],
-        None => &buf[..],
     };
-    let Ok(mut payload) = serde_json::from_slice::<Value>(line) else { return };
-    if !payload.is_object() {
-        return;
+    match tokio::time::timeout(READ_TIMEOUT, read).await {
+        Ok(true) => {}
+        _ => return None,
     }
+    let end = buf.iter().position(|b| *b == b'\n').unwrap_or(buf.len());
+    buf.truncate(end);
+    Some(buf)
+}
+
+async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
+    let Some(line) = read_line(&mut pipe).await else {
+        let _ = pipe.disconnect();
+        return;
+    };
+    let Ok(mut payload) = serde_json::from_slice::<Value>(&line) else { return };
+    let Some(map) = payload.as_object_mut() else { return };
+    // `request_id` is ours to assign. One arriving on the wire could otherwise
+    // be used to answer or release somebody else's pending request.
+    map.remove("request_id");
 
     let event = payload
         .get("hook_event_name")
@@ -224,4 +308,33 @@ pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
     };
     log::line(format!("decision id={request_id} {word}"));
     send(app, request_id, Reply::Decision(word.to_string()), false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_descriptor_admits_only_its_owner_and_system() {
+        let sddl = pipe_sddl("S-1-5-21-1-2-3-1001");
+        assert_eq!(sddl, "D:P(A;;GA;;;S-1-5-21-1-2-3-1001)(A;;GA;;;SY)");
+        // No Everyone (WD), anonymous (AN) or authenticated-users (AU) entry.
+        for broad in ["WD", "AN", "AU", "BU"] {
+            assert!(!sddl.contains(&format!(";;;{broad})")), "{broad} must not be granted");
+        }
+    }
+
+    #[test]
+    fn an_instance_uses_our_descriptor_and_still_accepts_us() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let name = format!(r"\\.\pipe\coucou-test-{}", std::process::id());
+            let server = create_instance(&name, true).expect("a pipe with our DACL");
+            // Somebody already serving under the name: a first instance is refused.
+            assert!(create_instance(&name, true).is_err());
+            let client = std::fs::OpenOptions::new().read(true).write(true).open(&name);
+            assert!(client.is_ok(), "our own account must still be able to connect");
+            drop(server);
+        });
+    }
 }

@@ -116,6 +116,19 @@ fn hook_command(event: &str) -> String {
     format!("\"{exe}\" {event}")
 }
 
+/// Characters that stay live inside double quotes for the shells Claude Code
+/// may use: `$` and `` ` `` (bash substitution), `!` (history), `%` (cmd
+/// variables), `"` (ends the quoting). A profile path holding any of them would
+/// turn the hook command into code run on every event, so we refuse to write it.
+fn command_is_safe(command_path: &str) -> Result<(), String> {
+    match command_path.chars().find(|c| matches!(c, '"' | '$' | '`' | '!' | '%') || c.is_control()) {
+        Some(c) => Err(format!(
+            "The relay path contains {c:?}, which a shell would interpret: {command_path}. Coucou won't write a hook command it cannot quote safely."
+        )),
+        None => Ok(()),
+    }
+}
+
 fn entry_is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
@@ -252,6 +265,9 @@ pub fn status() -> HookStatus {
 }
 
 pub fn preview(install: bool) -> Result<HookPreview, String> {
+    if install {
+        command_is_safe(&settings::hook_exe_path().to_string_lossy())?;
+    }
     let current = read_settings()?;
     let next = if install { merged(&current) } else { without_ours(&current) };
     Ok(HookPreview {
@@ -269,6 +285,9 @@ pub fn preview(install: bool) -> Result<HookPreview, String> {
 /// and make them look at a fresh diff, because the only thing worse than not
 /// installing the hooks is silently reverting somebody else's edit.
 pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
+    if install {
+        command_is_safe(&settings::hook_exe_path().to_string_lossy())?;
+    }
     let path = settings_path();
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -325,12 +344,16 @@ pub fn ensure_hook_exe(app: &AppHandle) {
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            // Installed build, then `tauri dev` (target/debug) next to the
-            // release hook the pre-build step produces.
+            // Installed build: next to coucou.exe.
             candidates.push(parent.join("coucou-hook.exe"));
-            candidates.push(parent.join("../release/coucou-hook.exe"));
             // Belt and braces: where the old glob form used to land it.
             candidates.push(parent.join("_up_/target/release/coucou-hook.exe"));
+            // `tauri dev` (target/debug) next to the release hook the pre-build
+            // step produces. Debug builds only: in an install, `..\release` is
+            // a folder outside the app, and whatever sits there would become
+            // the program Claude Code runs on every event.
+            #[cfg(debug_assertions)]
+            candidates.push(parent.join("../release/coucou-hook.exe"));
         }
     }
 
@@ -502,6 +525,21 @@ mod tests {
         // And removing ours puts it back exactly as it was.
         let cleaned = without_ours(&after);
         assert_eq!(cleaned, existing);
+    }
+
+    #[test]
+    fn a_relay_path_a_shell_would_expand_is_refused() {
+        assert!(command_is_safe("C:/Users/Ana María/AppData/Local/Coucou/bin/coucou-hook.exe").is_ok());
+        assert!(command_is_safe("C:/Users/o'neil (work)/AppData/Local/Coucou/bin/coucou-hook.exe").is_ok());
+        for bad in [
+            "C:/Users/a$(calc)/AppData/Local/Coucou/bin/coucou-hook.exe",
+            "C:/Users/a`calc`/AppData/Local/Coucou/bin/coucou-hook.exe",
+            "C:/Users/%COMSPEC%/AppData/Local/Coucou/bin/coucou-hook.exe",
+            "C:/Users/a!b/AppData/Local/Coucou/bin/coucou-hook.exe",
+            "C:/Users/a\"b/AppData/Local/Coucou/bin/coucou-hook.exe",
+        ] {
+            assert!(command_is_safe(bad).is_err(), "{bad} must be refused");
+        }
     }
 
     #[test]

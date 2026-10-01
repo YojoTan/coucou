@@ -13,7 +13,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(
     if (v == null || v === false) continue;
     if (k === "class") el.className = String(v);
     else if (k === "text") el.textContent = String(v);
-    else if (k === "html") el.innerHTML = String(v);
+    // No `html` attribute on purpose: the island shows text from hook payloads
+    // and third-party APIs, and an innerHTML path is one careless call away
+    // from rendering it as markup. Build nodes, or pass text.
     else if (k.startsWith("on") && typeof v === "function") {
       el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
     } else if (k === "style") el.setAttribute("style", String(v));
@@ -45,6 +47,19 @@ export function svg(path: string, size = 14, opts: { fill?: string; stroke?: num
   }
   el.append(p);
   return el;
+}
+
+/**
+ * Makes visible what a monospace box would hide or reorder: control characters
+ * other than tab and newline, bidi overrides and isolates (the "Trojan Source"
+ * trick that shows `rm` as something else) and zero-width marks. Each becomes a
+ * literal `\u{…}`, so what the user reads is what Allow authorises.
+ */
+export function revealInvisible(text: string): string {
+  return text.replace(
+    /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g,
+    (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}}`,
+  );
 }
 
 export function clear(el: Element) {

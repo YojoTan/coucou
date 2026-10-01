@@ -6,6 +6,7 @@
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
+import { revealInvisible } from "../views/dom";
 import type { Island } from "./island";
 
 const CLAUDE_ID = "integration_claude";
@@ -23,6 +24,8 @@ interface HookPayload {
   prompt?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
+  /** Set by coucou-hook when it had to cut a field to fit the pipe. */
+  coucou_truncated?: boolean;
 }
 
 const PROJECT_ALIASES: Record<string, string> = {
@@ -95,10 +98,19 @@ function approvalTarget(tool: string, input: Record<string, unknown>): string {
   for (const field of APPROVAL_FIELDS) {
     const value = input[field];
     if (typeof value === "string" && value.trim()) {
-      return `${tool} · ${value.trim()}`;
+      return revealInvisible(`${tool} · ${value.trim()}`);
     }
   }
-  return tool;
+  // An MCP or unfamiliar tool: its whole input is what is being authorised,
+  // so show that rather than a bare tool name.
+  if (Object.keys(input).length > 0) {
+    try {
+      return revealInvisible(`${tool} · ${JSON.stringify(input)}`);
+    } catch {
+      /* fall through to the name */
+    }
+  }
+  return revealInvisible(tool);
 }
 
 function upsert(projectName: string, cwd: string) {
@@ -234,6 +246,14 @@ function handleHook(island: Island, payload: HookPayload) {
       // a decision nobody can give. Hand it straight back to the terminal.
       if (State.pendingApproval && State.pendingApproval.requestId !== requestId) {
         if (requestId) void Bridge.approvalDecline(requestId);
+        break;
+      }
+      // The relay had to cut part of the request to fit the pipe, so the card
+      // could only show some of what Allow would authorise. The terminal shows
+      // all of it: hand it back there.
+      if (payload.coucou_truncated) {
+        if (requestId) void Bridge.approvalDecline(requestId);
+        State.appendStep(CLAUDE_ID, "⚠ long request — answer in the terminal");
         break;
       }
       upsert(projectName, cwd);

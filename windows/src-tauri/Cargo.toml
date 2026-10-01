@@ -8,7 +8,10 @@ license.workspace = true
 
 [lib]
 name = "coucou_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Desktop only: the staticlib/cdylib kinds from the Tauri template exist for
+# mobile targets, and a cdylib exporting every symbol overflows the GNU
+# linker's ordinal table ("export ordinal too large") on x86_64-pc-windows-gnu.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -21,6 +24,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Already in the tree through tauri and reqwest; used to validate URLs before
+# they reach the shell or carry an API key.
+url = "2"
 keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",

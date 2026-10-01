@@ -19,6 +19,9 @@ const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 const MAX_TOKENS: u32 = 4096;
 /// Text and code files are inlined; anything larger is skipped, as on macOS.
 const MAX_INLINE_TEXT: u64 = 200_000;
+/// PDFs and images are read whole and base64-encoded; past this the request
+/// would be refused by the API anyway, after costing the memory to build it.
+const MAX_BINARY: u64 = 24 * 1024 * 1024;
 
 pub const DEFAULT_MODEL: &str = "claude-opus-5";
 
@@ -86,7 +89,13 @@ pub async fn send(
     if chat.is_empty() {
         match &context {
             Some(ChatContext::File { name, path }) => {
-                if let Some(block) = file_block(path) {
+                // Only a copy Coucou made itself in the inbox is ever read: the
+                // path comes from the webview, and must not be able to name
+                // any other file on disk.
+                let Some(inside) = inbox_file(path) else {
+                    return Err("That file is not in Coucou's inbox yet — drop it again.".into());
+                };
+                if let Some(block) = file_block(&inside) {
                     content.push(block);
                 }
                 content.push(json!({ "type": "text", "text": format!("File: {name}") }));
@@ -158,8 +167,11 @@ pub async fn send(
 }
 
 async fn call(key: &str, body: &Value) -> Result<Value, String> {
+    // No redirects: reqwest strips `Authorization` on a cross-host redirect but
+    // not a custom header like `x-api-key`, which would follow it anywhere.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(90))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -192,10 +204,19 @@ async fn call(key: &str, body: &Value) -> Result<Value, String> {
     serde_json::from_str(&text).map_err(|e| format!("Bad API response: {e}"))
 }
 
+/// The canonical path of `path` when it is a regular file inside the inbox.
+/// Canonicalising both sides resolves `..`, short names and links before the
+/// comparison, so nothing can step out of the folder.
+fn inbox_file(path: &str) -> Option<std::path::PathBuf> {
+    let inbox = std::fs::canonicalize(crate::files::inbox_dir()).ok()?;
+    let file = std::fs::canonicalize(path).ok()?;
+    (file.starts_with(&inbox) && file.is_file()).then_some(file)
+}
+
 /// PDF → document block, image → image block, text/code → inline text.
 /// Mirrors readFileAsBlock() in ClaudeService.swift.
-fn file_block(path: &str) -> Option<Value> {
-    let ext = std::path::Path::new(path)
+fn file_block(path: &std::path::Path) -> Option<Value> {
+    let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
@@ -211,6 +232,9 @@ fn file_block(path: &str) -> Option<Value> {
     };
 
     if let Some((block_type, media)) = media_type {
+        if std::fs::metadata(path).ok()?.len() > MAX_BINARY {
+            return None;
+        }
         let bytes = std::fs::read(path).ok()?;
         return Some(json!({
             "type": block_type,
@@ -248,7 +272,28 @@ fn base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::base64;
+    use super::{base64, inbox_file};
+
+    #[test]
+    fn only_files_inside_the_inbox_can_be_read_for_the_chat() {
+        let inbox = crate::files::inbox_dir();
+        std::fs::create_dir_all(&inbox).unwrap();
+        let inside = inbox.join(format!("coucou-chat-test-{}.txt", std::process::id()));
+        std::fs::write(&inside, b"ok").unwrap();
+        assert!(inbox_file(inside.to_str().unwrap()).is_some());
+
+        // Outside the inbox, directly or by climbing out of it.
+        let outside = std::env::temp_dir().join(format!("coucou-chat-outside-{}.txt", std::process::id()));
+        std::fs::write(&outside, b"secret").unwrap();
+        assert!(inbox_file(outside.to_str().unwrap()).is_none());
+        let climbing = inbox.join("..").join("..").join("..");
+        assert!(inbox_file(climbing.to_str().unwrap()).is_none());
+        assert!(inbox_file(inbox.to_str().unwrap()).is_none(), "the folder itself is not a file");
+        assert!(inbox_file(r"C:\Windows\win.ini").is_none());
+
+        let _ = std::fs::remove_file(&inside);
+        let _ = std::fs::remove_file(&outside);
+    }
 
     #[test]
     fn base64_matches_rfc4648_vectors() {

@@ -171,7 +171,14 @@ fn read_event() -> Option<(String, String)> {
         }
     }
 
-    truncate_strings(&mut payload);
+    // A cut `tool_input` means the island would show the user something other
+    // than what Allow authorises. Say so, and the island hands the request back
+    // to the terminal, where the whole command is visible.
+    if truncate_strings(&mut payload) {
+        if let Some(map) = payload.as_object_mut() {
+            map.insert("coucou_truncated".into(), serde_json::Value::Bool(true));
+        }
+    }
 
     let mut line = payload.to_string();
     line.push('\n');
@@ -179,22 +186,30 @@ fn read_event() -> Option<(String, String)> {
 }
 
 /// Caps every string in the payload. A single Write can carry a whole file.
-fn truncate_strings(value: &mut serde_json::Value) {
+/// Returns true when anything was cut.
+fn truncate_strings(value: &mut serde_json::Value) -> bool {
     match value {
         serde_json::Value::String(s) => {
-            if s.len() > MAX_FIELD_LEN {
-                // Cut on a char boundary; a lone byte index can split UTF-8.
-                let mut end = MAX_FIELD_LEN;
-                while end > 0 && !s.is_char_boundary(end) {
-                    end -= 1;
-                }
-                s.truncate(end);
-                s.push('…');
+            if s.len() <= MAX_FIELD_LEN {
+                return false;
             }
+            // Cut on a char boundary; a lone byte index can split UTF-8.
+            let mut end = MAX_FIELD_LEN;
+            while end > 0 && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            s.truncate(end);
+            s.push('…');
+            true
         }
-        serde_json::Value::Array(items) => items.iter_mut().for_each(truncate_strings),
-        serde_json::Value::Object(map) => map.values_mut().for_each(truncate_strings),
-        _ => {}
+        // `fold`, not `any`: every string must be capped, not just the first.
+        serde_json::Value::Array(items) => {
+            items.iter_mut().fold(false, |cut, v| truncate_strings(v) | cut)
+        }
+        serde_json::Value::Object(map) => {
+            map.values_mut().fold(false, |cut, v| truncate_strings(v) | cut)
+        }
+        _ => false,
     }
 }
 
@@ -258,9 +273,21 @@ mod tests {
     #[test]
     fn long_strings_are_cut_on_a_char_boundary() {
         let mut v = serde_json::json!({ "tool_input": { "content": "é".repeat(4000) } });
-        truncate_strings(&mut v);
+        assert!(truncate_strings(&mut v), "a cut must be reported");
         let s = v["tool_input"]["content"].as_str().unwrap();
         assert!(s.len() <= MAX_FIELD_LEN + 4);
         assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn every_long_string_is_cut_and_short_ones_report_nothing() {
+        let long = "x".repeat(MAX_FIELD_LEN + 10);
+        let mut v = serde_json::json!({ "a": long.clone(), "b": [long.clone(), "short"] });
+        assert!(truncate_strings(&mut v));
+        assert!(v["a"].as_str().unwrap().len() <= MAX_FIELD_LEN + 4);
+        assert!(v["b"][0].as_str().unwrap().len() <= MAX_FIELD_LEN + 4);
+
+        let mut short = serde_json::json!({ "tool_input": { "command": "git status" } });
+        assert!(!truncate_strings(&mut short));
     }
 }

@@ -42,13 +42,11 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
     if dest.exists() {
         let stem = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let ext = src.extension().map(|s| format!(".{}", s.to_string_lossy())).unwrap_or_default();
-        for i in 2..1000 {
-            let candidate = dir.join(format!("{stem} ({i}){ext}"));
-            if !candidate.exists() {
-                dest = candidate;
-                break;
-            }
-        }
+        // Never fall back to the taken name: that would overwrite an earlier copy.
+        dest = (2..1000)
+            .map(|i| dir.join(format!("{stem} ({i}){ext}")))
+            .find(|candidate| !candidate.exists())
+            .ok_or_else(|| "Too many files with this name in the inbox.".to_string())?;
     }
 
     std::fs::copy(src, &dest).map_err(|e| format!("cannot copy: {e}"))?;

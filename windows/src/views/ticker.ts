@@ -36,9 +36,12 @@ function makeRow(): Row {
   check.style.position = "absolute";
   chevron.style.position = "absolute";
   const shimmer = h("span", { class: "tick-text shimmer" });
+  // `top:0` matters: without it the absolute span takes its static position
+  // *below* the inline shimmer text (≈16 px down), so a completed row's dim text
+  // landed on the current row and the two overlapped.
   const dim = h("span", {
     class: "tick-text",
-    style: "position:absolute;left:0;right:0;color:#6b7079",
+    style: "position:absolute;top:0;left:0;right:0;color:#6b7079",
   });
   const el = h(
     "div",

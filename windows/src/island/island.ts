@@ -138,8 +138,10 @@ export class Island {
         const req = State.pendingApproval;
         void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
         if (!req) return;
-        Sound.play(d === "deny" ? "blip" : "approve");
-        void Bridge.approvalDecision(req.requestId, d);
+        Sound.play(d === "allow" ? "approve" : "blip");
+        // "terminal": no decision at all — Claude Code asks there, in full.
+        if (d === "terminal") void Bridge.approvalDecline(req.requestId);
+        else void Bridge.approvalDecision(req.requestId, d);
         State.pendingApproval = null;
         State.isPinned = false;
         this.fsm.pinned = false;

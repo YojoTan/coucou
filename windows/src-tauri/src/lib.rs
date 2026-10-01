@@ -18,7 +18,10 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, DragDropEvent, Emitter, Manager, State, Webview, WebviewEvent, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
 
 use claude::{Chat, ChatContext, ChatReply};
@@ -31,9 +34,29 @@ use settings::Settings;
 /// Keeps spawned helpers from flashing a console window.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// The settings window's label. Only it may touch secrets or settings.json.
+const SETTINGS_LABEL: &str = "settings";
+
 pub struct Shared {
     pub settings: Mutex<Settings>,
     pub gate: Arc<PollGate>,
+}
+
+/// Paths the OS actually dropped on the island. `ingest_file` copies only these,
+/// so the webview can never name an arbitrary file on disk and have it read.
+#[derive(Default)]
+pub struct Dropped(Mutex<Vec<std::path::PathBuf>>);
+
+/// Each command runs only for the window that needs it. The island renders text
+/// that comes from outside — hook payloads, API responses — so it gets no way
+/// to change keys or write ~/.claude/settings.json; the settings window shows
+/// no outside content, so it gets no way to answer a permission request.
+fn only(webview: &Webview, label: &str, command: &str) -> Result<(), String> {
+    if webview.label() == label {
+        return Ok(());
+    }
+    log::line(format!("refused {command} from window {:?}", webview.label()));
+    Err(format!("{command} is not available here"))
 }
 
 #[derive(Serialize)]
@@ -121,15 +144,43 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
     island::apply_geometry(&app, &pref, collapsed);
 }
 
+/// A URL that is safe to hand to the shell: http(s) with a host, re-serialised by
+/// the `url` crate so spaces, quotes and control characters come out
+/// percent-encoded. A bare prefix check let `https://x" other-args` through to
+/// rundll32 as it was typed.
+fn web_url(raw: &str) -> Option<String> {
+    let parsed = url::Url::parse(raw.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none_or(str::is_empty) {
+        return None;
+    }
+    let out = parsed.to_string();
+    if out.chars().any(|c| c.is_whitespace() || c.is_control() || c == '"') {
+        return None;
+    }
+    Some(out)
+}
+
 #[tauri::command]
 fn open_url(url: String) {
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
+    let Some(url) = web_url(&url) else {
+        log::line("open_url refused a non-web URL");
         return;
-    }
+    };
     let _ = Command::new("rundll32.exe")
         .args(["url.dll,FileProtocolHandler", &url])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn();
+}
+
+/// A folder worth opening: absolute, existing, and a directory. Anything else is
+/// refused — handed to Explorer, a file path is *run*, and handed to `code`, a
+/// string starting with `-` is read as an option.
+fn project_folder(path: Option<&str>) -> Option<std::path::PathBuf> {
+    let p = std::path::Path::new(path?.trim());
+    if p.as_os_str().is_empty() || !p.is_absolute() || !p.is_dir() {
+        return None;
+    }
+    Some(p.to_path_buf())
 }
 
 /// "Open terminal" opens the working folder in VS Code when `code` is on PATH,
@@ -140,16 +191,21 @@ fn open_in_vscode(path: Option<String>) -> bool {
     // whoever is using Claude Code, and cmd would happily read `&`, `^` and `%`
     // in a folder name as syntax. Finding the launcher ourselves and handing the
     // path over as a separate argument keeps it a path.
+    let folder = project_folder(path.as_deref());
+    if path.as_deref().is_some_and(|p| !p.is_empty()) && folder.is_none() {
+        log::line("open_in_vscode refused a path that is not a folder");
+        return false;
+    }
     if let Some(code) = find_on_path("code") {
         let mut cmd = Command::new(code);
-        if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
+        if let Some(p) = &folder {
             cmd.arg(p);
         }
         if cmd.creation_flags(CREATE_NO_WINDOW).spawn().is_ok() {
             return true;
         }
     }
-    if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
+    if let Some(p) = &folder {
         let _ = Command::new("explorer").arg(p).spawn();
     }
     false
@@ -193,7 +249,8 @@ fn hooks_status() -> HookStatus {
 
 /// Returns the diff the user has to look at before anything is written.
 #[tauri::command]
-fn hooks_preview(install: bool) -> Result<HookPreview, String> {
+fn hooks_preview(webview: Webview, install: bool) -> Result<HookPreview, String> {
+    only(&webview, SETTINGS_LABEL, "hooks_preview")?;
     hooks::preview(install)
 }
 
@@ -201,10 +258,12 @@ fn hooks_preview(install: bool) -> Result<HookPreview, String> {
 #[tauri::command]
 fn hooks_apply(
     app: AppHandle,
+    webview: Webview,
     shared: State<Shared>,
     install: bool,
     fingerprint: String,
 ) -> Result<String, String> {
+    only(&webview, SETTINGS_LABEL, "hooks_apply")?;
     // The fingerprint comes from the preview the user actually looked at, so a
     // settings.json that changed in between is refused rather than overwritten.
     let backup = hooks::write(install, &fingerprint)?;
@@ -219,7 +278,10 @@ fn hooks_apply(
 }
 
 #[tauri::command]
-fn approval_decision(app: AppHandle, request_id: String, decision: String) {
+fn approval_decision(app: AppHandle, webview: Webview, request_id: String, decision: String) {
+    if only(&webview, island::WINDOW_LABEL, "approval_decision").is_err() {
+        return;
+    }
     pipe::answer(&app, &request_id, &decision);
 }
 
@@ -227,14 +289,20 @@ fn approval_decision(app: AppHandle, request_id: String, decision: String) {
 /// Until this arrives the relay only waits a few hundred milliseconds, which is
 /// what stops a paused or unresponsive island from freezing Claude Code.
 #[tauri::command]
-fn approval_ack(app: AppHandle, request_id: String) {
+fn approval_ack(app: AppHandle, webview: Webview, request_id: String) {
+    if only(&webview, island::WINDOW_LABEL, "approval_ack").is_err() {
+        return;
+    }
     pipe::acknowledge(&app, &request_id);
 }
 
 /// Nobody can act on this request — the island is paused, or another card is
 /// already up. Claude Code falls back to asking in the terminal immediately.
 #[tauri::command]
-fn approval_decline(app: AppHandle, request_id: String) {
+fn approval_decline(app: AppHandle, webview: Webview, request_id: String) {
+    if only(&webview, island::WINDOW_LABEL, "approval_decline").is_err() {
+        return;
+    }
     pipe::decline(&app, &request_id);
 }
 
@@ -243,11 +311,13 @@ fn approval_decline(app: AppHandle, request_id: String) {
 /// One chat turn. The API key and any file bytes stay on the Rust side.
 #[tauri::command]
 async fn chat_send(
+    webview: Webview,
     shared: State<'_, Shared>,
     chat: State<'_, Chat>,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
+    only(&webview, island::WINDOW_LABEL, "chat_send")?;
     let model = shared.settings.lock().unwrap().model.clone();
     claude::send(&chat, &model, query, context).await
 }
@@ -257,10 +327,38 @@ fn chat_reset(chat: State<Chat>) {
     chat.reset();
 }
 
-/// Copies a dropped file into the inbox and reports its name back.
+/// Copies a dropped file into the inbox and reports its name back. Only a path
+/// the OS really dropped on the island is accepted, once.
 #[tauri::command]
-fn ingest_file(path: String) -> Result<DroppedFile, String> {
+fn ingest_file(webview: Webview, dropped: State<Dropped>, path: String) -> Result<DroppedFile, String> {
+    only(&webview, island::WINDOW_LABEL, "ingest_file")?;
+    {
+        let mut list = dropped.0.lock().unwrap();
+        let wanted = std::path::Path::new(&path);
+        let Some(i) = list.iter().position(|p| p.as_path() == wanted) else {
+            log::line("ingest_file refused a path that was not dropped");
+            return Err("Drop the file on Mochi to share it.".into());
+        };
+        list.remove(i);
+    }
     files::ingest(&path)
+}
+
+/// Remembers what the OS dropped on the island, for `ingest_file`.
+fn remember_drop(app: &AppHandle, label: &str, paths: &[std::path::PathBuf]) {
+    if label != island::WINDOW_LABEL {
+        return;
+    }
+    let dropped = app.state::<Dropped>();
+    let mut list = dropped.0.lock().unwrap();
+    for p in paths {
+        if !list.contains(p) {
+            list.push(p.clone());
+        }
+    }
+    // Only the latest few matter; the island ingests the first path at once.
+    let excess = list.len().saturating_sub(16);
+    list.drain(..excess);
 }
 
 /// The island may only ask whether a key exists — never read it.
@@ -270,12 +368,19 @@ fn secret_present(key: String) -> bool {
 }
 
 #[tauri::command]
-fn secret_set(key: String, value: String) -> Result<(), String> {
+fn secret_set(webview: Webview, key: String, value: String) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "secret_set")?;
+    // The n8n API key is sent to whatever this URL says, so it has to be a URL
+    // the key can safely travel to.
+    if key == "n8n-url" && !value.trim().is_empty() {
+        integrations::n8n_base(&value)?;
+    }
     secrets::set(&key, &value)
 }
 
 #[tauri::command]
-fn secret_clear(key: String) -> Result<(), String> {
+fn secret_clear(webview: Webview, key: String) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "secret_clear")?;
     secrets::clear(&key)
 }
 
@@ -380,6 +485,19 @@ pub fn run() {
         })
         .manage(Pending::default())
         .manage(Chat::default())
+        .manage(Dropped::default())
+        // Depending on the webview, a drop arrives as a window or a webview
+        // event; both feed the same list.
+        .on_window_event(|window, event| {
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                remember_drop(window.app_handle(), window.label(), paths);
+            }
+        })
+        .on_webview_event(|webview, event| {
+            if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                remember_drop(webview.app_handle(), webview.label(), paths);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             boot,
             save_settings,
@@ -431,4 +549,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Coucou");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_web_urls_reach_the_shell_and_they_come_out_encoded() {
+        assert_eq!(web_url("https://vercel.com/dashboard").as_deref(), Some("https://vercel.com/dashboard"));
+        assert_eq!(web_url("https://a.b/x y\"z").as_deref(), Some("https://a.b/x%20y%22z"));
+        for bad in [
+            "file:///C:/Windows/System32/calc.exe",
+            "javascript:alert(1)",
+            r"C:\Windows\System32\calc.exe",
+            "calc.exe",
+            "ms-settings:",
+            "https://",
+            "",
+        ] {
+            assert!(web_url(bad).is_none(), "{bad:?} must be refused");
+        }
+    }
+
+    #[test]
+    fn only_existing_absolute_folders_are_opened() {
+        let tmp = std::env::temp_dir();
+        assert!(project_folder(tmp.to_str()).is_some());
+        assert!(project_folder(Some("--install-extension=evil.vsix")).is_none());
+        assert!(project_folder(Some(r"relative\folder")).is_none());
+        let file = tmp.join(format!("coucou-not-a-folder-{}.exe", std::process::id()));
+        std::fs::write(&file, b"x").unwrap();
+        assert!(project_folder(file.to_str()).is_none(), "a file must never be handed to Explorer");
+        let _ = std::fs::remove_file(&file);
+        assert!(project_folder(None).is_none());
+    }
 }

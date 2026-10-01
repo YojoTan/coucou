@@ -45,11 +45,53 @@ fn emit(app: &AppHandle, update: IntegrationUpdate) {
     let _ = app.emit_to(WINDOW_LABEL, "integration", update);
 }
 
+/// Redirects stay on the same https host, or are not followed. reqwest drops
+/// `Authorization` on a cross-host hop but keeps custom headers such as
+/// `X-N8N-API-KEY`, so an open redirect would otherwise hand the key away.
+fn same_host_https(attempt: reqwest::redirect::Attempt) -> reqwest::redirect::Action {
+    let same = attempt.previous().first().is_some_and(|first| {
+        first.host_str() == attempt.url().host_str()
+            && first.port_or_known_default() == attempt.url().port_or_known_default()
+    });
+    if attempt.previous().len() < 5 && same && attempt.url().scheme() == "https" {
+        attempt.follow()
+    } else {
+        attempt.stop()
+    }
+}
+
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(TIMEOUT)
+        .redirect(reqwest::redirect::Policy::custom(same_host_https))
         .build()
         .unwrap_or_default()
+}
+
+/// Is `raw` a base URL the n8n API key may travel to? https anywhere, plain
+/// http only to this machine. The key rides in a header on every poll, so an
+/// `http://` instance on the network would send it in the clear every 15 s.
+/// Returns the base without its trailing slash.
+pub fn n8n_base(raw: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(raw.trim()).map_err(|_| "Not a valid URL.".to_string())?;
+    let host = parsed.host_str().unwrap_or_default();
+    if host.is_empty() {
+        return Err("The URL needs a host.".into());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Leave credentials out of the URL — the API key is enough.".into());
+    }
+    let loopback = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+    match parsed.scheme() {
+        "https" => {}
+        "http" if loopback => {}
+        "http" => return Err("Use https:// — the API key would travel unencrypted.".into()),
+        _ => return Err("Only https:// URLs are supported.".into()),
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("Use the instance's base URL, without ? or #.".into());
+    }
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
 }
 
 /// Set from the tray's Pause item. While it is on, nothing reaches the network:
@@ -611,7 +653,19 @@ async fn poll_n8n(app: AppHandle) {
     let (Some(key), Some(raw_base)) = (secrets::get("n8n-api-key"), secrets::get("n8n-url")) else {
         return;
     };
-    let base = raw_base.trim_end_matches('/').to_string();
+    // Checked again here: a URL saved by an older build never went through it.
+    let base = match n8n_base(&raw_base) {
+        Ok(base) => base,
+        Err(why) => {
+            emit(&app, IntegrationUpdate {
+                id: "integration_n8n",
+                data: json!({}),
+                error: Some(why),
+                event: None,
+            });
+            return;
+        }
+    };
     let http = client();
 
     // Same two shapes as the Swift poller: the public API first, then /rest.
@@ -648,6 +702,10 @@ async fn poll_n8n(app: AppHandle) {
         Some(Value::Number(n)) => n.to_string(),
         _ => return,
     };
+    // The id goes into a URL path next; n8n ids are plain tokens.
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return;
+    }
 
     let status = first.get("status").and_then(Value::as_str).unwrap_or("");
     if !["success", "error", "crashed", "canceled", "failed"].contains(&status) {
@@ -761,5 +819,31 @@ fn fmt_value(v: &Value) -> String {
         Value::Array(a) => format!("[{}]", a.len()),
         Value::Object(_) => "{…}".into(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::n8n_base;
+
+    #[test]
+    fn the_n8n_key_only_travels_over_https_or_to_this_machine() {
+        assert_eq!(n8n_base("https://n8n.example.com/").unwrap(), "https://n8n.example.com");
+        assert_eq!(n8n_base(" https://n8n.example.com/base ").unwrap(), "https://n8n.example.com/base");
+        assert!(n8n_base("http://localhost:5678").is_ok());
+        assert!(n8n_base("http://127.0.0.1:5678/").is_ok());
+        assert!(n8n_base("http://[::1]:5678").is_ok());
+        for bad in [
+            "http://n8n.example.com",
+            "http://192.168.1.20:5678",
+            "ftp://n8n.example.com",
+            "file:///C:/n8n",
+            "https://user:pass@n8n.example.com",
+            "https://n8n.example.com/?next=https://evil.example",
+            "n8n.example.com",
+            "",
+        ] {
+            assert!(n8n_base(bad).is_err(), "{bad:?} must be refused");
+        }
     }
 }

@@ -328,8 +328,16 @@ struct FinishedView: View {
             CardBackground(wash: .green)
             VStack(alignment: .leading, spacing: 5) {
                 AgentWho(task: state.focusTask, label: "Claude Code finished")
-                Text(state.focusTask?.steps.last ?? "Session finished")
-                    .font(.system(size: 15, weight: .semibold))
+                // What Claude said last beats the last tool step: it says what was done.
+                if let summary = state.focusTask?.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                } else {
+                    Text(state.focusTask?.steps.last ?? "Session finished")
+                        .font(.system(size: 15, weight: .semibold))
+                }
                 HStack(spacing: 8) {
                     #if !APPSTORE
                     PrimaryButton("Open terminal") {
@@ -758,6 +766,35 @@ struct PromptView: View {
     @ObservedObject var state: AppState
     @State private var text: String = ""
     @FocusState private var focused: Bool
+    /// Clipboard text attached with the clipboard button — read only on that
+    /// click, shown as a chip, removable, and sent with the next question.
+    @State private var clip: String? = nil
+
+    /// One-click questions about a dropped file.
+    private struct QuickAction: Identifiable, Sendable {
+        let label: String
+        let prompt: String
+        var id: String { label }
+    }
+    private static let fileActions: [QuickAction] = [
+        QuickAction(label: "Summarize", prompt: "Summarize this file in a few short paragraphs."),
+        QuickAction(label: "Explain", prompt: "Explain what this file is and what it does, simply."),
+        QuickAction(label: "Key points", prompt: "List the key points of this file, one per line."),
+    ]
+    private static let codeAction = QuickAction(label: "Review code", prompt: "Review this code: point out bugs, risks and clear improvements, most important first.")
+    private static let codeExtensions: Set<String> = ["swift", "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "kt", "c", "cc", "cpp", "h", "m", "cs", "rb", "php", "sh", "sql"]
+
+    /// The dropped file waiting for its first question, if any.
+    private var pendingFileName: String? {
+        guard state.chatHistory.isEmpty, case .file(let name, _)? = state.promptContext else { return nil }
+        return name
+    }
+
+    private var quickActions: [QuickAction] {
+        guard let name = pendingFileName else { return [] }
+        let ext = (name as NSString).pathExtension.lowercased()
+        return Self.codeExtensions.contains(ext) ? Self.fileActions + [Self.codeAction] : Self.fileActions
+    }
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -766,6 +803,34 @@ struct PromptView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let ctx = state.promptContext {
                     ContextChip(context: ctx).padding(.top, 4)
+                }
+                if let clip {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.on.clipboard").font(.system(size: 10))
+                        Text("Clipboard · \(clip.count) chars").font(.system(size: 11.5))
+                        Button { self.clip = nil } label: {
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .foregroundColor(Color(hex: "#F1F2F4"))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Capsule())
+                }
+                if !quickActions.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(quickActions) { action in
+                            Button(action.label) { ask(action.prompt) }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundColor(Color(hex: "#C9CCD2"))
+                                .padding(.horizontal, 10).padding(.vertical, 3)
+                                .background(Color.white.opacity(0.06))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.14)))
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
 
                 if !state.chatHistory.isEmpty {
@@ -802,6 +867,14 @@ struct PromptView: View {
                 }
 
                 HStack(spacing: 8) {
+                    Button(action: toggleClipboard) {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 12))
+                            .foregroundColor(clip == nil ? Color(hex: "#8E939C") : Color(hex: "#F1F2F4"))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Ask about the clipboard")
+
                     TextField(state.chatHistory.isEmpty ? "Ask me anything…" : "Continue…", text: $text)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
@@ -837,10 +910,28 @@ struct PromptView: View {
         focused = false
         state.chatHistory.append(ChatMessage(role: .user, content: query))
         state.stateOverride = .thinking
+        // The bubble shows what was typed; the clipboard rides along with it.
+        var sent = query
+        if let clip {
+            sent += "\n\nThe user copied this text and is asking about it:\n<clipboard>\n\(clip)\n</clipboard>"
+        }
+        clip = nil
         Task {
-            await ClaudeService.shared.chat(query: query, context: state.promptContext, state: state)
+            await ClaudeService.shared.chat(query: sent, context: state.promptContext, state: state)
             await MainActor.run { focused = true }
         }
+    }
+
+    private func ask(_ prompt: String) {
+        text = prompt
+        sendMessage()
+    }
+
+    private func toggleClipboard() {
+        if clip != nil { clip = nil; return }
+        let copied = NSPasteboard.general.string(forType: .string) ?? ""
+        let trimmed = copied.trimmingCharacters(in: .whitespacesAndNewlines)
+        clip = trimmed.isEmpty ? nil : String(copied.prefix(20_000))
     }
 }
 

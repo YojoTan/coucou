@@ -177,6 +177,9 @@ final class HookServer: @unchecked Sendable {
         case "UserPromptSubmit":
             activeSessionId = sessionId
             upsertTask(projectName: projectName, cwd: cwd)
+            if let idx = state.tasks.firstIndex(where: { $0.id == "integration_claude" }) {
+                state.tasks[idx].summary = nil
+            }
             state.updateTask(id: "integration_claude", state: .thinking)
             if let prompt = payload["prompt"] as? String, !prompt.isEmpty {
                 appendStep(id: "integration_claude", step: String(prompt.prefix(60)))
@@ -214,6 +217,11 @@ final class HookServer: @unchecked Sendable {
             }
 
         case "Stop":
+            // What Claude said last, read from its local transcript (inside ~/.claude only).
+            if let path = payload["transcript_path"] as? String,
+               let idx = state.tasks.firstIndex(where: { $0.id == "integration_claude" }) {
+                state.tasks[idx].summary = TranscriptSummary.lastReply(transcriptPath: path)
+            }
             state.updateTask(id: "integration_claude", state: .finished)
             if let message = payload["message"] as? String, !message.isEmpty {
                 appendStep(id: "integration_claude", step: String(message.prefix(60)))

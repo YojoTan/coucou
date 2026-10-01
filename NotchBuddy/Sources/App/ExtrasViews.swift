@@ -216,6 +216,8 @@ struct ExtrasSettingsSection: View {
             .padding(6)
         }
 
+        CostumesSettingsSection(state: state)
+
         WorktreesSettingsSection()
 
         GroupBox("Custom Mochis") {
@@ -394,6 +396,35 @@ private struct CustomMochiEditor: View {
         .padding(8)
         .background(Color.primary.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A costume per pill: the main Mochi and the desktop pet wear the focused pill's.
+private struct CostumesSettingsSection: View {
+    @ObservedObject var state: AppState
+    @State private var themes = MochiThemes.assignments
+
+    var body: some View {
+        GroupBox("Costumes") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Each Mochi can wear a costume with props in its hands — the galactic outlaw spins its blasters to the music and fires on the beat. The big Mochi and the desktop pet wear the focused pill's.")
+                    .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                ForEach(state.tasks.filter(\.isIntegration)) { task in
+                    HStack(spacing: 8) {
+                        Circle().fill(Color(hex: task.color)).frame(width: 9, height: 9)
+                        Text(verbatim: task.name).font(.system(size: 12))
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { MochiTheme(rawValue: themes[task.id] ?? "") ?? .none },
+                            set: { MochiThemes.set($0, for: task.id); themes = MochiThemes.assignments })) {
+                            ForEach(MochiTheme.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden().fixedSize()
+                    }
+                }
+            }
+            .padding(6)
+        }
     }
 }
 

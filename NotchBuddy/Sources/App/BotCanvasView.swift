@@ -261,6 +261,12 @@ struct MusicSync: View {
         if playing && (!engine.musicPlaying || (previous != nil && previous?.title != track?.title)) {
             engine.musicStart()
         }
+        // A costume can react to what Spotify did (the outlaw's fan, smoke, quick draw).
+        if active, let previous, let track {
+            if previous.playing && track.playing && previous.title != track.title { engine.musicEvent(.newTrack) }
+            else if previous.playing && !track.playing { engine.musicEvent(.paused) }
+            else if !previous.playing && track.playing { engine.musicEvent(.resumed) }
+        }
         engine.musicPlaying = playing
     }
 }
@@ -349,6 +355,7 @@ struct MochiExtrasSync: View {
         .onChange(of: state.focusMode) { _, _ in apply() }
         .onChange(of: state.pet) { _, _ in apply() }
         .onChange(of: state.customStatus) { _, _ in apply() }
+        .onReceive(NotificationCenter.default.publisher(for: .mochiThemeChanged)) { _ in apply() }
         .onChange(of: state.petEvent) { _, e in
             guard isMain, e != nil else { return }
             engine.react(.confetti)
@@ -413,6 +420,10 @@ struct MochiExtrasSync: View {
                 }
             }
         }
+        // A costume covers the head: the accessory steps aside (a Focus mode's mask stays).
+        let theme = MochiThemes.theme(for: taskId)
+        engine.theme = theme
+        if theme.hasHeadwear && !(isMain && state.focusMode != .normal) { accessory = .none }
         engine.accessory = accessory
         engine.accessoryColor = color
         engine.sweating = sweat

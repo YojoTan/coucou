@@ -28,6 +28,20 @@ enum ExtrasParseTests {
         precondition(ExtrasParse.season(month: 12, day: 24, birthday: nil) == .santaHat, "December")
         precondition(ExtrasParse.season(month: 10, day: 20, birthday: "10-20") == .partyHat, "birthday wins")
         precondition(ExtrasParse.season(month: 3, day: 4, birthday: "10-20") == nil, "ordinary day")
+        // Claude Code's permission dialog, as Orca reads a terminal's screen.
+        let dialog = ["╭──────────────╮", "│ Bash command", "│   git push origin main", "│ Do you want to proceed?",
+                      "│ ❯ 1. Yes", "│   2. Yes, and don't ask again for git push commands", "│   3. No, and tell Claude what to do differently (esc)", "╰──────╯"]
+        precondition(OrcaParse.showsPermissionDialog(dialog, needsAlways: false), "dialog seen")
+        precondition(OrcaParse.showsPermissionDialog(dialog, needsAlways: true), "always offered")
+        precondition(!OrcaParse.showsPermissionDialog(dialog.filter { !$0.contains("2. Yes") }, needsAlways: true), "no always option")
+        precondition(!OrcaParse.showsPermissionDialog(["> fix the login bug", "  1. Yes I think so"], needsAlways: false), "a chat line isn't a dialog")
+        precondition(!OrcaParse.showsPermissionDialog([], needsAlways: false), "empty screen")
+        // A tall window: the dialog near the top, forty empty rows under it, colour codes.
+        let tall = ["\u{1B}[1m Bash command\u{1B}[0m", "   cd \"/x\" && python3 - <<'PY'", " Do you want to proceed?",
+                    " \u{1B}[36m❯ 1. Yes\u{1B}[0m   ", "   2. Yes, and don't ask again for python3 commands", "   3. No, and tell Claude what to do differently (esc)"]
+                   + Array(repeating: "                    ", count: 40)
+        precondition(OrcaParse.showsPermissionDialog(tall, needsAlways: true), "dialog above empty rows, with colour codes")
+        precondition(OrcaParse.clean(tall).count == 6, "empty rows dropped")
         print("Extras parse tests passed")
     }
 }

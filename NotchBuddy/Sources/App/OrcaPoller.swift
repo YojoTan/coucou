@@ -10,8 +10,9 @@ import AppKit
 // starts waiting for a permission raises an approval badge, one that finishes
 // gets a ✓. Same model as the Windows build (orca.rs).
 //
-// Permissions are answered in Orca, never from here: a row click focuses the
-// agent's terminal there. A worktree whose agent already reports to Coucou
+// A row click focuses the agent's terminal in Orca. A Claude Code agent's
+// permission can be answered from the card or the desktop pet, on a click only,
+// and only after checking its terminal shows the question (answer(_:_:done:)). A worktree whose agent already reports to Coucou
 // through its hooks (AgentSessions) is listed but doesn't alert twice.
 //
 // Orchestration questions (`orchestration ask`) and decision gates are the one
@@ -32,6 +33,7 @@ struct OrcaWorktree: Sendable, Identifiable, Equatable {
     let prompt: String
     let tool: String
     let lastMessage: String
+    var toolInput: String = ""      // what the tool wants to run (the permission card shows it)
 }
 
 /// A question a worker asked its Run, or a pending decision gate.
@@ -56,20 +58,31 @@ final class OrcaPoller: @unchecked Sendable {
     func start() {
         guard timer == nil else { return }
         let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        t.schedule(deadline: .now() + 6, repeating: 5)
+        // worktree.ps is one local call: every 1.5 s, so a permission shows up at once;
+        // the orchestration questions and gates (a few calls) every fourth tick.
+        t.schedule(deadline: .now() + 6, repeating: 1.5)
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
     }
 
+    private var ticks = 0           // main queue only
+    private var inFlight = false    // main queue only
+
     private func tick() {
         DispatchQueue.main.async {
-            // Only while the user has the Orca pill on.
-            guard AppState.shared.tasks.contains(where: { $0.id == Self.taskId }) else { return }
+            // Only while the user has the Orca pill on, and one poll at a time.
+            guard AppState.shared.tasks.contains(where: { $0.id == Self.taskId }), !self.inFlight else { return }
+            self.inFlight = true
+            self.ticks += 1
+            let withAsks = self.ticks % 4 == 1
             DispatchQueue.global(qos: .utility).async {
                 let rows = Self.query()
-                let asks = rows == nil ? [] : Self.queryAsks()
-                DispatchQueue.main.async { self.consume(rows, asks) }
+                let asks: [OrcaAsk]? = rows != nil && withAsks ? Self.queryAsks() : nil
+                DispatchQueue.main.async {
+                    self.inFlight = false
+                    self.consume(rows, asks)
+                }
             }
         }
     }
@@ -163,7 +176,8 @@ final class OrcaPoller: @unchecked Sendable {
                 paneKey: agent?["paneKey"] as? String ?? "",
                 prompt: oneLine(prompt, 160),
                 tool: oneLine(agent?["toolName"] as? String ?? "", 60),
-                lastMessage: oneLine(agent?["lastAssistantMessage"] as? String ?? "", 200)
+                lastMessage: oneLine(agent?["lastAssistantMessage"] as? String ?? "", 200),
+                toolInput: oneLine(agent?["toolInput"] as? String ?? "", 300)
             )
         }
         let rank = ["permission": 0, "working": 1, "done": 2, "active": 3]
@@ -215,7 +229,7 @@ final class OrcaPoller: @unchecked Sendable {
 
     /// Main queue: state, alerts for new permissions, finishes and questions.
     @MainActor
-    private func consume(_ rows: [OrcaWorktree]?, _ asks: [OrcaAsk]) {
+    private func consume(_ rows: [OrcaWorktree]?, _ asks: [OrcaAsk]?) {
         let state = AppState.shared
         guard let rows else {
             state.orcaError = String(localized: "Orca isn't running on this Mac.")
@@ -223,7 +237,7 @@ final class OrcaPoller: @unchecked Sendable {
         }
         state.orcaError = nil
         if state.orcaWorktrees != rows { state.orcaWorktrees = rows }
-        consumeAsks(asks)
+        if let asks { consumeAsks(asks) }
         let previous = seen
         seen = Dictionary(rows.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
         guard let previous, let idx = state.tasks.firstIndex(where: { $0.id == Self.taskId }) else { return }
@@ -340,6 +354,59 @@ final class OrcaPoller: @unchecked Sendable {
         let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
             .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
         return oneLine(message ?? text, 200)
+    }
+
+    // MARK: Answering an agent's permission (only on a click)
+    // Orca has no API for it: the answer is the key the user would press in that
+    // agent's terminal. So nothing is sent unless, right before, Orca still says
+    // that worktree is waiting, its agent is Claude Code, and the terminal's
+    // screen shows Claude Code's permission dialog. Then one key: 1 (yes),
+    // 2 (yes, don't ask again), Escape (no) — and a check that it took.
+
+    enum Decision { case allow, always, deny }
+
+    static func answer(_ w: OrcaWorktree, _ d: Decision, done: @escaping @MainActor @Sendable (String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let error = Self.sendDecision(w, d)
+            DispatchQueue.main.async { done(error) }
+        }
+    }
+
+    private static func sendDecision(_ w: OrcaWorktree, _ d: Decision) -> String? {
+        guard w.agent == "claude" else { return String(localized: "Only Claude Code can be answered from here — open it in Orca.") }
+        guard let now = query()?.first(where: { $0.id == w.id }), now.status == "permission", now.paneKey == w.paneKey else {
+            return String(localized: "It isn't asking any more.")
+        }
+        let terminals = rpc("terminal.list", [:])?["terminals"] as? [[String: Any]] ?? []
+        let leaf = w.paneKey.split(separator: ":").last.map(String.init)
+        guard let handle = terminals.first(where: { $0["leafId"] as? String == leaf })?["handle"] as? String else {
+            return String(localized: "Its terminal wasn't found.")
+        }
+        // The whole rendered screen (a limit high enough for any window).
+        let read = rpc("terminal.read", ["terminal": handle, "screen": true, "limit": 400])?["terminal"] as? [String: Any]
+        let screen = read?["tail"] as? [String] ?? []
+        guard OrcaParse.showsPermissionDialog(screen, needsAlways: d == .always) else {
+            // What was seen, never what was on screen (a command can hold a token).
+            let m = OrcaParse.marks(screen)
+            HookServer.log("Orca answer refused: \(OrcaParse.clean(screen).count) lines, source \(read?["source"] as? String ?? "?"), "
+                           + "asks \(m.asks) yes \(m.yes) no \(m.no) always \(m.always), agent \(w.agent)")
+            return String(localized: "Its terminal doesn't show the permission question — nothing sent. Open it in Orca.")
+        }
+        let key: String
+        switch d {
+        case .allow: key = "1"
+        case .always: key = "2"
+        case .deny: key = "\u{1B}"
+        }
+        guard rpc("terminal.send", ["terminal": handle, "text": key, "enter": false, "interrupt": false,
+                                    "client": ["id": "coucou", "type": "desktop"]]) != nil else {
+            return String(localized: "Orca didn't take the key.")
+        }
+        Thread.sleep(forTimeInterval: 1.2)
+        if let after = query()?.first(where: { $0.id == w.id }), after.status == "permission", after.paneKey == w.paneKey {
+            return String(localized: "It's still asking — have a look in Orca.")
+        }
+        return nil
     }
 
     /// "Open Orca" — the app, by bundle id, else /Applications.

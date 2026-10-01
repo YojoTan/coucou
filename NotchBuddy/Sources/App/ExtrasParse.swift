@@ -92,3 +92,34 @@ enum ExtrasParse {
         return (first.trimmingCharacters(in: .whitespaces), exitCode == 0 ? "ok" : "error")
     }
 }
+
+enum OrcaParse {
+    /// A terminal screen as Orca reads it, cleaned: colour codes out, trailing
+    /// spaces off, and the empty rows under the last line of text dropped (a tall
+    /// window is mostly those, which once hid the dialog above them).
+    static func clean(_ lines: [String]) -> [String] {
+        var out = lines.map {
+            $0.replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[ -/]*[@-~]", with: "", options: .regularExpression)
+              .replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+        }
+        while let last = out.last, last.trimmingCharacters(in: .whitespaces).isEmpty { out.removeLast() }
+        return out
+    }
+
+    /// Which parts of Claude Code's permission dialog a screen shows (for the log, too).
+    static func marks(_ lines: [String]) -> (asks: Bool, yes: Bool, no: Bool, always: Bool) {
+        let text = clean(lines).joined(separator: "\n")
+        let asks = ["Do you want", "Would you like", "proceed?"].contains { text.contains($0) }
+        let yes = text.range(of: #"1\.\s*Yes"#, options: .regularExpression) != nil
+        let no = text.contains("No, and tell") || text.contains("(esc)") || text.range(of: #"[23]\.\s*No"#, options: .regularExpression) != nil
+        let always = text.range(of: #"2\.\s*Yes"#, options: .regularExpression) != nil
+        return (asks, yes, no, always)
+    }
+
+    /// Claude Code's permission dialog anywhere on the screen: the question and
+    /// the numbered answers — "2. Yes" too when that's the answer being sent.
+    static func showsPermissionDialog(_ lines: [String], needsAlways: Bool) -> Bool {
+        let m = marks(lines)
+        return m.asks && m.yes && m.no && (!needsAlways || m.always)
+    }
+}

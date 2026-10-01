@@ -541,3 +541,24 @@
 "Throw it: let go of a drag with speed. Leave it against a side edge and it peeks. Wiggle the cursor over it to pet it. Drop a file on it. Right-click or click it for its menu." = "Lánzalo: suéltalo con impulso al arrastrarlo. Déjalo contra un borde lateral y se asoma. Mueve el cursor de lado a lado sobre él para acariciarlo. Suéltale un archivo encima. Click o click derecho para su menú.";
 "Seasonal outfits (pumpkin in late October, Santa hat in December)" = "Disfraces de temporada (calabaza a fin de octubre, gorro de Santa en diciembre)";
 "Your birthday (party hat and confetti)" = "Tu cumpleaños (gorro de fiesta y confeti)";
+
+/* Costumes */
+"No costume" = "Sin disfraz";
+"Galactic outlaw" = "Forajido galáctico";
+"Wizard" = "Mago";
+"Pirate" = "Pirata";
+"Astronaut" = "Astronauta";
+"Costumes" = "Disfraces";
+"Each Mochi can wear a costume with props in its hands — the galactic outlaw spins its blasters to the music and fires on the beat. The big Mochi and the desktop pet wear the focused pill's." = "Cada Mochi puede llevar un disfraz con objetos en las manos: el forajido galáctico gira sus blásters con la música y dispara al ritmo. El Mochi grande y la mascota llevan el de la pill enfocada.";
+
+"K-pop idol" = "Ídolo K-pop";
+
+/* Orca permissions */
+"Only Claude Code can be answered from here — open it in Orca." = "Desde aquí solo puedo responderle a Claude Code: ábrelo en Orca.";
+"It isn't asking any more." = "Ya no está pidiendo permiso.";
+"Its terminal wasn't found." = "No encontré su terminal.";
+"Its terminal doesn't show the permission question — nothing sent. Open it in Orca." = "Su terminal no muestra la pregunta de permiso: no envié nada. Ábrelo en Orca.";
+"Orca didn't take the key." = "Orca no aceptó la tecla.";
+"It's still asking — have a look in Orca." = "Sigue preguntando: revísalo en Orca.";
+"Open in Orca" = "Abrir en Orca";
+"Answering in its terminal…" = "Respondiendo en su terminal…";

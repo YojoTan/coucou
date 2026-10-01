@@ -189,8 +189,23 @@ struct ExtrasSettingsSection: View {
     @State private var city = WeatherMochi.place?.name ?? ""
     @State private var message = ""
     @AppStorage(MochiVoice.key) private var voice = false
+    @AppStorage(DesktopMochi.enabledKey) private var desktopMochi = false
+    @AppStorage(DesktopMochi.followKey) private var petFollows = true
+    @AppStorage(IslandWindowController.followScreenKey) private var islandFollows = true
 
     var body: some View {
+        GroupBox("Desktop Mochi") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Mochi out of the notch, as a companion on your desktop: drag it anywhere, it follows you from screen to screen, says its news in a bubble. Click it to open the island there, double-click to send it home. You can also drag Mochi out of the island and drop it where there's no window.")
+                    .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle("Mochi on the desktop", isOn: $desktopMochi)
+                    .onChange(of: desktopMochi) { _, _ in DesktopMochi.shared.apply() }
+                Toggle("It follows me to the screen I'm on", isOn: $petFollows)
+                Toggle("The island follows me to the screen I'm on", isOn: $islandFollows)
+            }
+            .padding(6)
+        }
+
         GroupBox("Custom Mochis") {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Make your own: a name, a colour, something to wear, and where its news comes from — a command it runs, a local URL your scripts call, or Shortcuts.")

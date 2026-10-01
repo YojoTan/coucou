@@ -106,6 +106,10 @@ final class AppState: ObservableObject {
     @Published var stateOverride: BotState? = nil
 
     // Real notch dimensions (set by IslandWindowController on launch)
+    /// Bumped when the island moves to another screen: views re-measure.
+    @Published var screenEpoch = 0
+    /// Mochi is out on the desktop (DesktopMochi): the island's compact Mochi steps aside.
+    @Published var desktopMochiOn = false
     var notchWidth:  CGFloat = IslandConst.notchWidth
     var notchHeight: CGFloat = IslandConst.notchHeight
     var hasNotch = true

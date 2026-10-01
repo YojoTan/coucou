@@ -30,6 +30,7 @@
 		1F11EC4E6F604C612A1ADAD1 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E4F18AA940EFF7E047B9F7 /* AppState.swift */; };
 		2132477000FD77F7EB234DAA /* FileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3232F258523DD8D09B670363 /* FileDropView.swift */; };
 		242192B4DDF6E6E90C149BDC /* DiscordService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31720A18CA6F97E7F65D2540 /* DiscordService.swift */; };
+		273FC0FA14AAF6CE62FD14AE /* DesktopMochi.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1DDC96E7967032F5D0BD585 /* DesktopMochi.swift */; };
 		2875610F701376BD65573386 /* WindowContextCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91B733ADC638E14E9BB6EFA /* WindowContextCapture.swift */; };
 		2C798C3837A63B9BB561A1A0 /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D8DD79C3DD9BBC584B3CB2 /* HookServer.swift */; };
 		2CC2E3B688B15BBEB3AE3BCE /* WindowContextCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91B733ADC638E14E9BB6EFA /* WindowContextCapture.swift */; };
@@ -97,6 +98,7 @@
 		BBB8F8D44FFD89A70A155D86 /* SpotifyWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43B52BECC54600C57072EE5 /* SpotifyWatcher.swift */; };
 		BD98541843C68CF385C85979 /* AgentSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34612E56AA72FABD62FE9A2C /* AgentSessions.swift */; };
 		BE1ED626210B92EFA01F2E84 /* OpencodePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3706FE519606B07252B9437C /* OpencodePlugin.swift */; };
+		BEC5DDB55B3DA67C61CA8470 /* DesktopMochi.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1DDC96E7967032F5D0BD585 /* DesktopMochi.swift */; };
 		BFB5F3AD6BA56A7D1894C25F /* ExtrasViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBFE90081244F212F1E81C7 /* ExtrasViews.swift */; };
 		C0E18D0F6F5F6D131E6066B8 /* GreetingCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C581F7B1A9F14B281B60063E /* GreetingCanvasView.swift */; };
 		C18227D148D99FE6EE3CC51A /* GithubPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB8B6E5E9DA6164F979E88F /* GithubPoller.swift */; };
@@ -167,6 +169,7 @@
 		A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeService.swift; sourceTree = "<group>"; };
 		AD817BE09ACCD6A3DBAE2CA1 /* LocalCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCLI.swift; sourceTree = "<group>"; };
 		AFAB8CC7BBB92F4BCE9AD8B6 /* ChatTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTuning.swift; sourceTree = "<group>"; };
+		B1DDC96E7967032F5D0BD585 /* DesktopMochi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMochi.swift; sourceTree = "<group>"; };
 		B241B043223AFBBFB7418A5E /* UploadCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadCanvasView.swift; sourceTree = "<group>"; };
 		B43B52BECC54600C57072EE5 /* SpotifyWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyWatcher.swift; sourceTree = "<group>"; };
 		B89DA1A0C21AE3535A1760BB /* N8nPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = N8nPoller.swift; sourceTree = "<group>"; };
@@ -221,6 +224,7 @@
 				AFAB8CC7BBB92F4BCE9AD8B6 /* ChatTuning.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
 				9652E439DC39211615D166D5 /* CustomMochis.swift */,
+				B1DDC96E7967032F5D0BD585 /* DesktopMochi.swift */,
 				0A3972F2087300B2227803BB /* DiscordCall.swift */,
 				FB9C73CC83A1F9B4438670B0 /* DiscordMic.swift */,
 				781CB349FCBA17459E9771FD /* DiscordParse.swift */,
@@ -450,6 +454,7 @@
 				FD502BFF25D82433545DD8DC /* ChatTuning.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
 				41C2C11A4FC0EF403936A010 /* CustomMochis.swift in Sources */,
+				BEC5DDB55B3DA67C61CA8470 /* DesktopMochi.swift in Sources */,
 				F31FEF653AE0DC893EF8729E /* DiscordCall.swift in Sources */,
 				9B65F5CA8CF5523F6FBA57E9 /* DiscordMic.swift in Sources */,
 				89BCC4B0BCDA7CD8DBAC601D /* DiscordParse.swift in Sources */,
@@ -511,6 +516,7 @@
 				7CAF374C79CE131A828E84D0 /* ChatTuning.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
 				5F0C91EBA61F4470F9F55A71 /* CustomMochis.swift in Sources */,
+				273FC0FA14AAF6CE62FD14AE /* DesktopMochi.swift in Sources */,
 				0C1B9A6094A52E72D1F4AC0C /* DiscordCall.swift in Sources */,
 				96AA1E61600811537EE326C9 /* DiscordMic.swift in Sources */,
 				577D090B96F54EBCB73DFB07 /* DiscordParse.swift in Sources */,

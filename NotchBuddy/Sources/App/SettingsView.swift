@@ -40,6 +40,10 @@ struct SettingsView: View {
     @State private var openaiBase: String = OpenAICompatChat.baseURL
     @State private var openaiModel: String = OpenAICompatChat.model
     @State private var openaiKey: String = ""
+    // Anthropic-compatible endpoint (upstream #26): URL and model in preferences, key in the Keychain.
+    @State private var anthropicBase: String = AnthropicCompat.baseURL
+    @State private var anthropicModel: String = AnthropicCompat.model
+    @State private var anthropicKey: String = ""
     // Codex hooks.json and the opencode plugin (GitHub build).
     @State private var codexJSON: String = ""
     @State private var showCodexDiff: Bool = false
@@ -223,6 +227,9 @@ struct SettingsView: View {
                             }
                             if state.chatEngine == .openai {
                                 openAIFields
+                            }
+                            if state.chatEngine == .anthropic {
+                                anthropicFields
                             }
                         }
                         .padding(6)
@@ -623,6 +630,51 @@ struct SettingsView: View {
         }
     }
 
+    /// Base URL, model and optional key for the Anthropic-compatible engine.
+    private var anthropicFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Menu("Preset…") {
+                ForEach(AnthropicCompat.presets) { preset in
+                    Button(preset.label) {
+                        anthropicBase = preset.url
+                        if anthropicModel.isEmpty { anthropicModel = preset.model }
+                    }
+                }
+            }
+            .frame(maxWidth: 160)
+            TextField("Base URL (e.g. https://api.deepseek.com/anthropic)", text: $anthropicBase)
+                .textFieldStyle(.roundedBorder)
+            TextField("Model (e.g. deepseek-chat)", text: $anthropicModel)
+                .textFieldStyle(.roundedBorder)
+            SecureField("API key — optional, local servers need none", text: $anthropicKey)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Save") { saveAnthropicCompat() }.buttonStyle(.borderedProminent)
+                Text("Its own key — your Anthropic key never goes there. https only, except servers on this Mac. No web search.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func saveAnthropicCompat() {
+        let base = anthropicBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard base.isEmpty || AnthropicCompat.endpoint(base) != nil else {
+            statusMessage = "❌ Endpoint must start with https:// (http:// only for localhost)."
+            return
+        }
+        UserDefaults.standard.set(base, forKey: AnthropicCompat.baseURLKey)
+        UserDefaults.standard.set(anthropicModel.trimmingCharacters(in: .whitespacesAndNewlines), forKey: AnthropicCompat.modelKey)
+        if !anthropicKey.isEmpty {
+            KeychainStore.shared.set(AnthropicCompat.keychainKey, value: anthropicKey)
+            anthropicKey = ""
+        }
+        ClaudeService.shared.clearConversation()
+        state.chatHistory = []
+        statusMessage = "✓ Endpoint saved."
+    }
+
     private func saveOpenAI() {
         let base = openaiBase.trimmingCharacters(in: .whitespacesAndNewlines)
         // The key and the conversation go to this URL: refuse plain http off this Mac.
@@ -643,7 +695,7 @@ struct SettingsView: View {
 
     private func engineRow(_ engine: ChatEngine) -> some View {
         let info = state.detectedCLIs[engine]
-        let available = engine == .api || engine == .openai || info != nil
+        let available = engine == .api || engine == .openai || engine == .anthropic || info != nil
         let selected = state.chatEngine == engine
 
         let detail: String
@@ -653,6 +705,10 @@ struct SettingsView: View {
             detail = OpenAICompatChat.isConfigured
                 ? "\(OpenAICompatChat.baseURL) · \(OpenAICompatChat.model)"
                 : "Ollama, LM Studio, OpenRouter… — set it up below"
+        } else if engine == .anthropic {
+            detail = AnthropicCompat.isConfigured
+                ? "\(AnthropicCompat.baseURL) · \(AnthropicCompat.model)"
+                : "LiteLLM, DeepSeek, Kimi, GLM… — set it up below"
         } else if let info {
             detail = [info.version, info.path].compactMap { $0 }.joined(separator: " · ")
         } else {

@@ -189,3 +189,8 @@
 "Next" = "Siguiente";
 "Play" = "Reproducir";
 "Pause" = "Pausa";
+
+/* Anthropic-compatible endpoint */
+"Base URL (e.g. https://api.deepseek.com/anthropic)" = "URL base (p. ej. https://api.deepseek.com/anthropic)";
+"Model (e.g. deepseek-chat)" = "Modelo (p. ej. deepseek-chat)";
+"Its own key — your Anthropic key never goes there. https only, except servers on this Mac. No web search." = "Su propia clave — tu clave de Anthropic nunca va allí. Solo https, salvo servidores en este Mac. Sin búsqueda web.";

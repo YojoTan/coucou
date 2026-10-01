@@ -62,6 +62,10 @@ final class KeychainStore: @unchecked Sendable {
 
     private static let allKeys = [
         "anthropic-api-key",
+        // Optional keys of the OpenAI- and Anthropic-compatible endpoints: without
+        // them here the cache comes back empty after a relaunch.
+        "openai-api-key",
+        "anthropic-compat-key",
         "resend-api-key", "resend-from",
         "n8n-url", "n8n-api-key",
         "vercel-token",
@@ -153,7 +157,7 @@ final class ClaudeService {
 
     func chat(query: String, context: PromptContext?, state: AppState) async {
         let engine = await resolveEngine(state: state)
-        if engine != .api {
+        if engine != .api && engine != .anthropic {
             let reply = engine == .openai
                 ? await OpenAICompatChat.shared.send(query: query, context: context)
                 : await LocalCLIChat.shared.send(engine: engine, query: query, context: context)
@@ -169,9 +173,32 @@ final class ClaudeService {
             return
         }
 
-        guard let key = apiKey, !key.isEmpty else {
-            await showError("API key missing. Open settings.", state: state)
-            return
+        // The official API, or an endpoint speaking its dialect (upstream #26),
+        // each with its own key: the Anthropic key only ever goes to Anthropic.
+        let official = engine == .api
+        let url: URL
+        let key: String?
+        let turnModel: String
+        if official {
+            guard let k = apiKey, !k.isEmpty else {
+                await showError("API key missing. Open settings.", state: state)
+                return
+            }
+            url = endpoint
+            key = k
+            turnModel = model
+        } else {
+            guard AnthropicCompat.isConfigured else {
+                await showError("Set the endpoint URL and model in Settings → Chat.", state: state)
+                return
+            }
+            guard let u = AnthropicCompat.endpoint(AnthropicCompat.baseURL) else {
+                await showError("Use https:// — plain http:// is only allowed to this Mac (localhost).", state: state)
+                return
+            }
+            url = u
+            key = KeychainStore.shared.get(AnthropicCompat.keychainKey)
+            turnModel = AnthropicCompat.model
         }
 
         // Build user content for this turn
@@ -195,16 +222,19 @@ final class ClaudeService {
 
         conversationMessages.append(["role": "user", "content": userContent])
 
-        let body: [String: Any] = [
-            "model": model,
+        var body: [String: Any] = [
+            "model": turnModel,
             "max_tokens": 4096,
-            "tools": webSearchTools,
             "system": systemPrompt,
             "messages": conversationMessages,
         ]
+        // Web search is Anthropic's own tool.
+        if official { body["tools"] = webSearchTools }
 
         do {
-            let data = try await callAPI(body: body, key: key, beta: "web-search-2025-03-05")
+            let data = official
+                ? try await callAPI(body: body, key: key ?? "", beta: "web-search-2025-03-05")
+                : try await callCompat(url: url, body: body, key: key)
             await handleChatResult(data, state: state)
         } catch {
             conversationMessages.removeLast()
@@ -264,6 +294,28 @@ final class ClaudeService {
     }
 
     // MARK: - API call
+
+    /// Same request to an Anthropic-compatible endpoint: no beta, key optional and
+    /// sent both ways gateways read it, redirects refused (the key must not follow).
+    private func callCompat(url: URL, body: [String: Any], key: String?) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        if let key, !key.isEmpty {
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue(anthropicVersion, forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 90
+
+        let (data, response) = try await NoRedirectSession.shared.session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let msg = String(data: data, encoding: .utf8) ?? "unknown error"
+            throw NSError(domain: "Endpoint", code: 0, userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+        return data
+    }
 
     private func callAPI(body: [String: Any], key: String, beta: String? = nil) async throws -> Data {
         var request = URLRequest(url: endpoint)

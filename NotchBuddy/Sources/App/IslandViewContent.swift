@@ -2985,6 +2985,7 @@ struct SettingsIslandView: View {
         switch state.chatEngine {
         case .api: return apiConnected
         case .openai: return OpenAICompatChat.isConfigured
+        case .anthropic: return AnthropicCompat.isConfigured
         case .some(let e): return state.detectedCLIs[e] != nil
         case nil: return !state.detectedCLIs.isEmpty || apiConnected
         }

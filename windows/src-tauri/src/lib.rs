@@ -19,6 +19,7 @@ mod media;
 mod mic;
 mod openai_chat;
 mod opencode;
+mod pet;
 mod orca;
 mod pipe;
 mod secrets;
@@ -103,7 +104,7 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut settings: Settings) {
-    let (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed, local_url_changed) = {
+    let (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed, local_url_changed, pet_changed) = {
         let mut current = shared.settings.lock().unwrap();
         // The island saves its own preferences (sound, volume, auto-close), but
         // where the chat sends a conversation is the settings window's call
@@ -130,11 +131,16 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             settings.worktree_repos = current.worktree_repos.clone();
             // The island keeps the pet's count; Settings only picks what it wears.
             settings.pet.wearing = current.pet.wearing.clone();
+            // The desktop Mochi comes out and goes home through Rust (pet.rs).
+            settings.desktop_mochi = current.desktop_mochi;
+            settings.pet_follow = current.pet_follow;
         } else {
             settings.pet = extras::Pet { wearing: settings.pet.wearing.clone(), ..current.pet.clone() };
         }
         settings.custom_mochis = extras::sanitize_customs(std::mem::take(&mut settings.custom_mochis));
         settings.worktree_repos = worktrees::sanitize_repos(std::mem::take(&mut settings.worktree_repos));
+        // Only Rust remembers where the pet sits.
+        settings.pet_positions = current.pet_positions.clone();
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
         let engine_changed = current.chat_engine != settings.chat_engine
@@ -147,11 +153,15 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
         let hotkey_changed = current.hotkey != settings.hotkey;
         let lan_changed = current.lan != settings.lan;
         let local_url_changed = current.local_url != settings.local_url;
+        let pet_changed = current.desktop_mochi != settings.desktop_mochi;
         *current = settings.clone();
-        (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed, local_url_changed)
+        (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed, local_url_changed, pet_changed)
     };
     if local_url_changed {
         extras::local_url::apply(&app);
+    }
+    if pet_changed {
+        pet::apply(&app);
     }
     if lan_changed {
         let prefs = settings.lan.clone();
@@ -722,6 +732,58 @@ async fn worktrees_pick_repo(app: AppHandle, webview: Webview) -> Result<Option<
     tauri::async_runtime::spawn_blocking(move || worktrees::pick_repo(owner)).await.map_err(|e| e.to_string())?
 }
 
+// ── The desktop Mochi (pet.rs) ────────────────────────────────────────────────
+
+/// Mochi dragged out of the island and dropped: out on the desktop if there is
+/// no window there (true), else false and the island attaches the window.
+#[tauri::command]
+fn pet_drop(app: AppHandle) -> bool {
+    pet::drop_here(&app)
+}
+
+#[tauri::command]
+fn pet_dock(app: AppHandle) {
+    pet::dock(&app);
+}
+
+#[tauri::command]
+fn pet_drag(app: AppHandle) {
+    pet::drag(&app);
+}
+
+#[tauri::command]
+fn pet_menu_toggle(app: AppHandle) {
+    pet::toggle_menu(&app);
+}
+
+#[tauri::command]
+fn pet_menu_size(app: AppHandle, height: f64) {
+    pet::menu_size(&app, height);
+}
+
+#[tauri::command]
+fn pet_menu_choose(app: AppHandle, choice: serde_json::Value) {
+    pet::choose(&app, choice);
+}
+
+/// Settings › Extras › "Mochi on the desktop" and "it follows me".
+#[tauri::command]
+fn pet_set(app: AppHandle, webview: Webview, on: bool, follow: bool) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "pet_set")?;
+    if let Some(shared) = app.try_state::<Shared>() {
+        let s = {
+            let mut current = shared.settings.lock().unwrap();
+            current.desktop_mochi = on;
+            current.pet_follow = follow;
+            current.clone()
+        };
+        let _ = settings::save(&s);
+        let _ = app.emit("settings-changed", s);
+    }
+    pet::apply(&app);
+    Ok(())
+}
+
 /// Settings → Connect to Discord: the approval window in the Discord app.
 #[tauri::command]
 fn discord_connect(webview: Webview) -> Result<(), String> {
@@ -968,7 +1030,7 @@ fn log_line(message: String) {
 /// for the *same* arguments as the island (see `additionalBrowserArgs` in
 /// tauri.conf.json) — a mismatch makes the second window come up blank, with no
 /// error anywhere.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+pub(crate) const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
 
 /// In a dev build the pages are served by Vite, so the second window needs the
 /// absolute dev URL; a bundled build resolves it inside the app bundle.
@@ -1051,6 +1113,10 @@ pub fn run() {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
                 remember_drop(window.app_handle(), window.label(), paths);
             }
+            // The pet was dragged: its bubble follows, its spot is saved.
+            if let (WindowEvent::Moved(_), pet::PET) = (event, window.label()) {
+                pet::moved(window.app_handle());
+            }
         })
         .on_webview_event(|webview, event| {
             if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
@@ -1101,6 +1167,13 @@ pub fn run() {
             lan_pick_file,
             discord_state,
             discord_connect,
+            pet_drop,
+            pet_dock,
+            pet_drag,
+            pet_menu_toggle,
+            pet_menu_size,
+            pet_menu_choose,
+            pet_set,
             worktrees_state,
             worktrees_watch,
             worktrees_refresh,
@@ -1160,6 +1233,8 @@ pub fn run() {
             discord::start(&handle);
             extras::start(&handle);
             worktrees::start(handle.clone());
+            pet::start(handle.clone());
+            pet::apply(&handle);
             Ok(())
         })
         .run(tauri::generate_context!())

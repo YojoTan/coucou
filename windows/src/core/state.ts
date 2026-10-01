@@ -311,6 +311,9 @@ export interface Settings {
   /** Mochi says things out loud: off by default. */
   voice?: boolean;
   worktreeRepos?: WtRepo[];
+  /** The desktop Mochi is out (Rust pet.rs changes it; Settings › Extras too). */
+  desktopMochi?: boolean;
+  petFollow?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

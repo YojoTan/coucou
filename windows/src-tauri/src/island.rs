@@ -263,8 +263,20 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
 
 /// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
 pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
-    let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
+    place_on(app, &m, collapsed);
+}
+
+/// The island to the screen that holds this point (the desktop pet's), as it is.
+pub fn place_on_screen_at(app: &AppHandle, x: f64, y: f64) {
+    let Some(m) = app.available_monitors().ok().and_then(|ms| ms.into_iter().find(|m| monitor_contains(m, x, y))) else { return };
+    let collapsed = app.try_state::<crate::Shared>().is_some_and(|s| s.gate.collapsed.load(Ordering::Relaxed));
+    place_on(app, &m, collapsed);
+    let _ = app.emit_to(WINDOW_LABEL, "screen-changed", ());
+}
+
+fn place_on(app: &AppHandle, m: &Monitor, collapsed: bool) {
+    let Some(win) = window(app) else { return };
 
     let scale = m.scale_factor();
     let mp = *m.position();

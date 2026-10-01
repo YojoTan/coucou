@@ -91,6 +91,11 @@ export const Bridge = {
   /** Clipboard text — only ever read on an explicit click in the chat. */
   clipboardText: () => call<string | null>("clipboard_text"),
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
+  // ── The desktop Mochi ─────────────────────────────────────────────────────
+  /** Mochi dropped out of the island: true when it went to the desktop (no window there). */
+  petDrop: () => call<boolean>("pet_drop"),
+  /** Settings › Extras: out on the desktop, and whether it follows the cursor's screen. */
+  petSet: (on: boolean, follow: boolean) => callOrThrow<void>("pet_set", { on, follow }),
   // ── Worktrees ─────────────────────────────────────────────────────────────
   worktreesState: () => call<WtRepoState[]>("worktrees_state"),
   /** The view or the pet's menu shows them: keep them fresh meanwhile. */

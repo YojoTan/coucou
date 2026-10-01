@@ -1,0 +1,311 @@
+/* The desktop Mochi's three windows: transparent, the island's look. */
+html,
+body.pet-page {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #f5f6f8;
+  cursor: default;
+}
+
+/* The pet: a dark halo keeps the idle, nearly white Mochi readable on white pages. */
+#stage {
+  position: fixed;
+  inset: 0;
+  transition: opacity 0.25s ease;
+}
+
+#stage.gone {
+  opacity: 0;
+  transition-duration: 0.22s;
+}
+
+#halo {
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, rgba(0, 0, 0, 0.62) 7%, rgba(0, 0, 0, 0.38) 45%, rgba(0, 0, 0, 0) 100%);
+}
+
+#pet {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+/* The bubble: what Mochi has to say, on the side with room. */
+#bubble-row {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+#bubble-row.left {
+  justify-content: flex-end;
+}
+
+.bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 250px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font: 500 11.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #fff;
+  white-space: nowrap;
+  transform: scale(0.6);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1), opacity 0.2s ease;
+}
+
+.bubble.on {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.bubble i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.bubble span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The menu: a dark card beside the pet. */
+.pm-card {
+  box-sizing: border-box;
+  width: 300px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(15, 17, 19, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pm-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-head i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pm-head b {
+  display: block;
+  font: 600 13px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+.pm-head span {
+  display: block;
+  font-size: 10.5px;
+  color: #8e939c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.pm-shortcuts {
+  display: flex;
+}
+
+.pm-shortcut {
+  flex: 1 1 0;
+  border: 0;
+  background: transparent;
+  color: #c5c8cd;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font: 400 10px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  cursor: default;
+  transition: transform 0.1s ease-out;
+}
+
+.pm-shortcut:active {
+  transform: scale(0.94);
+}
+
+.pm-shortcut .disc {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pm-shortcut:hover .disc {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.pm-repo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-repo-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pm-repo-head svg {
+  color: #f97316;
+}
+
+.pm-repo-head b {
+  font: 600 11.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+.pm-repo-head span {
+  font-size: 10.5px;
+  color: #8e939c;
+}
+
+.pm-repo-head .grow {
+  flex: 1 1 auto;
+}
+
+.pm-create {
+  border: 0;
+  font: 600 10.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #fff;
+  background: #f97316;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: default;
+}
+
+.pm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.pm-row {
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.045);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-row.open {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pm-line {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  font: 500 11.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  cursor: default;
+  text-align: left;
+}
+
+.pm-line .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.pm-line .slug {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-mark {
+  font: 600 9.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.pm-chev {
+  color: #8e939c;
+  font-size: 9px;
+}
+
+.pm-note {
+  font-size: 9.5px;
+  color: #8e939c;
+}
+
+.pm-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pm-pill {
+  border: 0;
+  font: 600 10.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: default;
+}
+
+.pm-pill.danger {
+  color: #f87171;
+  background: rgba(229, 72, 77, 0.16);
+}
+
+.pm-error {
+  font-size: 10px;
+  color: #f87171;
+}
+
+.pm-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pm-foot button {
+  border: 0;
+  background: transparent;
+  color: #8e939c;
+  font: 400 10.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  cursor: default;
+}
+
+.pm-foot button:hover {
+  color: #c5c8cd;
+}

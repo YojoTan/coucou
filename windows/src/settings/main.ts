@@ -1166,6 +1166,27 @@ function customMochisSection(): HTMLElement {
   );
 }
 
+/** Mochi out of the island, on the desktop (pet.rs), and who follows the cursor's screen. */
+function desktopMochiSection(): HTMLElement {
+  const note = h("div", { class: "hint" });
+  const set = (on: boolean, follow: boolean) => {
+    settings.desktopMochi = on;
+    settings.petFollow = follow;
+    Bridge.petSet(on, follow).catch((err) => { note.textContent = "❌ " + String(err); });
+  };
+  return h("section", {},
+    h("h2", {}, h("span", { text: t("Desktop Mochi") })),
+    h("div", { class: "hint", text: t("Mochi out of the island, as a companion on your desktop: drag it anywhere, it follows you from screen to screen, says its news in a bubble. Click it for its menu (island, chat, worktrees, settings), double-click to send it home. You can also drag Mochi out of the island and drop it where there's no window.") }),
+    h("div", { class: "row" }, h("label", { text: t("Mochi on the desktop") }),
+      toggle(settings.desktopMochi ?? false, (v) => set(v, settings.petFollow ?? true))),
+    h("div", { class: "row" }, h("label", { text: t("It follows me to the screen I'm on") }),
+      toggle(settings.petFollow ?? true, (v) => set(settings.desktopMochi ?? false, v))),
+    h("div", { class: "row" }, h("label", { text: t("The island follows me to the screen I'm on") }),
+      toggle(settings.screen === "cursor", (v) => { settings.screen = v ? "cursor" : "primary"; void save(); })),
+    note,
+  );
+}
+
 /** Worktrees from Mochi: repos and their provider commands (docs/WORKTREES.md). */
 function worktreesSection(): HTMLElement {
   let repos: WtRepo[] = (settings.worktreeRepos ?? []).map((r) => ({ ...r }));
@@ -1321,7 +1342,7 @@ async function main() {
     ["agents", t("Agents"), [claudeSection(status), hooksSection("codex", codexStatus), opencodeSection()]],
     ["integrations", t("Integrations"), [integrationsSection(present), discordSection(present)]],
     ["lan", t("Mochis"), [lanSection()]],
-    ["extras", t("Extras"), [customMochisSection(), worktreesSection(), weatherSection(), petSection()]],
+    ["extras", t("Extras"), [desktopMochiSection(), customMochisSection(), worktreesSection(), weatherSection(), petSection()]],
   ];
   const bar = h("div", { class: "tabs", role: "tablist" });
   const panes = h("div", { class: "tab-panes" });

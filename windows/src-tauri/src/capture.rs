@@ -243,6 +243,19 @@ fn safe_stem(s: &str) -> String {
     if cut.is_empty() { "window".into() } else { cut }
 }
 
+/// Whether a window (not the desktop, not the taskbar) is under the cursor.
+pub fn window_under_cursor() -> bool {
+    let mut point = POINT::default();
+    if unsafe { GetCursorPos(&mut point) }.is_err() {
+        return true;
+    }
+    let mut hit = Hit { point, me: std::process::id(), found: None };
+    unsafe {
+        let _ = EnumWindows(Some(topmost_at), LPARAM(&mut hit as *mut Hit as isize));
+    }
+    hit.found.is_some()
+}
+
 /// The window under the cursor, captured into the inbox. Blocking.
 pub fn attach() -> Result<AttachedWindow, String> {
     let mut point = POINT::default();

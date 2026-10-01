@@ -76,6 +76,19 @@ pub struct Settings {
     /// changed by the settings window only.
     #[serde(default)]
     pub worktree_repos: Vec<crate::worktrees::Repo>,
+    /// The desktop Mochi (pet.rs): off by default.
+    #[serde(default)]
+    pub desktop_mochi: bool,
+    /// It follows the cursor to another screen.
+    #[serde(default = "default_true")]
+    pub pet_follow: bool,
+    /// Where it sits on each screen, relative to the work area (0…1).
+    #[serde(default)]
+    pub pet_positions: std::collections::HashMap<String, [f64; 2]>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_focus_mode() -> String {
@@ -133,6 +146,9 @@ impl Default for Settings {
             pet: Default::default(),
             voice: false,
             worktree_repos: Vec::new(),
+            desktop_mochi: false,
+            pet_follow: true,
+            pet_positions: Default::default(),
         }
     }
 }

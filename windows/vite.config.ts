@@ -56,6 +56,10 @@ export default defineConfig({
       input: {
         island: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
+        // The desktop Mochi (src-tauri/src/pet.rs): the pet, its bubble, its menu.
+        pet: resolve(__dirname, "pet.html"),
+        petBubble: resolve(__dirname, "pet-bubble.html"),
+        petMenu: resolve(__dirname, "pet-menu.html"),
       },
     },
   },

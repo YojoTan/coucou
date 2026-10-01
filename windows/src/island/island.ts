@@ -18,6 +18,7 @@ import { BotEngine, hexToRGB } from "../mochi/engine";
 import { applyDiscord, applyExtras, applyMusic } from "../mochi/sync";
 import { callStartedAt, DISCORD_ID, onDiscordEffect } from "./discord";
 import { onPetEvent } from "./extras";
+import { petFx, petSync } from "./pet";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -124,10 +125,10 @@ export class Island {
       const e = this.engine;
       switch (fx.kind) {
         case "note":
-          if (fx.note.reaction) e.react(fx.note.reaction);
-          else { e.triggerEmote("surprised"); e.squash(); }
+          if (fx.note.reaction) { e.react(fx.note.reaction); petFx({ kind: "react", reaction: fx.note.reaction }); }
+          else { e.triggerEmote("surprised"); e.squash(); petFx({ kind: "emote", emote: "surprised" }); }
           break;
-        case "joined": e.greet(); break;
+        case "joined": e.greet(); petFx({ kind: "greet" }); break;
         case "left": e.eyeOverride = "tired"; e.eyeOverrideUntil = performance.now() / 1000 + 1.6; break;
         case "highFive": e.greet(); e.emit("star", 6); break;
         case "talkingMuted": e.greet(); e.triggerEmote("surprised"); break;
@@ -138,6 +139,8 @@ export class Island {
     onPetEvent(() => {
       this.engine.react("confetti");
       this.engine.greet();
+      petFx({ kind: "react", reaction: "confetti" });
+      petFx({ kind: "greet" });
       this.ensureRunning();
     });
     this.greeting.onComplete = () => this.fsm.greetComplete();
@@ -357,6 +360,29 @@ export class Island {
         x >= rect.x - HIT_MARGIN && x <= rect.x + rect.w + HIT_MARGIN &&
         y >= rect.y - HIT_MARGIN && y <= rect.y + rect.h + HIT_MARGIN;
       if (home) return; // dropped back on the island: nothing to attach
+      void Bridge.petDrop().then((released) => {
+        if (released) {
+          Sound.play("pop");
+          State.settings.desktopMochi = true;
+          this.dirty = true;
+          this.ensureRunning();
+          return;
+        }
+        this.attachDropped();
+      });
+      return;
+    }
+    if (this.botPress) {
+      // A plain click on Mochi: the slap, on release.
+      this.botPress = null;
+      this.cancelBotHover();
+      this.engine.slap();
+    }
+  }
+
+  /** Mochi dropped on a window: its screenshot goes to the chat. */
+  private attachDropped() {
+    {
       void Bridge.attachWindow()
         .then((win) => {
           const label = win.title ? `${win.appName} — ${win.title}` : win.appName;
@@ -380,13 +406,6 @@ export class Island {
           Sound.play("error");
           window.setTimeout(() => this.setView(State.defaultView()), 2400);
         });
-      return;
-    }
-    if (this.botPress) {
-      // A plain click on Mochi: the slap, on release.
-      this.botPress = null;
-      this.cancelBotHover();
-      this.engine.slap();
     }
   }
 
@@ -1015,6 +1034,11 @@ export class Island {
 
     const ctx = this.botCanvas.getContext("2d");
     if (!ctx) return;
+    if (State.settings.desktopMochi && State.mode !== "expanded") {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.botCanvas.width, this.botCanvas.height);
+      return;
+    }
 
     const focus = State.focusTask;
     this.engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
@@ -1132,6 +1156,17 @@ export class Island {
     applyMusic(this.engine, State.focusId === "integration_spotify");
     applyDiscord(this.engine, State.focusId === DISCORD_ID, callStartedAt());
     applyExtras(this.engine, State.focusId, true);
+    // The desktop Mochi, if it's out, looks the same.
+    petSync(this.engine);
+  }
+
+  /** The desktop Mochi came home (a double click): a wave from the island. */
+  petHome() {
+    State.settings.desktopMochi = false;
+    this.engine.greet();
+    this.reveal();
+    this.dirty = true;
+    this.ensureRunning();
   }
 
   /** Applies settings coming from Rust at boot. */

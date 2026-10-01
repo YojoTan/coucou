@@ -536,4 +536,14 @@ export const ES: Record<string, string> = {
   "The provider has no such action.": "El proveedor no tiene esa acción.",
   "Pick a worktree.": "Elige un worktree.",
   "The provider's action id isn't a plain word.": "El id de la acción del proveedor no es una palabra simple.",
+  // ── Desktop Mochi ───────────────────────────────────────────────────────────
+  "Back to the island": "Volver a la isla",
+  "Desktop Mochi": "Mochi en el escritorio",
+  "Explorer": "Explorador",
+  "Island": "Isla",
+  "It follows me to the screen I'm on": "Me sigue a la pantalla donde estoy",
+  "Mochi on the desktop": "Mochi en el escritorio",
+  "Mochi out of the island, as a companion on your desktop: drag it anywhere, it follows you from screen to screen, says its news in a bubble. Click it for its menu (island, chat, worktrees, settings), double-click to send it home. You can also drag Mochi out of the island and drop it where there's no window.": "Mochi fuera de la isla, como compañero en tu escritorio: arrástralo adonde quieras, te sigue de pantalla en pantalla y te cuenta las novedades en un globito. Un click abre su menú (isla, chat, worktrees, ajustes); doble click lo manda de vuelta a la isla. También puedes arrastrar a Mochi fuera de la isla y soltarlo donde no haya ventanas.",
+  "The island follows me to the screen I'm on": "La isla me sigue a la pantalla donde estoy",
+  "Click: Mochi's menu (island, chat, worktrees…) · Double click: back to the island": "Click: menú de Mochi (isla, chat, worktrees…) · Doble click: volver a la isla",
 };

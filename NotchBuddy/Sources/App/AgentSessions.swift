@@ -131,6 +131,15 @@ final class AgentSessions {
 
     func session(forKey key: String) -> Session? { sessions[key] }
 
+    /// Whether a live session runs in this directory or below it (Orca dedup).
+    func covers(path: String) -> Bool {
+        guard !path.isEmpty else { return false }
+        let now = Date()
+        return sessions.values.contains {
+            now.timeIntervalSince($0.lastSeen) < staleAfter && ($0.cwd == path || $0.cwd.hasPrefix(path + "/"))
+        }
+    }
+
     /// Copies the shown session into the agent's pill.
     func mirror(_ agent: CodingAgent) {
         let state = AppState.shared

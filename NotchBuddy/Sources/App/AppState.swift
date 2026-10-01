@@ -167,6 +167,9 @@ final class AppState: ObservableObject {
     /// Orca worktrees (OrcaPoller), and why the last poll found none.
     @Published var orcaWorktrees: [OrcaWorktree] = []
     @Published var orcaError: String? = nil
+    /// The orchestration question or gate the ask view shows (OrcaPoller).
+    @Published var orcaAsk: OrcaAsk? = nil
+    @Published var orcaAsks: [OrcaAsk] = []
     /// What Spotify last said it is playing (SpotifyWatcher).
     @Published var spotifyNow: SpotifyTrack? = nil
     /// Mochis on the network (LanService): the peers, what one of them asks,

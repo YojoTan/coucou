@@ -56,9 +56,9 @@ final class OpenAICompatChat {
         return URL(string: s)
     }
 
-    func send(query: String, context: PromptContext?) async -> LocalCLIChat.Reply {
+    func send(query: String, context: PromptContext?, tuning: ChatTuning = .none) async -> LocalCLIChat.Reply {
         guard !isBusy else { return .init(text: "Still answering the previous message…", isError: true) }
-        let base = Self.baseURL, model = Self.model
+        let base = Self.baseURL, model = tuning.cleanModel ?? Self.model
         guard !base.isEmpty else {
             return .init(text: "Set the endpoint URL in Settings → Chat (e.g. http://localhost:11434/v1 for Ollama).", isError: true)
         }
@@ -81,21 +81,34 @@ final class OpenAICompatChat {
         all += messages
         all.append(userMessage)
 
-        let body: [String: Any] = ["model": model, "messages": all, "max_tokens": 4096, "stream": false]
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
-            return .init(text: "Could not build the request.", isError: true)
+        var body: [String: Any] = ["model": model, "messages": all, "max_tokens": 4096, "stream": false]
+        // The chat's effort, for reasoning models; dropped if the server refuses it.
+        let effort = tuning.effort(for: .openai)
+        if let effort { body["reasoning_effort"] = effort }
+        let key = KeychainStore.shared.get("openai-api-key")
+        func request(_ body: [String: Any]) -> URLRequest? {
+            guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+            var req = URLRequest(url: url, timeoutInterval: 120)
+            req.httpMethod = "POST"
+            req.httpBody = data
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let key, !key.isEmpty { req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+            return req
         }
-        var req = URLRequest(url: url, timeoutInterval: 120)
-        req.httpMethod = "POST"
-        req.httpBody = data
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let key = KeychainStore.shared.get("openai-api-key"), !key.isEmpty {
-            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        guard let req = request(body) else {
+            return .init(text: "Could not build the request.", isError: true)
         }
 
         do {
-            let (respData, response) = try await NoRedirectSession.shared.session.data(for: req)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            var (respData, response) = try await NoRedirectSession.shared.session.data(for: req)
+            var status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if effort != nil, status == 400, String(data: respData, encoding: .utf8)?.contains("reasoning") == true {
+                body["reasoning_effort"] = nil
+                if let again = request(body) {
+                    (respData, response) = try await NoRedirectSession.shared.session.data(for: again)
+                    status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                }
+            }
             let json = (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]
             if !(200..<300).contains(status) {
                 let detail = Self.errorText(json) ?? String(data: respData.prefix(200), encoding: .utf8) ?? ""

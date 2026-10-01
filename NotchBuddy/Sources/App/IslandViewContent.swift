@@ -778,6 +778,10 @@ struct PromptView: View {
     /// Clipboard text attached with the clipboard button — read only on that
     /// click, shown as a chip, removable, and sent with the next question.
     @State private var clip: String? = nil
+    /// The chat's own model and effort (ChatTuning), and what the menu offers.
+    @State private var tuning: ChatTuning = .none
+    @State private var tuneEngine: ChatEngine? = nil
+    @State private var tuneModels: [ChatTuning.Choice] = []
 
     /// One-click questions about a dropped file.
     private struct QuickAction: Identifiable, Sendable {
@@ -884,6 +888,8 @@ struct PromptView: View {
                     .buttonStyle(.plain)
                     .help("Ask about the clipboard")
 
+                    tuneMenu
+
                     TextField(state.chatHistory.isEmpty ? "Ask me anything…" : "Continue…", text: $text)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
@@ -934,6 +940,74 @@ struct PromptView: View {
     private func ask(_ prompt: String) {
         text = prompt
         sendMessage()
+    }
+
+    private var tuneLabel: String {
+        var parts: [String] = []
+        if let m = tuning.model { parts.append(tuneModels.first { $0.id == m }?.label ?? m) }
+        if let e = tuning.effort { parts.append(ChatTuning.effortLabel(e)) }
+        let s = parts.isEmpty ? String(localized: "Default") : parts.joined(separator: " · ")
+        return s.count > 18 ? String(s.prefix(17)) + "…" : s
+    }
+
+    /// Model and effort for this chat, per engine — not the provider's settings.
+    private var tuneMenu: some View {
+        Menu {
+            if let engine = tuneEngine {
+                Section("Model") {
+                    Button { setModel(nil) } label: { check(tuning.model == nil, String(localized: "Default")) }
+                    ForEach(tuneModels) { m in
+                        Button { setModel(m.id) } label: { check(tuning.model == m.id, m.label) }
+                    }
+                    Button("Other…") {
+                        if let m = ChatTuning.askForModel(current: tuning.model) { setModel(m) }
+                    }
+                }
+                let efforts = ChatTuning.efforts(engine)
+                if !efforts.isEmpty {
+                    Section("Effort") {
+                        Button { setEffort(nil) } label: { check(tuning.effort == nil, String(localized: "Default")) }
+                        ForEach(efforts, id: \.self) { e in
+                            Button { setEffort(e) } label: { check(tuning.effort == e, ChatTuning.effortLabel(e)) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 10))
+                Text(tuneLabel).font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+            }
+            .foregroundColor(tuning.isDefault ? Color(hex: "#8E939C") : Color(hex: "#A5B4FC"))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Model and effort for this chat")
+        .task { await loadTuning() }
+    }
+
+    private func check(_ on: Bool, _ title: String) -> Text {
+        Text(verbatim: on ? "✓ \(title)" : title)
+    }
+
+    private func loadTuning() async {
+        let engine = await ClaudeService.shared.resolveEngine(state: state)
+        tuneEngine = engine
+        tuning = ChatTuning.load(for: engine)
+        tuneModels = await ChatTuning.models(for: engine)
+    }
+
+    private func setModel(_ model: String?) {
+        guard let engine = tuneEngine else { return }
+        tuning.model = model
+        ChatTuning.save(tuning, for: engine)
+    }
+
+    private func setEffort(_ effort: String?) {
+        guard let engine = tuneEngine else { return }
+        tuning.effort = effort
+        ChatTuning.save(tuning, for: engine)
     }
 
     private func toggleClipboard() {

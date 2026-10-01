@@ -235,7 +235,7 @@ final class LocalCLIChat {
 
     struct Reply { let text: String; let isError: Bool }
 
-    func send(engine: ChatEngine, query: String, context: PromptContext?) async -> Reply {
+    func send(engine: ChatEngine, query: String, context: PromptContext?, tuning: ChatTuning = .none) async -> Reply {
         guard let cmd = engine.command else { return Reply(text: "Not a CLI engine.", isError: true) }
         guard !isBusy else { return Reply(text: "Still answering the previous message…", isError: true) }
         isBusy = true
@@ -285,10 +285,14 @@ final class LocalCLIChat {
                     "--allowedTools", "WebSearch,WebFetch,Read"]
             if let resumeId { args += ["--resume", resumeId] }
             if let dir = fileURL?.deletingLastPathComponent().path { args += ["--add-dir", dir] }
+            if let m = tuning.cleanModel { args += ["--model", m] }
+            if let e = tuning.effort(for: .claude) { args += ["--effort", e] }
         case .codex:
             args = ["exec"]
             if resumeId != nil { args += ["resume"] }
             args += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode=\"read-only\"", "-c", "approval_policy=\"never\""]
+            if let m = tuning.cleanModel { args += ["--model", m] }
+            if let e = tuning.effort(for: .codex) { args += ["-c", "model_reasoning_effort=\"\(e)\""] }
             if let f = fileURL, ["png", "jpg", "jpeg", "gif", "webp"].contains(f.pathExtension.lowercased()) {
                 args += ["-i", f.path]
             }
@@ -298,6 +302,7 @@ final class LocalCLIChat {
             args = ["--output-format", "json"]
             if resumeId != nil { args += ["--resume", "latest"] }
             if let dir = fileURL?.deletingLastPathComponent().path { args += ["--include-directories", dir] }
+            if let m = tuning.cleanModel { args += ["--model", m] }
         case .opencode:
             // `opencode run` takes the message as an argument, not on stdin. It
             // starts with the instructions, so it can never look like a flag, and
@@ -305,6 +310,7 @@ final class LocalCLIChat {
             args = ["run", "--format", "json", "--agent", "plan", "--dir", workDir.path]
             if let resumeId { args += ["--session", resumeId] }
             if let f = fileURL { args += ["--file", f.path] }
+            if let m = tuning.cleanModel { args += ["--model", m] }
             args += ["--", prompt]
             stdinText = nil
         case .openai, .anthropic, .api:

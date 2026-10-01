@@ -157,10 +157,12 @@ final class ClaudeService {
 
     func chat(query: String, context: PromptContext?, state: AppState) async {
         let engine = await resolveEngine(state: state)
+        // The model and effort picked in the chat (ChatTuning), for this engine.
+        let tuning = ChatTuning.load(for: engine)
         if engine != .api && engine != .anthropic {
             let reply = engine == .openai
-                ? await OpenAICompatChat.shared.send(query: query, context: context)
-                : await LocalCLIChat.shared.send(engine: engine, query: query, context: context)
+                ? await OpenAICompatChat.shared.send(query: query, context: context, tuning: tuning)
+                : await LocalCLIChat.shared.send(engine: engine, query: query, context: context, tuning: tuning)
             if reply.isError {
                 await showError(reply.text, state: state)
             } else {
@@ -186,7 +188,7 @@ final class ClaudeService {
             }
             url = endpoint
             key = k
-            turnModel = model
+            turnModel = tuning.cleanModel ?? model
         } else {
             guard AnthropicCompat.isConfigured else {
                 await showError("Set the endpoint URL and model in Settings → Chat.", state: state)
@@ -198,7 +200,7 @@ final class ClaudeService {
             }
             url = u
             key = KeychainStore.shared.get(AnthropicCompat.keychainKey)
-            turnModel = AnthropicCompat.model
+            turnModel = tuning.cleanModel ?? AnthropicCompat.model
         }
 
         // Build user content for this turn
@@ -230,11 +232,24 @@ final class ClaudeService {
         ]
         // Web search is Anthropic's own tool.
         if official { body["tools"] = webSearchTools }
+        // The chat's effort; a model or gateway that doesn't take it says so, and
+        // the turn goes again without it.
+        let effort = tuning.effort(for: engine)
+        if let effort { body["output_config"] = ["effort": effort] }
 
         do {
-            let data = official
-                ? try await callAPI(body: body, key: key ?? "", beta: "web-search-2025-03-05")
-                : try await callCompat(url: url, body: body, key: key)
+            let send = { (body: [String: Any]) async throws -> Data in
+                official
+                    ? try await self.callAPI(body: body, key: key ?? "", beta: "web-search-2025-03-05")
+                    : try await self.callCompat(url: url, body: body, key: key)
+            }
+            let data: Data
+            do {
+                data = try await send(body)
+            } catch where effort != nil && (error.localizedDescription.contains("effort") || error.localizedDescription.contains("output_config")) {
+                body["output_config"] = nil
+                data = try await send(body)
+            }
             await handleChatResult(data, state: state)
         } catch {
             conversationMessages.removeLast()

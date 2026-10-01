@@ -1,6 +1,6 @@
 # Porting the 2026-10 macOS work to Windows
 
-Brief for whoever (human or agent) brings PRs #1, #2, #3 and #5 to the Windows build
+Brief for whoever (human or agent) brings PRs #1, #2, #3, #5 and #6 to the Windows build
 (`windows/`, Tauri: Rust in `src-tauri/`, TypeScript in `src/`). It says what each
 feature does, where the macOS code is, how to do it on Windows, and how to know
 it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
@@ -8,7 +8,7 @@ it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
 ## State
 
 Windows column updated from the commits on `main` (Windows 0.3.1, "Windows
-parity" 1/n and 2/n); "in progress" means a commit says it started, not that
+parity" 1/n to 4/n); "in progress" means a commit says it started, not that
 every point below is checked — tick them off as you go.
 
 | Feature | macOS | Windows |
@@ -19,13 +19,15 @@ every point below is checked — tick them off as you go.
 | Mochi engine: headphones, dance, whistle, headset, talking mouth, mouth that follows the gaze, nightcap, accessories, moods, confetti, travel, gaze at a speaker (#1–#3) | done | in progress (parity 1/n, 2/n) |
 | Mochi's mode (Focus) and what it puts on Mochi (#3) | done | in progress (parity 1/n, 2/n) |
 | Spotify Mochi (#1) | done | in progress (parity 2/n) |
-| Orca: terminal jump, no double alerts, asks/gates from the notch (#1) | done | basic pill only (`orca.rs`) |
-| Discord (#2) | done | — |
+| Orca: terminal jump, no double alerts, asks/gates from the notch (#1) | done | in progress (parity 4/n) |
+| Discord (#2) | done | in progress (parity 3/n) |
 | Extras: custom Mochis, pet, calendar, Mac, weather, voice, travel (#3) | done | — |
 | Desktop Mochi: a pet on the desktop that follows you across screens (#5) | done | — |
 | The island follows the cursor's screen (#5) | done | — |
 | A click outside closes the open island (#5) | done | — |
-| Coucou's sounds in a call: smart, never lost (#5) | done | — (with Discord) |
+| Coucou's sounds in a call: smart, never lost (#5) | done | in progress (parity 3/n) |
+| Worktrees from Mochi: the provider protocol, island view, pill, header shortcut (#6) | done | — |
+| The desktop pet's own menu (#6) | done | — (with the desktop pet) |
 
 ## Step 0 — build, and check the LAN fix (do this first)
 
@@ -80,6 +82,7 @@ poller works only while its pill is on.
 7. Orca.
 8. Extras.
 9. Desktop Mochi and the island across screens (section 8).
+10. Worktrees from Mochi, and the pet's menu (section 9).
 
 ---
 
@@ -315,12 +318,81 @@ the end of the call — never dropped. "Always", and "Never (summed up after)"
 which counts the silenced alerts for the end-of-call toast. Mochi's voice
 follows the same rule.
 
+## 9. Worktrees from Mochi, and the pet's menu (#6)
+
+**macOS:** `WorktreeParse.swift` (models, parsing — pure), `Worktrees.swift`
+(runner, git state, terminals), `WorktreesViews.swift` (card, island view,
+settings), `PetMenu.swift`; protocol in `docs/WORKTREES.md`, example provider
+in `examples/worktree-provider.sh`, tests in `tests/WorktreeParseTests.swift` +
+`scripts/test-worktrees.sh`.
+
+### 9.1 The protocol — identical on both systems
+
+`docs/WORKTREES.md` is the contract: `describe` / `list` / `run <action> <json>`
+in the repo's root, `COUCOU=1` and `COUCOU_ARGS`, NDJSON events (`progress`,
+`terminal`, `done` with `risk` / `canForce`), the typed slug before a forced
+rerun. **Keep it byte-for-byte compatible** — a repo's provider must work with
+either build. On Windows, run the provider through the user's shell the way a
+terminal would (`cmd /C` or PowerShell; a `bash …` provider then needs Git Bash
+or WSL on `PATH` — say so in Settings when the call fails with "not found").
+
+### 9.2 What Coucou does itself
+
+- **Without a provider:** list (`git worktree list --porcelain`, without the
+  main checkout) and "Open a terminal" in a worktree. **No removal**, ever.
+- **Git state of every worktree**, whatever the provider: changed files
+  (`git status --porcelain`) and commits on no remote
+  (`git rev-list --count HEAD --not --remotes`), plus the same inside each
+  submodule (`git submodule foreach`); last commit date. Shown as ✎ n / ↑ n / ✓.
+- **Polling:** every 30 s, only while the pill is on or the view is open;
+  `describe` cached 10 min.
+- **Running:** the form's required fields and patterns are checked before
+  running; `danger` actions always show a red confirmation step; progress lines
+  stream live and the run can be stopped; on `done ok:false canForce:true`,
+  "Force…" asks for the worktree's slug typed exactly, then reruns with
+  `force: true, confirm: "<typed>"`.
+- **Terminals** (`terminal` event): an Orca tab in that worktree when Orca runs
+  (`orca terminal create --worktree path:<wt> --command <cmd> --focus`), else
+  the default terminal (Windows Terminal `wt -d <cwd> <cmd>`, falling back to
+  `cmd /K`).
+
+### 9.3 UI
+
+- **Island view** at full height (300 pt): repo picker when there are several;
+  the repo's `repo`-scope actions as "+ Label" buttons; rows with slug, branch,
+  note, last activity, state marks and a ⋯ menu (worktree actions, Show in
+  Explorer, Open in VS Code). Form → progress (last lines, monospaced) → result
+  (risk lines in a box) → typed force confirmation.
+- **Pill card:** repo name and count, three rows, Open and "+ Create".
+- **Header shortcut** (a branch icon next to the LAN Mochis) when a repo is set
+  up — no pill slot needed.
+- **Settings › Extras › Worktrees:** add a repo (folder picker, must be a git
+  repo), name, optional provider command; stored in the local settings only.
+
+### 9.4 The desktop pet's menu
+
+A click on the pet (after the double-click interval, so a double click still
+docks it) or a right click opens a dark card beside the pet, on the side with
+room, clamped to the work area: a header (Mochi, the focused pill's colour, the
+current toast or step), four round shortcuts (Island, Chat, Worktrees,
+Settings), then each repo with its "+ Create" button and its worktrees as rows
+(green/orange dot, ✎/↑ marks); a tap unfolds a row into its note and action
+pills (danger ones in red, plus Explorer). Closes on a choice, a click outside,
+or Escape. Every choice first brings the island to the pet's screen, then opens
+what it needs there.
+
+**Windows:** a third transparent, undecorated, always-on-top, non-focusable
+window positioned next to the pet; close it from a global mouse hook or when
+the pet window loses the pointer capture.
+
 ## Don't change
 
 - The LAN wire format and its test vectors (`docs/LAN.md`) — both builds must
   keep talking.
 - The local URL's port, path, header and token semantics — scripts should work
   on both systems.
+- The worktree provider protocol (`docs/WORKTREES.md`) — one provider per repo,
+  both builds.
 - Key names in the Keychain / Credential Manager.
 - Defaults: everything that listens, posts or speaks stays opt-in and off where
   macOS has it off (muted warning, transcription, presence, voice, webhook posts).

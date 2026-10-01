@@ -149,3 +149,6 @@
 "done" = "terminado";
 "active" = "activo";
 "idle" = "inactivo";
+
+/* Settings tabs */
+"Agents" = "Agentes";

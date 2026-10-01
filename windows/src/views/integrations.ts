@@ -48,7 +48,7 @@ function arr(id: string, key: string): Record<string, unknown>[] {
 const OPEN_URLS: Record<string, string> = {
   integration_resend: "https://resend.com/emails",
   integration_vercel: "https://vercel.com/dashboard",
-  integration_github: "https://github.com",
+  integration_github: "https://github.com/pulls",
   integration_stripe: "https://dashboard.stripe.com/payments",
   integration_notion: "https://notion.so",
   integration_calcom: "https://app.cal.com/bookings",
@@ -61,7 +61,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   // The Claude Code pill is about hooks, not a key — the macOS wording would be
   // misleading here.
   const missing = t(isAgentTask(task) ? "Hooks not installed" : "Key not configured");
-  const label = error ?? (configured ? t("Connected · loading…") : missing);
+  const label = error ? t(error) : configured ? t("Connected · loading…") : missing;
   const statusColor = error || !configured ? "#F4505E" : "#22C55E";
 
   const actions = h("div", { class: "int-actions" });
@@ -201,33 +201,50 @@ function resendCard(): HTMLElement {
 }
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
+// Pull requests that need the user (after upstream PR #15): review requests
+// first, in amber, then their own PRs coloured by CI.
 
-function statRow(icon: string, color: string, label: string, value: string): HTMLElement {
-  return h(
-    "div",
-    { class: "int-stat" },
-    h("i", { class: "int-stat-icon", style: `color:${color}` }, svg(icon, 10)),
-    h("span", { class: "int-stat-label", text: label }),
-    h("span", { class: "int-stat-value", text: value }),
-  );
+const CI_COLORS: Record<string, string> = { success: "#22C55E", failure: "#F4505E", pending: "#F5A524" };
+
+function prDetail(pr: Record<string, unknown>, review: boolean): string {
+  if (review) return pr.author ? t("by {name}", { name: String(pr.author) }) : t("review");
+  if (pr.isDraft) return t("draft");
+  if (pr.reviewDecision === "APPROVED") return t("approved");
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return t("changes requested");
+  switch (pr.ci) {
+    case "failure": return t("CI failing");
+    case "pending": return t("CI running");
+    case "success": return t("CI passed");
+    default: return "";
+  }
 }
 
 function githubCard(): HTMLElement {
   const d = get("integration_github");
-  const stars = Number(d.totalStars ?? 0);
-  const repos = Number(d.totalRepos ?? 0);
-  const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-  return h(
-    "div",
-    { class: "int-card" },
-    header("#F4505E", "GitHub", "Overview"),
-    h(
-      "div",
-      { class: "int-stats" },
-      statRow(ICONS.star, "#F5A524", t("Total stars"), fmt(stars)),
-      statRow(ICONS.stack, "#6B7079", "Repositories", String(repos)),
-    ),
-  );
+  const reviews = arr("integration_github", "reviewRequests").slice(0, 2).map((pr) => ({ pr, review: true }));
+  const mine = arr("integration_github", "mine").slice(0, 3 - reviews.length).map((pr) => ({ pr, review: false }));
+  const list = [...reviews, ...mine];
+  const rows = h("div", { class: "int-rows" });
+  if (list.length === 0) rows.append(h("div", { class: "int-sub", text: t("Nothing waiting on you.") }));
+  list.forEach(({ pr, review }, i) => {
+    const accent = review ? "#F5A524" : (CI_COLORS[String(pr.ci ?? "")] ?? "#6B7079");
+    const repo = String(pr.repo ?? "").split("/").pop() ?? "";
+    const row = listRow(accent, i === 0,
+      h("span", { class: "int-ref", text: `${repo}#${pr.number}` }),
+      h("span", { class: "int-name", text: String(pr.title ?? "") }),
+      h("span", { class: "int-ago", text: prDetail(pr, review) }),
+    );
+    row.classList.add("link");
+    row.addEventListener("click", () => {
+      if (typeof pr.url === "string") void Bridge.openUrl(pr.url);
+    });
+    rows.append(row);
+  });
+  const waiting = Number(d.reviewCount ?? 0);
+  const extra = waiting > 0
+    ? h("span", { class: "int-total" }, h("span", { style: "color:#F5A524", text: t("{n} to review", { n: waiting }) }))
+    : undefined;
+  return h("div", { class: "int-card" }, header("#F4505E", "GitHub", t("Pull requests"), extra), rows);
 }
 
 // ── Stripe ────────────────────────────────────────────────────────────────────
@@ -392,12 +409,14 @@ export function hasIntegrationData(id: string): boolean {
     case "integration_resend":
       return arr(id, "emails").length > 0;
     case "integration_github":
-      return get(id).totalRepos != null;
+      return get(id).login != null;
     case "integration_stripe":
       return info.loaded;
     case "integration_notion":
       return arr(id, "pages").length > 0;
     case "integration_calcom":
+      return info.loaded;
+    case "integration_orca":
       return info.loaded;
     default:
       return false;
@@ -463,11 +482,12 @@ function orcaCard(): HTMLElement {
     const status = String(w.status ?? "");
     const accent = ORCA_COLORS[status] ?? "#8E939C";
     const cells: Node[] = [
-      h("span", { class: "int-name", text: String(w.name || w.repo || "worktree") }),
+      // The worktree's name is what identifies it: the prompt gives way first.
+      h("span", { class: "int-name", style: "flex:0 1 auto;max-width:50%", text: String(w.name || w.repo || "worktree") }),
       h("span", { class: "int-ago", text: t(ORCA_STATUS[status] ?? status) }),
     ];
     const what = status === "permission" ? [w.tool, w.prompt].filter(Boolean).join(" · ") : String(w.prompt ?? "");
-    if (i === 0 && what) cells.push(h("span", { class: "int-sub", text: what }));
+    if (i === 0 && what) cells.push(h("span", { class: "int-sub", style: "flex:1 1 0", text: what }));
     rows.append(listRow(accent, i === 0, ...cells));
   });
   const waiting = worktrees.filter((w) => w.status === "permission").length;

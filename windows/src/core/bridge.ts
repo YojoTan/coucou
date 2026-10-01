@@ -90,6 +90,8 @@ export const Bridge = {
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
   /** `orca open`: launches or focuses Orca. */
   openOrca: () => call<boolean>("open_orca"),
+  /** "token" (pasted), "gh" (local gh login) or null — never the token itself. */
+  githubAuth: () => call<"token" | "gh" | null>("github_auth"),
   opencodeStatus: () => call<PluginStatus>("opencode_status"),
   opencodePluginText: () => call<string>("opencode_plugin_text"),
   opencodeApply: (install: boolean) => callOrThrow<string>("opencode_apply", { install }),

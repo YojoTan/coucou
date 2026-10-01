@@ -4,6 +4,7 @@ mod claude;
 mod clipboard;
 mod cli_chat;
 mod files;
+mod github;
 mod hooks;
 mod hotkey;
 mod integrations;
@@ -448,6 +449,17 @@ fn open_orca() -> bool {
     orca::open_app()
 }
 
+/// Where the GitHub pill's token comes from: "token" (pasted), "gh" (the local
+/// gh login) or None. The token itself never leaves Rust.
+#[tauri::command]
+async fn github_auth() -> Option<&'static str> {
+    tauri::async_runtime::spawn_blocking(github::token)
+        .await
+        .ok()
+        .flatten()
+        .map(|(_, source)| source.id())
+}
+
 /// opencode plugin state for Settings (experimental).
 #[tauri::command]
 fn opencode_status() -> opencode::PluginStatus {
@@ -683,6 +695,7 @@ pub fn run() {
             hotkey_choices,
             hotkey_set,
             open_orca,
+            github_auth,
             opencode_status,
             opencode_plugin_text,
             opencode_apply,

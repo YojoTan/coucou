@@ -113,7 +113,7 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_vercel", 5, 30, poll_vercel);
     spawn(app.clone(), "integration_stripe", 6, 30, poll_stripe);
     spawn(app.clone(), "integration_resend", 6, 60, poll_resend);
-    spawn(app.clone(), "integration_github", 7, 300, poll_github);
+    spawn(app.clone(), "integration_github", 7, 180, poll_github);
     spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
     spawn(app.clone(), "integration_notion", 9, 300, poll_notion);
     spawn(app, "integration_orca", 6, 5, poll_orca);
@@ -312,61 +312,54 @@ async fn poll_stripe(app: AppHandle) {
 }
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
+// Pull requests that need the user, with the pasted token or the `gh` login
+// (github.rs, after upstream PR #15).
 
 async fn poll_github(app: AppHandle) {
-    let Some(token) = secrets::get("github-token") else { return };
-    let http = client();
-
-    let user = http
-        .get("https://api.github.com/user")
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "Coucou")
-        .send()
-        .await;
-    let Ok(response) = user else { return };
-    if !response.status().is_success() {
+    let found = tauri::async_runtime::spawn_blocking(crate::github::token).await.ok().flatten();
+    let Some((token, source)) = found else {
         emit(&app, IntegrationUpdate {
             id: "integration_github",
             data: json!({}),
-            error: Some(status_error(response.status().as_u16(), "Token lacks the needed scope")),
+            error: Some("gh not found or not logged in — run gh auth login, or paste a token.".into()),
             event: None,
         });
         return;
-    }
-    let json: Value = response.json().await.unwrap_or(json!({}));
-    let public = json.get("public_repos").and_then(Value::as_i64).unwrap_or(0);
-    let private = json
-        .get("owned_private_repos")
-        .or_else(|| json.get("total_private_repos"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-
-    let repos = http
-        .get("https://api.github.com/user/repos?per_page=100&affiliation=owner&sort=pushed")
+    };
+    let response = client()
+        .post("https://api.github.com/graphql")
         .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "Coucou")
+        .json(&json!({ "query": crate::github::QUERY }))
         .send()
         .await;
-    let stars: i64 = match repos {
-        Ok(r) if r.status().is_success() => r
-            .json::<Value>()
-            .await
-            .ok()
-            .and_then(|v| v.as_array().cloned())
-            .map(|list| {
-                list.iter()
-                    .filter_map(|r| r.get("stargazers_count").and_then(Value::as_i64))
-                    .sum()
-            })
-            .unwrap_or(0),
-        _ => 0,
+    let response = match response {
+        Ok(r) => r,
+        // A network blip: say nothing, so the island keeps the last good data.
+        Err(e) => {
+            log::line(&format!("github: {e}"));
+            return;
+        }
     };
-
+    let code = response.status().as_u16();
+    if code != 200 {
+        let error = match (code, source) {
+            (401, crate::github::Source::Gh) => "gh login expired — run gh auth login".to_string(),
+            (401, _) => "Token rejected".to_string(),
+            _ => format!("GitHub error {code}"),
+        };
+        emit(&app, IntegrationUpdate { id: "integration_github", data: json!({}), error: Some(error), event: None });
+        return;
+    }
+    let body: Value = response.json().await.unwrap_or(json!({}));
+    let Some(data) = body.get("data").filter(|d| d.is_object()) else {
+        let why = body.pointer("/errors/0/message").and_then(Value::as_str).unwrap_or("GitHub error");
+        emit(&app, IntegrationUpdate { id: "integration_github", data: json!({}), error: Some(why.to_string()), event: None });
+        return;
+    };
     emit(&app, IntegrationUpdate {
         id: "integration_github",
-        data: json!({ "totalRepos": public + private, "totalStars": stars }),
+        data: crate::github::summary(data, source),
         error: None,
         event: None,
     });

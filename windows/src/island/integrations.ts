@@ -11,7 +11,6 @@ import type { Island } from "./island";
 /** Which Credential Manager key backs each pill. */
 const KEY_FOR: Record<string, string> = {
   integration_stripe: "stripe-api-key",
-  integration_github: "github-token",
   integration_vercel: "vercel-token",
   integration_n8n: "n8n-api-key",
   integration_resend: "resend-api-key",
@@ -38,6 +37,10 @@ export async function refreshConfigured() {
     data: {}, error: null, loaded: false, configured: false,
   };
   State.integrations.integration_claude = { ...claude, configured: hooks };
+  // GitHub: a pasted token, or the local gh login.
+  const gh = (await Bridge.githubAuth()) ?? null;
+  const github = State.integrations.integration_github ?? { data: {}, error: null, loaded: false, configured: false };
+  State.integrations.integration_github = { ...github, configured: gh != null };
   // Orca needs no key: it is "configured" whenever its runtime answers.
   const orca = State.integrations.integration_orca ?? { data: {}, error: null, loaded: false, configured: true };
   State.integrations.integration_orca = { ...orca, configured: true };

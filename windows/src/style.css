@@ -1162,6 +1162,10 @@ input[type="range"]::-webkit-slider-thumb {
   font: 400 11px var(--font);
   color: var(--dim-2);
   white-space: nowrap;
+  /* A long label gives way before a count does (GitHub's "3 to review"). */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .int-total {
@@ -1169,6 +1173,7 @@ input[type="range"]::-webkit-slider-thumb {
   align-items: center;
   gap: 4px;
   margin-left: 2px;
+  flex: 0 0 auto;
 }
 
 .int-total span {
@@ -1238,6 +1243,18 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-row.first .int-name {
   color: #c5c8cd;
+}
+
+/* A row that opens something (GitHub PRs). */
+.int-row.link:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.int-ref {
+  font: 500 10px var(--mono);
+  color: var(--dim-3);
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .int-ago {

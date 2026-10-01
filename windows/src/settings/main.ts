@@ -508,7 +508,7 @@ const INTEGRATIONS: IntegrationDef[] = [
   { id: "integration_stripe", name: "Stripe", color: "#0570DE",
     fields: [{ key: "stripe-api-key", label: "Secret key", placeholder: t("sk_live_…"), secret: true }] },
   { id: "integration_github", name: "GitHub", color: "#F4505E",
-    fields: [{ key: "github-token", label: "Token", placeholder: t("ghp_…"), secret: true }] },
+    fields: [{ key: "github-token", label: "Token", placeholder: t("optional — overrides gh"), secret: true }] },
   { id: "integration_vercel", name: "Vercel", color: "#7C5CFF",
     fields: [{ key: "vercel-token", label: "Token", placeholder: "…", secret: true }] },
   { id: "integration_n8n", name: "n8n", color: "#F29B38",
@@ -582,6 +582,8 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
       );
     }
 
+    if (def.id === "integration_github") rows.append(githubStatus());
+
     list.append(
       h("div", { style: "display:flex;gap:12px;align-items:flex-start" },
         h("div", { style: "display:flex;align-items:center;gap:8px;min-width:132px;padding-top:4px" },
@@ -596,6 +598,21 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
 
   updateNote();
   return h("section", {}, h("h2", {}, h("span", { text: t("Integrations") })), note, list);
+}
+
+/** Which GitHub login the pill uses, or why there isn't one (after upstream PR #15). */
+function githubStatus(): HTMLElement {
+  const line = h("div", { class: "hint", text: "…" });
+  const refresh = async () => {
+    const source = await Bridge.githubAuth().catch(() => null);
+    line.textContent = source === "gh"
+      ? t("Using your gh login.")
+      : source === "token"
+        ? t("Using the token above.")
+        : t("gh not found or not logged in — run gh auth login, or paste a token.");
+  };
+  void refresh();
+  return line;
 }
 
 // ── General section ───────────────────────────────────────────────────────────

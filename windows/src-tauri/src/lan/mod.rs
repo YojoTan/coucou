@@ -383,6 +383,7 @@ fn discover(lan: &'static Lan, generation: u64) {
     let _ = socket.set_broadcast(true);
     let _ = socket.set_read_timeout(Some(Duration::from_millis(500)));
     let mut last_beacon = Instant::now() - BEACON_EVERY;
+    let mut last_reply: std::collections::HashMap<String, Instant> = std::collections::HashMap::new();
     let mut buf = [0u8; 1500];
     while alive(lan, generation) {
         if last_beacon.elapsed() >= BEACON_EVERY {
@@ -399,12 +400,17 @@ fn discover(lan: &'static Lan, generation: u64) {
                 let new = !inner.seen.contains_key(&id);
                 let entry = Seen { name, addr: from.ip(), port, key, at: Instant::now() };
                 changed = new || inner.seen.get(&id).map(|s| s.name != entry.name || s.addr != entry.addr || s.port != entry.port).unwrap_or(true);
-                inner.seen.insert(id, entry);
+                inner.seen.insert(id.clone(), entry);
                 drop(inner);
-                // Answer a newcomer straight away, so it sees us without waiting.
-                if new {
+                // Answer every beacon straight back, at most once per beacon period per
+                // peer: Windows often sends 255.255.255.255 out of a virtual adapter
+                // (WSL, Hyper-V, VPN), so our broadcast may never reach a Mac that we
+                // hear fine; a unicast reply always takes the right route.
+                let due = last_reply.get(&id).map(|t| t.elapsed() >= BEACON_EVERY).unwrap_or(true);
+                if due {
                     if let Some(b) = beacon(lan) {
                         let _ = socket.send_to(&b, from);
+                        last_reply.insert(id, Instant::now());
                     }
                 }
             }

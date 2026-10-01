@@ -52,6 +52,10 @@ final class AgentSessions {
         var summary: String? = nil
         var lastSeen = Date()
         var seq = 0
+        #if !APPSTORE
+        /// The app the session runs in (SessionJump), for "jump to terminal".
+        var host: SessionHost? = nil
+        #endif
 
         init(key: String, agent: CodingAgent, project: String, cwd: String) {
             self.key = key

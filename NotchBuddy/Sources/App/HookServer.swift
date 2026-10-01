@@ -122,11 +122,16 @@ final class HookServer: @unchecked Sendable {
         }
 
         guard !raw.isEmpty,
-              let payload = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+              var payload = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
             sendLine(fd: fd, text: #"{"ok":true}"#)
             close(fd)
             return
         }
+        // Where "jump" goes: the app hosting nb-hook, from the socket, never the wire.
+        payload["coucou_host"] = nil
+        #if !APPSTORE
+        if let host = SessionJump.host(ofPeer: fd) { payload["coucou_host"] = host }
+        #endif
 
         let eventName = payload["hook_event_name"] as? String ?? ""
 
@@ -170,6 +175,9 @@ final class HookServer: @unchecked Sendable {
         let sessions = AgentSessions.shared
         let taskId = sessions.ensureTask(agent)
         let session = sessions.touch(agent: agent, sessionId: sessionId, project: projectName, cwd: cwd)
+        #if !APPSTORE
+        if let host = payload["coucou_host"] as? SessionHost { session.host = host }
+        #endif
         let focused = state.focusId == taskId
         let isShown = { sessions.shown(agent)?.key == session.key }
         activeSessionId = sessionId
@@ -341,6 +349,9 @@ final class HookServer: @unchecked Sendable {
         let sessions = AgentSessions.shared
         let taskId = sessions.ensureTask(agent)
         let session = sessions.touch(agent: agent, sessionId: sessionId, project: projectName, cwd: cwd)
+        #if !APPSTORE
+        if let host = payload["coucou_host"] as? SessionHost { session.host = host }
+        #endif
         // The pill follows the session that is asking, so the card names it.
         sessions.unpin(agent)
         session.state = .approval

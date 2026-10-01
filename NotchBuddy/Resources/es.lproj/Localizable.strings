@@ -181,3 +181,11 @@
 "Token rejected" = "Token rechazado";
 "GitHub error %lld" = "Error de GitHub %lld";
 "GitHub error" = "Error de GitHub";
+
+/* Spotify */
+"Now playing" = "Sonando";
+"Paused" = "En pausa";
+"Previous" = "Anterior";
+"Next" = "Siguiente";
+"Play" = "Reproducir";
+"Pause" = "Pausa";

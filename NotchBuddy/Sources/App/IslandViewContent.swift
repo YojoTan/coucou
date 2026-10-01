@@ -117,6 +117,10 @@ struct OverviewView: View {
         guard let task else { return }
         switch task.id {
         case "integration_claude", "integration_codex", "integration_opencode":
+            #if !APPSTORE
+            if let key = task.sessionKey, let s = AgentSessions.shared.session(forKey: key),
+               SessionJump.jump(to: s.host, cwd: s.cwd) { return }
+            #endif
             let vscodeBundleId = "com.microsoft.VSCode"
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == vscodeBundleId }) {
                 app.activate(options: .activateIgnoringOtherApps)
@@ -341,6 +345,11 @@ struct FinishedView: View {
                 HStack(spacing: 8) {
                     #if !APPSTORE
                     PrimaryButton("Open terminal") {
+                        if let key = state.focusTask?.sessionKey, let s = AgentSessions.shared.session(forKey: key),
+                           SessionJump.jump(to: s.host, cwd: s.cwd) {
+                            NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                            return
+                        }
                         let terminalBundleIds = ["com.apple.Terminal", "com.googlecode.iterm2", "net.kovidgoyal.kitty", "com.mitchellh.ghostty"]
                         let activated = terminalBundleIds.compactMap { id in
                             NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }
@@ -1111,6 +1120,12 @@ struct IntegrationCardView: View {
             #else
             return appState.orcaError == nil
             #endif
+        case "integration_spotify":
+            #if APPSTORE
+            return false
+            #else
+            return true
+            #endif
         case "integration_codex":
             #if APPSTORE
             return false
@@ -1146,6 +1161,7 @@ struct IntegrationCardView: View {
         case "integration_stripe":  return URL(string: "https://dashboard.stripe.com/payments")
         case "integration_notion":  return URL(string: "https://notion.so")
         case "integration_calcom":  return URL(string: "https://app.cal.com/bookings")
+        case "integration_spotify": return URL(string: "https://open.spotify.com")
         default: return nil
         }
     }
@@ -1192,6 +1208,15 @@ struct IntegrationCardView: View {
         task.id == "integration_notion" && appState.notionLoaded
     }
 
+    // Spotify: once it has said what is playing
+    private var spotifyHasData: Bool {
+        #if APPSTORE
+        return false
+        #else
+        return task.id == "integration_spotify" && appState.spotifyNow != nil
+        #endif
+    }
+
     // Orca: as soon as the runtime has answered once
     private var orcaHasData: Bool {
         #if APPSTORE
@@ -1235,6 +1260,11 @@ struct IntegrationCardView: View {
         } else if orcaHasData {
             #if !APPSTORE
             OrcaCardView(worktrees: appState.orcaWorktrees)
+                .transition(.opacity)
+            #endif
+        } else if spotifyHasData {
+            #if !APPSTORE
+            SpotifyCardView(track: appState.spotifyNow!)
                 .transition(.opacity)
             #endif
         } else if vsCodeSessionActive {
@@ -3108,6 +3138,66 @@ struct OrcaCardView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(Color(hex: "#8B5CF6"))
                 .buttonStyle(.plain)
+        }
+        .padding(.leading, 108)
+        .padding(.trailing, 36)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+#endif
+
+
+// MARK: - Spotify card (GitHub build) — SpotifyWatcher
+
+#if !APPSTORE
+struct SpotifyCardView: View {
+    let track: SpotifyTrack
+
+    private func control(_ icon: String, _ help: LocalizedStringKey, _ command: String) -> some View {
+        Button { SpotifyWatcher.control(command) } label: {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(Color(hex: "#C5C8CD"))
+                .frame(width: 26, height: 20)
+                .background(Color.white.opacity(0.07))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Circle().fill(Color(hex: "#1DB954")).frame(width: 7, height: 7)
+                Text("Spotify").font(.system(size: 12, weight: .semibold)).foregroundColor(Color(hex: "#F5F6F8"))
+                Text(track.playing ? "Now playing" : "Paused").font(.system(size: 11)).foregroundColor(Color(hex: "#8E939C"))
+                Spacer(minLength: 2)
+            }
+            .padding(.top, 6)
+            HStack(spacing: 6) {
+                Circle().fill(Color(hex: "#1DB954")).frame(width: 5, height: 5)
+                Text(track.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color(hex: "#C5C8CD"))
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color(hex: "#1DB954").opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            if !track.artist.isEmpty {
+                Text(track.artist)
+                    .font(.system(size: 10))
+                    .foregroundColor(Color(hex: "#6B7079"))
+                    .lineLimit(1)
+                    .padding(.leading, 19)
+            }
+            HStack(spacing: 6) {
+                control("backward.end.fill", "Previous", "previous track")
+                control(track.playing ? "pause.fill" : "play.fill", track.playing ? "Pause" : "Play", "playpause")
+                control("forward.end.fill", "Next", "next track")
+            }
+            .padding(.top, 2)
         }
         .padding(.leading, 108)
         .padding(.trailing, 36)

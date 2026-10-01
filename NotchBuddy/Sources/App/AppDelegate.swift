@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotionPoller.shared.start()
         #if !APPSTORE
         OrcaPoller.shared.start()
+        SpotifyWatcher.shared.start()
         #endif
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings),
                                                name: .openFullSettings, object: nil)

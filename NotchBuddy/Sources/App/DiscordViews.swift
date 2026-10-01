@@ -261,7 +261,7 @@ struct DiscordSettingsSection: View {
     @AppStorage("discord-post-finished") private var postFinished = false
     @AppStorage("discord-post-permission") private var postPermission = false
     @AppStorage(DiscordCall.pauseSpotifyKey) private var pauseSpotify = true
-    @AppStorage(DiscordCall.quietKey) private var quietCalls = true
+    @State private var callSounds = DiscordCall.callSounds
     @AppStorage(DiscordCall.lockMuteKey) private var lockMute = true
     @AppStorage(DiscordCall.presenceKey) private var presence = false
     @AppStorage(DiscordMic.alertKey) private var mutedAlert = false
@@ -295,7 +295,14 @@ struct DiscordSettingsSection: View {
         GroupBox("During calls") {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Pause Spotify during calls", isOn: $pauseSpotify)
-                Toggle("Call mode: Coucou stays quiet, and sums up after", isOn: $quietCalls)
+                Picker("Coucou's sounds in a call", selection: $callSounds) {
+                    Text("Always").tag(DiscordCall.CallSounds.always)
+                    Text("Smart: not while someone speaks and your mic is open").tag(DiscordCall.CallSounds.smart)
+                    Text("Never (summed up after)").tag(DiscordCall.CallSounds.never)
+                }
+                .onChange(of: callSounds) { _, v in UserDefaults.standard.set(v.rawValue, forKey: DiscordCall.soundsKey) }
+                Text("Smart: muted, or with nobody speaking, sounds play as usual; during a conversation a sound waits for the next pause instead of being lost.")
+                    .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("Mute me when the screen locks", isOn: $lockMute)
                 Toggle("Warn me when I talk while muted", isOn: $mutedAlert)
                     .onChange(of: mutedAlert) { _, on in askMic(on, speech: false) }

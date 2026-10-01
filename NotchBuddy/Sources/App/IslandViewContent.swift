@@ -59,7 +59,7 @@ struct OverviewView: View {
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .layoutPriority(1)
-                                Text(agent.source == .claudeCode ? "Claude Code" : "n8n")
+                                Text(agent.source.label)
                                     .font(.system(size: 11))
                                     .foregroundColor(Color(hex: "#8E939C"))
                                     .lineLimit(1)
@@ -116,7 +116,7 @@ struct OverviewView: View {
     private func openAgentTarget(_ task: AgentTask?) {
         guard let task else { return }
         switch task.id {
-        case "integration_claude":
+        case "integration_claude", "integration_codex", "integration_opencode":
             let vscodeBundleId = "com.microsoft.VSCode"
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == vscodeBundleId }) {
                 app.activate(options: .activateIgnoringOtherApps)
@@ -1105,6 +1105,18 @@ struct IntegrationCardView: View {
                 return cmd?.contains("NotchBuddy") == true || cmd?.contains("coucou") == true
             } ?? false }
             #endif
+        case "integration_codex":
+            #if APPSTORE
+            return false
+            #else
+            return HookServer.codexHooksInstalled()
+            #endif
+        case "integration_opencode":
+            #if APPSTORE
+            return false
+            #else
+            return OpencodePlugin.status().installed
+            #endif
         case "integration_resend":  return KeychainStore.shared.get("resend-api-key") != nil
         case "integration_n8n":     return KeychainStore.shared.get("n8n-api-key")    != nil
         case "integration_vercel":  return KeychainStore.shared.get("vercel-token")   != nil
@@ -1133,8 +1145,9 @@ struct IntegrationCardView: View {
     }
 
     // VS Code with active session: show ticker layout (same as overview)
+    /// A coding-agent pill (Claude Code, Codex, opencode) with a session to show.
     private var vsCodeSessionActive: Bool {
-        task.id == "integration_claude" && (task.state != .idle || !task.steps.isEmpty)
+        CodingAgent.forTask(task.id) != nil && (task.state != .idle || !task.steps.isEmpty)
     }
 
     // n8n with a finished execution: show result row instead of "Open n8n" button
@@ -1216,10 +1229,25 @@ struct IntegrationCardView: View {
                         .foregroundColor(Color(hex: "#F5F6F8"))
                         .lineLimit(1).truncationMode(.tail)
                         .layoutPriority(1)
-                    Text("Claude Code")
+                    Text(task.source.label)
                         .font(.system(size: 11))
                         .foregroundColor(Color(hex: "#8E939C"))
                         .lineLimit(1).truncationMode(.tail)
+                    // Several sessions of this agent at once: ⇄ shows the next one.
+                    if task.sessionCount > 1, let agent = CodingAgent.forTask(task.id) {
+                        Button { AgentSessions.shared.cycle(agent) } label: {
+                            Text("⇄ \(task.sessionCount)")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundColor(Color(hex: "#C9CCD2"))
+                                .padding(.horizontal, 7).padding(.vertical, 1)
+                                .background(Color.white.opacity(0.06))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.16)))
+                                .clipShape(Capsule())
+                                .fixedSize()
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show the next session")
+                    }
                     Spacer(minLength: 2)
                     if task.steps.count > 1 {
                         Text("\(min(task.stepIndex + 1, task.steps.count))/\(task.steps.count)")
@@ -1232,7 +1260,10 @@ struct IntegrationCardView: View {
                 .padding(.leading, 108)
                 .padding(.trailing, 36)
 
+                // A different session starts its ticker fresh instead of
+                // scrolling through another project's steps.
                 TickerView(task: task)
+                    .id(task.sessionKey ?? task.id)
                     .frame(height: 44)
                     .padding(.top, 6)
                     .padding(.leading, 108)
@@ -1276,7 +1307,7 @@ struct IntegrationCardView: View {
                 .padding(.top, 2)
 
                 HStack(spacing: 8) {
-                    if task.id == "integration_claude" {
+                    if CodingAgent.forTask(task.id) != nil {
                         Button("Open Visual Studio Code") { openVSCode() }
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(hex: task.color).opacity(0.7))

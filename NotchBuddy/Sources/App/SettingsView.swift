@@ -40,6 +40,10 @@ struct SettingsView: View {
     @State private var openaiBase: String = OpenAICompatChat.baseURL
     @State private var openaiModel: String = OpenAICompatChat.model
     @State private var openaiKey: String = ""
+    // Codex hooks.json and the opencode plugin (GitHub build).
+    @State private var codexJSON: String = ""
+    @State private var showCodexDiff: Bool = false
+    @State private var agentsMessage: String = ""
 
     // Bindings in minutes for the absence field
     private var absenceMinutes: Binding<Double> {
@@ -167,6 +171,104 @@ struct SettingsView: View {
                     }
                     .padding(6)
                 }
+
+                #if !APPSTORE
+                // MARK: Other coding agents
+                GroupBox("Codex & opencode") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Codex and opencode sessions get their own pill, and you can approve them from the notch.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        // Codex: ~/.codex/hooks.json, previewed before anything is written.
+                        Text("Codex — \(HookServer.codexHooksURL.path)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            Button("Install Codex hooks") {
+                                do {
+                                    codexJSON = try HookServer.shared.previewCodexHooks()
+                                    showCodexDiff = true
+                                    agentsMessage = "Review hooks.json below before confirming."
+                                } catch {
+                                    agentsMessage = "❌ \(error.localizedDescription)"
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button("Uninstall") {
+                                do {
+                                    try HookServer.shared.uninstallCodexHooks()
+                                    agentsMessage = "✓ Codex hooks removed."
+                                } catch {
+                                    agentsMessage = "❌ \(error.localizedDescription)"
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        if showCodexDiff {
+                            ScrollView {
+                                Text(codexJSON)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(height: 140)
+                            .background(Color(NSColor.textBackgroundColor))
+                            .cornerRadius(6)
+                            HStack {
+                                Button("Confirm & write") {
+                                    do {
+                                        try HookServer.shared.writeCodexHooks()
+                                        showCodexDiff = false
+                                        codexJSON = ""
+                                        agentsMessage = "✓ Codex hooks installed. In Codex, run /hooks once and trust them."
+                                    } catch {
+                                        agentsMessage = "❌ \(error.localizedDescription)"
+                                        if let fresh = try? HookServer.shared.previewCodexHooks() { codexJSON = fresh }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Cancel") { showCodexDiff = false; codexJSON = "" }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+
+                        // opencode: one plugin file (experimental).
+                        let plugin = OpencodePlugin.status()
+                        Text("opencode (experimental) — \(plugin.path)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        if plugin.foreign {
+                            Text("A coucou.js that Coucou didn't write is already there — it is left alone.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                        } else {
+                            HStack(spacing: 10) {
+                                Button(plugin.installed ? (plugin.outdated ? "Update plugin" : "Reinstall plugin") : "Install plugin") {
+                                    do { agentsMessage = "✓ " + (try OpencodePlugin.apply(install: true)) }
+                                    catch { agentsMessage = "❌ \(error.localizedDescription)" }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                if plugin.installed {
+                                    Button("Remove plugin") {
+                                        do { agentsMessage = "✓ " + (try OpencodePlugin.apply(install: false)) }
+                                        catch { agentsMessage = "❌ \(error.localizedDescription)" }
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+
+                        if !agentsMessage.isEmpty {
+                            Text(agentsMessage)
+                                .font(.system(size: 11))
+                                .foregroundColor(agentsMessage.hasPrefix("❌") ? .red : .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(6)
+                }
+                #endif
 
                 // MARK: Integrations
                 GroupBox("Integrations") {

@@ -7,6 +7,8 @@ extension AgentTask {
     /// All available integration pills. Claude is always active; others are opt-in (max 4).
     static let integrationAgents: [AgentTask] = [
         AgentTask(id: "integration_claude",  name: "VS Code",   color: "#F5F6F8", state: .idle, steps: [], source: .claudeCode, isIntegration: true),
+        AgentTask(id: "integration_codex",   name: "Codex",     color: "#10A37F", state: .idle, steps: [], source: .codex, isIntegration: true),
+        AgentTask(id: "integration_opencode", name: "opencode", color: "#F59E0B", state: .idle, steps: [], source: .opencode, isIntegration: true),
         AgentTask(id: "integration_resend",  name: "Resend",    color: "#22C55E", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_n8n",     name: "n8n",       color: "#F29B38", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_vercel",  name: "Vercel",    color: "#7C5CFF", state: .idle, steps: [], source: .n8n, isIntegration: true),
@@ -290,9 +292,13 @@ final class AppState: ObservableObject {
     }
 
     /// Load integration pills respecting activeIntegrations. VS Code always loads. Safe to call multiple times.
+    /// Agent pills (Codex, opencode) shown because their hooks sent something.
+    var liveAgents: Set<String> = []
+
     func loadIntegrationTasks() {
         for task in AgentTask.integrationAgents {
-            let shouldLoad = task.id == "integration_claude" || activeIntegrations.contains(task.id)
+            let shouldLoad = task.id == "integration_claude" || liveAgents.contains(task.id)
+                || activeIntegrations.contains(task.id)
             let loaded = tasks.contains(where: { $0.id == task.id })
             if shouldLoad && !loaded { tasks.append(task) }
             if !shouldLoad && loaded { tasks.removeAll { $0.id == task.id } }

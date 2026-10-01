@@ -54,6 +54,9 @@ targets:
       - path: Resources/sounds
         buildPhase: resources
         type: folder
+      # The opencode plugin, shared with the Windows build (GitHub build only).
+      - path: ../windows/opencode-plugin/coucou.js
+        buildPhase: resources
     info:
       path: Resources/Info.plist
       properties:

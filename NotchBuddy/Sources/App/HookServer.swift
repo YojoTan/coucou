@@ -142,9 +142,10 @@ final class HookServer: @unchecked Sendable {
 
 
     // MARK: - Event → AppState
-    // All Claude Code events route to the permanent "integration_claude" task.
-    // View switches only happen if VS Code is the currently focused mochi.
-    // When not focused: state updates animate the mini bot in the pill; badge shown for alerts.
+    // Events route to their agent's pill (integration_claude / _codex / _opencode)
+    // through AgentSessions: each event updates its own session, and the pill
+    // mirrors the session it shows. View switches only happen if that agent is
+    // the focused mochi; otherwise the pill animates and shows a badge for alerts.
 
     @MainActor
     private func processEvent(name: String, payload: [String: Any]) {
@@ -153,113 +154,131 @@ final class HookServer: @unchecked Sendable {
         let cwd = payload["cwd"] as? String ?? ""
         let rawName = URL(fileURLWithPath: cwd).lastPathComponent
         let projectName = aliasProjectName(rawName.isEmpty ? "Session" : rawName)
+        let agent = CodingAgent.from(payload["coucou_agent"] as? String)
 
-        let termProgram = payload["term_program"] as? String ?? ""
-        let bundleId    = payload["bundle_id"]    as? String ?? ""
-        let isVSCode = termProgram.lowercased().contains("vscode") ||
-                       bundleId.lowercased().contains("vscode")
-        guard isVSCode else {
-            nbLog("Ignored \(name) from \(termProgram.isEmpty ? bundleId : termProgram) (\(projectName))")
-            return
+        // Claude Code sessions are filtered to VS Code, as upstream; Codex and
+        // opencode run anywhere, so every one of their sessions counts.
+        if agent == .claude {
+            let termProgram = payload["term_program"] as? String ?? ""
+            let bundleId    = payload["bundle_id"]    as? String ?? ""
+            let isVSCode = termProgram.lowercased().contains("vscode") ||
+                           bundleId.lowercased().contains("vscode")
+            guard isVSCode else {
+                nbLog("Ignored \(name) from \(termProgram.isEmpty ? bundleId : termProgram) (\(projectName))")
+                return
+            }
         }
 
-        let focused = state.focusId == "integration_claude"
+        let sessions = AgentSessions.shared
+        let taskId = sessions.ensureTask(agent)
+        let session = sessions.touch(agent: agent, sessionId: sessionId, project: projectName, cwd: cwd)
+        let focused = state.focusId == taskId
+        let isShown = { sessions.shown(agent)?.key == session.key }
+        activeSessionId = sessionId
 
         switch name {
 
         case "SessionStart":
-            activeSessionId = sessionId
-            upsertTask(projectName: projectName, cwd: cwd)
-            nbLog("SessionStart \(projectName) (\(sessionId.prefix(8)))")
+            nbLog("SessionStart [\(agent.rawValue)] \(projectName) (\(sessionId.prefix(8)))")
+            // Codex also fires SessionStart when it compacts mid-turn; that one
+            // must not reset a running session.
+            if (payload["source"] as? String) != "compact" { session.state = .idle }
             if state.isPresent { expandIfNeeded(to: .overview) }
             SoundEngine.shared.play("work")
 
         case "UserPromptSubmit":
-            activeSessionId = sessionId
-            upsertTask(projectName: projectName, cwd: cwd)
-            if let idx = state.tasks.firstIndex(where: { $0.id == "integration_claude" }) {
-                state.tasks[idx].summary = nil
-            }
-            state.updateTask(id: "integration_claude", state: .thinking)
+            session.summary = nil
+            session.state = .thinking
             if let prompt = payload["prompt"] as? String, !prompt.isEmpty {
-                appendStep(id: "integration_claude", step: String(prompt.prefix(60)))
+                sessions.addStep(session, String(prompt.prefix(60)))
             }
             if state.isPresent { expandIfNeeded(to: .overview) }
 
         case "PreToolUse":
-            activeSessionId = sessionId
-            upsertTask(projectName: projectName, cwd: cwd)
-            state.updateTask(id: "integration_claude", state: .working)
+            session.state = .working
             let tool = payload["tool_name"] as? String ?? "Tool"
             let input = payload["tool_input"] as? [String: Any] ?? [:]
-            let step = frenchStep(tool: tool, input: input)
-            appendStep(id: "integration_claude", step: step)
+            sessions.addStep(session, frenchStep(tool: tool, input: input))
             // Tool name only: the step text holds the start of the command, and
             // commands carry tokens and passwords often enough to keep them off disk.
-            nbLog("PreToolUse \(tool)")
+            nbLog("PreToolUse [\(agent.rawValue)] \(tool)")
 
         case "PostToolUse":
-            state.updateTask(id: "integration_claude", state: .working)
+            // Codex can deliver a PostToolUse after the turn ended; a late event
+            // must not resurrect a finished session.
+            if session.state != .finished && session.state != .idle { session.state = .working }
 
         case "PostToolUseFailure":
-            state.updateTask(id: "integration_claude", state: .working)
-            appendStep(id: "integration_claude", step: "⚠ failed")
+            session.state = .working
+            sessions.addStep(session, "⚠ failed")
 
         case "Notification":
             let message = payload["message"] as? String ?? ""
             let lower = message.lowercased()
             if lower.contains("rate limit") || lower.contains("limite d") {
-                state.updateTask(id: "integration_claude", state: .ratelimit)
+                session.state = .ratelimit
                 SoundEngine.shared.play("rate")
             } else if message.hasSuffix("?") {
-                state.updateTask(id: "integration_claude", state: .question)
-                appendStep(id: "integration_claude", step: message)
+                session.state = .question
+                sessions.addStep(session, message)
             }
 
         case "Stop":
-            // What Claude said last, read from its local transcript (inside ~/.claude only).
-            if let path = payload["transcript_path"] as? String,
-               let idx = state.tasks.firstIndex(where: { $0.id == "integration_claude" }) {
-                state.tasks[idx].summary = TranscriptSummary.lastReply(transcriptPath: path)
+            // What the agent said last: Claude's transcript (inside ~/.claude
+            // only), or the reply Codex sends with Stop.
+            if let path = payload["transcript_path"] as? String {
+                session.summary = TranscriptSummary.lastReply(transcriptPath: path)
+            } else if let last = payload["last_assistant_message"] as? String, !last.isEmpty {
+                session.summary = String(last.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(220))
             }
-            state.updateTask(id: "integration_claude", state: .finished)
+            session.state = .finished
             if let message = payload["message"] as? String, !message.isEmpty {
-                appendStep(id: "integration_claude", step: String(message.prefix(60)))
+                sessions.addStep(session, String(message.prefix(60)))
             }
             SoundEngine.shared.play("finish")
-            if focused {
+            sessions.mirror(agent)
+            if focused && isShown() {
                 expandIfNeeded(to: .finished)
             } else {
-                setPillBadge(id: "integration_claude", badge: .finished)
+                setPillBadge(id: taskId, badge: .finished)
             }
+            let key = session.key
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.2) {
-                state.updateTask(id: "integration_claude", state: .idle)
-                self.clearPillBadge(id: "integration_claude")
+                if let later = sessions.session(forKey: key), later.state == .finished {
+                    later.state = .idle
+                    sessions.mirror(agent)
+                }
+                self.clearPillBadge(id: taskId)
             }
 
         case "StopFailure":
-            state.updateTask(id: "integration_claude", state: .error)
+            session.state = .error
             SoundEngine.shared.play("error")
-            if focused {
+            sessions.mirror(agent)
+            if focused && isShown() {
                 expandIfNeeded(to: .error)
             } else {
-                setPillBadge(id: "integration_claude", badge: .error)
+                setPillBadge(id: taskId, badge: .error)
             }
 
+        case "Interrupt":
+            // Codex only: the user stopped the turn.
+            session.state = .idle
+            sessions.addStep(session, "Interrupted")
+
         case "SessionEnd":
-            activeSessionId = nil
-            state.updateTask(id: "integration_claude", state: .idle)
-            clearSession()
+            sessions.end(session)
 
         case "SubagentStart":
-            appendStep(id: "integration_claude", step: "+ subagent")
+            sessions.addStep(session, "+ subagent")
 
         case "SubagentStop":
-            appendStep(id: "integration_claude", step: "• subagent done")
+            sessions.addStep(session, "• subagent done")
 
         default:
             break
         }
+        sessions.mirror(agent)
     }
 
     // MARK: - Helpers
@@ -294,27 +313,30 @@ final class HookServer: @unchecked Sendable {
         let cwd       = payload["cwd"]        as? String ?? ""
         let rawName   = URL(fileURLWithPath: cwd).lastPathComponent
         let projectName = aliasProjectName(rawName.isEmpty ? "Session" : rawName)
+        let agent = CodingAgent.from(payload["coucou_agent"] as? String)
 
-        let termProgram = payload["term_program"] as? String ?? ""
-        let bundleId    = payload["bundle_id"]    as? String ?? ""
-        let isVSCode = termProgram.lowercased().contains("vscode") ||
-                       bundleId.lowercased().contains("vscode")
-        guard isVSCode else {
-            Task.detached { [weak self] in
-                self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
-                close(fd)
+        if agent == .claude {
+            let termProgram = payload["term_program"] as? String ?? ""
+            let bundleId    = payload["bundle_id"]    as? String ?? ""
+            let isVSCode = termProgram.lowercased().contains("vscode") ||
+                           bundleId.lowercased().contains("vscode")
+            guard isVSCode else {
+                Task.detached { [weak self] in
+                    self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
+                    close(fd)
+                }
+                return
             }
-            return
         }
 
         let tool = payload["tool_name"] as? String ?? "Tool"
         let command = Self.approvalSummary(tool: tool, input: payload["tool_input"] as? [String: Any] ?? [:])
-        nbLog("PermissionRequest \(tool)")
+        nbLog("PermissionRequest [\(agent.rawValue)] \(tool)")
 
         if pendingApprovalFD >= 0 {
             let old = pendingApprovalFD
             Task.detached { [weak self] in
-                // "ask" → nb-hook outputs nothing → Claude Code re-asks
+                // "ask" → nb-hook outputs nothing → the agent re-asks
                 self?.sendLine(fd: old, text: #"{"permissionDecision":"ask"}"#)
                 close(old)
             }
@@ -322,16 +344,22 @@ final class HookServer: @unchecked Sendable {
         pendingApprovalFD = fd
         activeSessionId = sessionId
 
-        upsertTask(projectName: projectName, cwd: cwd)
-        state.updateTask(id: "integration_claude", state: .approval)
-        let info = ApprovalInfo(sessionId: sessionId, tool: tool, command: command)
+        let sessions = AgentSessions.shared
+        let taskId = sessions.ensureTask(agent)
+        let session = sessions.touch(agent: agent, sessionId: sessionId, project: projectName, cwd: cwd)
+        // The pill follows the session that is asking, so the card names it.
+        sessions.unpin(agent)
+        session.state = .approval
+        sessions.mirror(agent)
+        let info = ApprovalInfo(sessionId: sessionId, tool: tool, command: command,
+                                agent: agent.rawValue, sessionKey: session.key)
         pendingApprovalID = info.id
         state.pendingApproval = info
         state.isPinned = true
         SoundEngine.shared.play("approval")
 
         // Approval always forces the island open — user must be able to respond
-        state.focusId = "integration_claude"
+        state.focusId = taskId
         expandIfNeeded(to: .approval)
 
         // Keyed by the request id, not the fd: the OS reuses fd numbers, and a
@@ -339,7 +367,7 @@ final class HookServer: @unchecked Sendable {
         let captured = info.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 115) { [weak self] in
             guard let self, self.pendingApprovalID == captured else { return }
-            // "ask" → nb-hook outputs nothing → Claude Code re-asks rather than denying
+            // "ask" → nb-hook outputs nothing → the agent re-asks rather than denying
             self.sendApprovalDecision("ask")
         }
     }
@@ -404,10 +432,14 @@ final class HookServer: @unchecked Sendable {
         let fd = pendingApprovalFD
         pendingApprovalFD = -1
         pendingApprovalID = nil
+        let approval = AppState.shared.pendingApproval
+        let agent = CodingAgent.from(approval?.agent)
 
         let json: String
         switch decision {
         case "allow":  json = #"{"permissionDecision":"allow"}"#
+        // Codex fails closed on updatedPermissions, so "always" is a plain allow there.
+        case "always" where agent != .claude: json = #"{"permissionDecision":"allow"}"#
         case "always": json = #"{"permissionDecision":"always"}"#
         case "ask":    json = #"{"permissionDecision":"ask"}"#
         default:       json = #"{"permissionDecision":"deny"}"#
@@ -423,8 +455,11 @@ final class HookServer: @unchecked Sendable {
         let state = AppState.shared
         state.pendingApproval = nil
         state.isPinned = false
-        state.updateTask(id: "integration_claude", state: .working)
-        clearPillBadge(id: "integration_claude")
+        if let key = approval?.sessionKey, let session = AgentSessions.shared.session(forKey: key) {
+            session.state = .working
+            AgentSessions.shared.mirror(agent)
+        }
+        clearPillBadge(id: agent.taskId)
         state.view = state.tasks.isEmpty ? .empty : .overview
     }
 
@@ -663,7 +698,7 @@ final class HookServer: @unchecked Sendable {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let backupURL = url.deletingLastPathComponent()
-            .appendingPathComponent("settings.json.bak-\(formatter.string(from: Date()))")
+            .appendingPathComponent("\(url.lastPathComponent).bak-\(formatter.string(from: Date()))")
         try FileManager.default.copyItem(at: url, to: backupURL)
     }
 
@@ -733,6 +768,97 @@ final class HookServer: @unchecked Sendable {
         try Self.backupSettings(settingsURL)
         try newData.write(to: settingsURL, options: .atomic)
     }
+
+    // MARK: - Codex hooks.json (GitHub build)
+    // Codex reads ~/.codex/hooks.json (or $CODEX_HOME/hooks.json). Same rules as
+    // settings.json: merged, a backup that must succeed, written only after the
+    // preview is confirmed and only if the file didn't move in between. Codex then
+    // asks the user to trust non-managed hooks once with /hooks. Event list and
+    // quirks after upstream PR #14.
+
+    #if !APPSTORE
+    static var codexHooksURL: URL {
+        let env = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? ""
+        let dir = env.isEmpty
+            ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+            : URL(fileURLWithPath: env)
+        return dir.appendingPathComponent("hooks.json")
+    }
+
+    /// Codex events and timeouts (s); Codex caps SessionEnd and Interrupt at 3 s.
+    private static let codexHookEvents: [(String, Int)] = [
+        ("SessionStart", 10), ("SessionEnd", 3),
+        ("UserPromptSubmit", 10),
+        ("PreToolUse", 10), ("PostToolUse", 10),
+        ("PermissionRequest", 120),
+        ("Stop", 10),
+        ("SubagentStart", 10), ("SubagentStop", 10),
+        ("Interrupt", 3),
+    ]
+
+    static func codexHooksInstalled() -> Bool {
+        guard let root = try? loadSettings(codexHooksURL),
+              let hooks = root["hooks"] as? [String: Any] else { return false }
+        return hooks.values.contains { value in
+            (value as? [[String: Any]])?.contains { matcher in
+                (matcher["hooks"] as? [[String: Any]])?.contains { isCoucouHook($0["command"] as? String) } ?? false
+            } ?? false
+        }
+    }
+
+    private var _pendingCodexHooksData: Data?
+
+    func previewCodexHooks() throws -> String {
+        let data = try buildCodexHooksData()
+        _pendingCodexHooksData = data
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    func writeCodexHooks() throws {
+        guard let data = _pendingCodexHooksData else { return }
+        let url = Self.codexHooksURL
+        let current = try buildCodexHooksData()
+        guard current == data else {
+            _pendingCodexHooksData = current
+            throw Self.settingsError("hooks.json changed since the preview — nothing was written. Review the new one.")
+        }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Self.backupSettings(url)
+        try data.write(to: url, options: .atomic)
+        _pendingCodexHooksData = nil
+    }
+
+    func uninstallCodexHooks() throws {
+        let url = Self.codexHooksURL
+        var root = try Self.loadSettings(url)
+        guard var hooks = root["hooks"] as? [String: Any] else { return }
+        for key in hooks.keys {
+            if var matchers = hooks[key] as? [[String: Any]] {
+                matchers.removeAll { ($0["hooks"] as? [[String: Any]])?.contains { Self.isCoucouHook($0["command"] as? String) } ?? false }
+                if matchers.isEmpty { hooks.removeValue(forKey: key) } else { hooks[key] = matchers }
+            }
+        }
+        root["hooks"] = hooks
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        try Self.backupSettings(url)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func buildCodexHooksData() throws -> Data {
+        var root = try Self.loadSettings(Self.codexHooksURL)
+        // Single-quoted path, then the agent tag nb-hook adds to every payload.
+        let command = Self.shellQuote(Self.hookScriptPath) + " --agent codex"
+        var hooks = root["hooks"] as? [String: Any] ?? [:]
+        for (event, timeout) in Self.codexHookEvents {
+            var existing = hooks[event] as? [[String: Any]] ?? []
+            existing.removeAll { ($0["hooks"] as? [[String: Any]])?.contains { Self.isCoucouHook($0["command"] as? String) } ?? false }
+            existing.append(["hooks": [["type": "command", "command": command, "timeout": timeout]]])
+            hooks[event] = existing
+        }
+        root["hooks"] = hooks
+        return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+    }
+    #endif
 
     // MARK: - App Store: hooks via security-scoped bookmark
 
@@ -828,7 +954,7 @@ private let nbHookShellWrapper = """
 # Coucou hook relay — always exits 0, never blocks Claude Code
 HOOK_DIR="$(dirname "$0")"
 if xcode-select -p >/dev/null 2>&1; then
-    out=$(/usr/bin/python3 "$HOOK_DIR/nb-hook.py" 2>/dev/null)
+    out=$(/usr/bin/python3 "$HOOK_DIR/nb-hook.py" "$@" 2>/dev/null)
     rc=$?
     if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
         printf '%s\\n' "$out"
@@ -856,6 +982,11 @@ def main():
         payload = json.loads(raw)
     except Exception:
         return
+
+    # The hook command may tag the agent: nb-hook --agent codex|opencode
+    args = sys.argv[1:]
+    if len(args) >= 2 and args[0] == '--agent' and args[1] in ('claude', 'codex', 'opencode'):
+        payload['coucou_agent'] = args[1]
 
     # Enrich with terminal context
     env = os.environ
@@ -962,6 +1093,10 @@ def main():
         payload = json.loads(raw)
     except Exception:
         return
+
+    args = sys.argv[1:]
+    if len(args) >= 2 and args[0] == '--agent' and args[1] in ('claude', 'codex', 'opencode'):
+        payload['coucou_agent'] = args[1]
 
     env = os.environ
     payload.setdefault('term_program', env.get('TERM_PROGRAM', ''))

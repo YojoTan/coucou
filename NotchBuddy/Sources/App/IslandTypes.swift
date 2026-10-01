@@ -37,6 +37,8 @@ struct ApprovalInfo: Sendable {
     var sessionId: String
     var tool: String
     var command: String
+    var agent: String = "claude"     // which coding agent asked
+    var sessionKey: String = ""      // and which of its sessions (AgentSessions)
 }
 
 // MARK: - Pill badge (shown on pill edge when non-focused task has an alert)
@@ -59,11 +61,25 @@ struct AgentTask: Identifiable, Equatable {
     var pillBadge: PillBadge? = nil  // alert badge shown on pill when not focused
     var sessionCwd: String?  = nil  // last known working directory (Claude Code sessions)
     var summary: String? = nil      // start of Claude's last reply when the session stopped
+    var sessionKey: String? = nil   // agent pills: the session they show (AgentSessions)
+    var sessionCount: Int = 0       // agent pills: how many sessions are live
 }
 
 enum AgentSource: Equatable {
     case claudeCode
+    case codex
+    case opencode
     case n8n
+
+    /// What the overview prints next to the project name.
+    var label: String {
+        switch self {
+        case .claudeCode: return "Claude Code"
+        case .codex: return "Codex"
+        case .opencode: return "opencode"
+        case .n8n: return "n8n"
+        }
+    }
 }
 
 // MARK: - View dimensions (from VIEWS in prototype)

@@ -1,6 +1,6 @@
 # Porting the 2026-10 macOS work to Windows
 
-Brief for whoever (human or agent) brings PRs #1, #2, #3, #5 and #6 to the Windows build
+Brief for whoever (human or agent) brings PRs #1, #2, #3, #5, #6 and #7 to the Windows build
 (`windows/`, Tauri: Rust in `src-tauri/`, TypeScript in `src/`). It says what each
 feature does, where the macOS code is, how to do it on Windows, and how to know
 it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
@@ -28,6 +28,9 @@ wants a live check on a real setup is said in the row.
 | Coucou's sounds in a call: smart, never lost (#5) | done | done (parity 3/n) |
 | Worktrees from Mochi: the provider protocol, island view, pill, header shortcut (#6) | done | done (parity 7/n; providers run in cmd) |
 | The desktop pet's own menu (#6) | done | done (parity 8/n) |
+| The pet as a companion: approve from it, drop files on it, ask it, the squad, hide while presenting (#7) | done | — |
+| The pet's physics and moods: throw, peek, pet, "come here", the window walker (#7) | done | — |
+| Seasonal outfits and LAN visitors (#7) | done | — |
 
 ## Step 0 — build, and check the LAN fix (do this first)
 
@@ -384,6 +387,70 @@ what it needs there.
 **Windows:** a third transparent, undecorated, always-on-top, non-focusable
 window positioned next to the pet; close it from a global mouse hook or when
 the pet window loses the pointer capture.
+
+## 10. The pet as a companion (#7)
+
+**macOS:** `PetBrain.swift` (behaviours), `PetHUD.swift` (permission card,
+squad, visitors), `DesktopMochi.swift` (drops, the bubble's answers, wiring),
+`PetMenu.swift` (the question field, "Hide 15 min"); outfits in
+`MochiAccessories.swift` and `ExtrasParse.season` (tested in
+`tests/ExtrasParseTests.swift`).
+
+### 10.1 Useful
+
+- **Approve from the pet.** While a permission is pending, a card beside the
+  pet (the side with room, clamped to the work area) shows the agent, the
+  command on one line, and Deny / Allow / Always — exactly the island's rules:
+  Allow and Always are live only 0.7 s after the card appears for that
+  request, and a command that needs full review offers "Review in VS Code"
+  (decision `ask`) instead. The pet hops when it appears; the card goes when
+  the request is answered anywhere.
+- **Drop a file on the pet.** A surprised face while a file hovers; on drop it
+  gulps, the file is copied to the inbox like an island drop, and the island
+  opens on the pet's screen at the "what do you want to do with it?" view.
+- **Ask Mochi** — a text field at the top of the pet's menu: the question goes
+  to the chat engine; the bubble says "Thinking…", then the start of the answer
+  (280 characters, 14 s); the whole answer is in the island's chat.
+- **The squad** — above the pet, a tiny Mochi per live coding-agent session
+  (its project's colour, its state) and per Orca worktree that is working or
+  waiting for permission, at most 8; a click jumps to that session / focuses
+  that Orca terminal. Hidden when empty.
+- **Out of sight while presenting** (on by default): while a presenter app
+  (Keynote, PowerPoint, Pitch, QuickTime, a browser) has a window covering the
+  pet's whole screen, or a sharing app (Zoom, Teams, Webex) draws its
+  screen-wide share overlay; a full-screen editor doesn't count. And "Hide
+  15 min" in the pet's menu.
+
+### 10.2 Physics and moods
+
+- **Throw:** the drag's speed over its last 0.1 s; above 700 px/s it flies —
+  gravity 2600 px/s², bounces off the work area's sides (×0.55) and top (×0.4)
+  with a squash, bounces on the floor until slower than 240 px/s, then slides
+  (friction ×0.86 per frame) to a stop.
+- **Peek:** at rest within 14 px of a side edge, it slides 42 % off the screen
+  and looks inward; news (a toast, a permission, an answer) brings it fully in
+  for 5 s. The pet window must be allowed off-screen.
+- **Pet it:** five direction changes of the cursor over it within 1.2 s →
+  hearts, happy eyes, a blush, the "love" sound (2 s cooldown).
+- **"Come here":** anywhere on screen, five wide (> 22 px) back-and-forths
+  within 0.8 s → it hops (or teleports, if far) next to the cursor (3 s
+  cooldown; on by default).
+- **Window walker** (opt-in): every 10–25 s it hops onto the top edge of the
+  front-most ordinary window on its screen (one with room above it), rides
+  along when the window moves, strolls to another spot every 6–14 s; when the
+  window goes, it says "Ouch!" and falls.
+
+### 10.3 Seasons and visitors
+
+- **Outfits** (on by default): pumpkin from October 15 to 31, Santa hat in
+  December, party hat on the user's birthday (`MM-dd` in settings) with
+  confetti and a "Happy birthday!" toast once that day. They come after
+  whatever the focused pill or a Focus mode puts on Mochi, and before its
+  trophy. Port `ExtrasParse.season` with its tests.
+- **Visitors:** when a paired LAN Mochi sends a file or a message, a Mochi in
+  the sender's colour walks in from the pet's screen's nearest edge (1.6 s, in
+  small steps), both wave, the bubble says what it brought, and after a couple
+  of seconds it walks back out.
 
 ## Don't change
 

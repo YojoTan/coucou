@@ -128,7 +128,7 @@ export interface Settings {
   openaiModel: string;
   /** Global shortcut that opens the chat: "off", "ctrl+alt+space", … */
   hotkey: string;
-  /** Interface language: "auto" (system), "en" or "es". */
+  /** Interface language: "auto" (system), "en", "es" or "pt-BR". */
   language: string;
 }
 

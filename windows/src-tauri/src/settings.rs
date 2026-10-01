@@ -37,7 +37,7 @@ pub struct Settings {
     /// Global shortcut that opens the chat: "off" or one of hotkey::CHOICES.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
-    /// Interface language: "auto" (follow Windows), "en" or "es".
+    /// Interface language: "auto" (follow Windows), "en", "es" or "pt-BR".
     #[serde(default = "default_language")]
     pub language: String,
 }

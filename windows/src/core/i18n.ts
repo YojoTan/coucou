@@ -1,4 +1,5 @@
-// Interface language: English (the source text) or Spanish. gettext-style —
+// Interface language: English (the source text), Spanish or Brazilian
+// Portuguese (after upstream PR #33). gettext-style —
 // t() takes the English string itself as the key, so an untranslated string
 // simply shows in English, and the code reads the same as before.
 //
@@ -6,8 +7,16 @@
 // Placeholders are written {name} and filled from `vars`.
 
 import { ES } from "./i18n-es";
+import { PT } from "./i18n-pt";
 
-export type Language = "auto" | "en" | "es";
+export type Language = "auto" | "en" | "es" | "pt-BR";
+type Active = "en" | "es" | "pt-BR";
+
+const TABLES: Record<Active, Record<string, string> | null> = { en: null, es: ES, "pt-BR": PT };
+
+function known(v: unknown): v is Active {
+  return v === "en" || v === "es" || v === "pt-BR";
+}
 
 const STORE_KEY = "coucou.language";
 
@@ -15,23 +24,24 @@ const STORE_KEY = "coucou.language";
 function stored(): Language {
   try {
     const v = localStorage.getItem(STORE_KEY);
-    return v === "en" || v === "es" ? v : "auto";
+    return known(v) ? v : "auto";
   } catch {
     return "auto";
   }
 }
 
-let active: "en" | "es" = detect(stored());
+let active: Active = detect(stored());
 
-function detect(pref: Language): "en" | "es" {
-  if (pref === "en" || pref === "es") return pref;
-  const sys = typeof navigator !== "undefined" ? navigator.language || "" : "";
-  return sys.toLowerCase().startsWith("es") ? "es" : "en";
+function detect(pref: Language): Active {
+  if (known(pref)) return pref;
+  const sys = (typeof navigator !== "undefined" ? navigator.language || "" : "").toLowerCase();
+  // Any Portuguese gets the Brazilian table: closer than falling back to English.
+  return sys.startsWith("es") ? "es" : sys.startsWith("pt") ? "pt-BR" : "en";
 }
 
 /** Applies the preference; true when the language changed (the page reloads). */
 export function setLanguage(pref: Language | string | undefined): boolean {
-  const p: Language = pref === "en" || pref === "es" ? pref : "auto";
+  const p: Language = known(pref) ? pref : "auto";
   let persisted = false;
   try {
     localStorage.setItem(STORE_KEY, p);
@@ -47,12 +57,12 @@ export function setLanguage(pref: Language | string | undefined): boolean {
   return changed && persisted;
 }
 
-export function currentLanguage(): "en" | "es" {
+export function currentLanguage(): Active {
   return active;
 }
 
 export function t(source: string, vars?: Record<string, string | number>): string {
-  let out = active === "es" ? (ES[source] ?? source) : source;
+  let out = TABLES[active]?.[source] ?? source;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) out = out.split(`{${k}}`).join(String(v));
   }

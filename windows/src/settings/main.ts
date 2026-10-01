@@ -658,6 +658,7 @@ function generalSection(): HTMLElement {
     h("option", { value: "auto", text: t("Same as Windows") }),
     h("option", { value: "en", text: "English" }),
     h("option", { value: "es", text: "Español" }),
+    h("option", { value: "pt-BR", text: "Português (Brasil)" }),
   );
   language.value = settings.language || "auto";
   language.addEventListener("change", async () => {

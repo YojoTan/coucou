@@ -26,6 +26,8 @@ interface HookPayload {
   tool_input?: Record<string, unknown>;
   /** Set by coucou-hook when it had to cut a field to fit the pipe. */
   coucou_truncated?: boolean;
+  /** Stop only: the start of Claude's last reply, read from its transcript. */
+  summary?: string;
 }
 
 const PROJECT_ALIASES: Record<string, string> = {
@@ -168,6 +170,8 @@ function handleHook(island: Island, payload: HookPayload) {
 
     case "UserPromptSubmit": {
       upsert(projectName, cwd);
+      const asking = State.tasks.find((x) => x.id === CLAUDE_ID);
+      if (asking) asking.summary = null;
       State.updateTask(CLAUDE_ID, "thinking");
       // The field is `prompt`; reading `message` meant this step was always blank.
       const asked = payload.prompt ?? payload.message;
@@ -207,7 +211,9 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
     }
 
-    case "Stop":
+    case "Stop": {
+      const done = State.tasks.find((x) => x.id === CLAUDE_ID);
+      if (done) done.summary = payload.summary ?? null;
       State.updateTask(CLAUDE_ID, "finished");
       if (payload.message) State.appendStep(CLAUDE_ID, payload.message.slice(0, 60));
       Sound.play("finish");
@@ -218,6 +224,8 @@ function handleHook(island: Island, payload: HookPayload) {
         State.setPillBadge(CLAUDE_ID, null);
       }, 5200);
       break;
+
+    }
 
     case "StopFailure":
       State.updateTask(CLAUDE_ID, "error");

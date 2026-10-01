@@ -88,6 +88,10 @@ fn user_content(query: &str, context: Option<&ChatContext>) -> Result<Value, Str
             }
             text.push_str("\n\n");
         }
+        Some(ChatContext::Clipboard { text: copied }) => {
+            text.push_str(&ChatContext::clipboard_block(copied));
+            text.push_str("\n\n");
+        }
         None => {}
     }
     text.push_str(query);

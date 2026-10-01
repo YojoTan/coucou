@@ -83,6 +83,10 @@ export const Bridge = {
   chatSend: (query: string, context: ChatContext | null) =>
     callOrThrow<{ text: string }>("chat_send", { query, context }),
   chatReset: () => call<void>("chat_reset"),
+  /** Clipboard text — only ever read on an explicit click in the chat. */
+  clipboardText: () => call<string | null>("clipboard_text"),
+  hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
+  hotkeySet: (spec: string) => callOrThrow<void>("hotkey_set", { spec }),
   /** Installed chat CLIs and their versions (slow: runs each `--version`). */
   chatEngines: () => call<EngineInfo[]>("chat_engines"),
   /** What "auto" resolves to right now: "api", a CLI id, or "" for nothing. */
@@ -112,6 +116,7 @@ export interface IntegrationUpdate {
 
 export type ChatContext =
   | { kind: "file"; name: string; path: string }
+  | { kind: "clipboard"; text: string }
   | { kind: "window"; appName: string; title: string; url?: string };
 
 export interface EngineInfo {

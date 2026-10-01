@@ -559,10 +559,36 @@ function generalSection(): HTMLElement {
     void save();
   });
 
+  // Global shortcut to the chat. Applied by Rust, which reports a combination
+  // another program already owns instead of failing silently.
+  const shortcut = h("select", {}) as HTMLSelectElement;
+  const shortcutNote = h("span", { class: "hint" });
+  void Bridge.hotkeyChoices().then((choices) => {
+    for (const [id, label] of choices ?? []) shortcut.append(h("option", { value: id, text: label }));
+    shortcut.value = settings.hotkey || "ctrl+alt+space";
+  });
+  shortcut.addEventListener("change", async () => {
+    try {
+      await Bridge.hotkeySet(shortcut.value);
+      settings.hotkey = shortcut.value;
+      shortcutNote.textContent = shortcut.value === "off" ? "" : "opens Mochi's chat from anywhere";
+    } catch (err) {
+      settings.hotkey = "off";
+      shortcut.value = "off";
+      shortcutNote.textContent = String(err).replace(/^Error:\s*/, "");
+    }
+  });
+  shortcutNote.textContent = settings.hotkey === "off" ? "" : "opens Mochi's chat from anywhere";
+
   return h(
     "section",
     {},
     h("h2", {}, h("span", { text: "General" })),
+    h("div", { class: "row" },
+      h("label", { text: "Chat shortcut" }),
+      shortcut,
+      shortcutNote,
+    ),
     h("div", { class: "row" },
       h("label", { text: "Sound" }),
       toggle(settings.soundEnabled, (v) => { settings.soundEnabled = v; void save(); }),

@@ -63,6 +63,19 @@ impl Chat {
 pub enum ChatContext {
     File { name: String, path: String },
     Window { app_name: String, title: String, url: Option<String> },
+    /// Text the user chose to attach from the clipboard (never read silently).
+    Clipboard { text: String },
+}
+
+/// Longest clipboard attachment sent with a question.
+pub const MAX_CLIPBOARD: usize = 20_000;
+
+impl ChatContext {
+    /// The clipboard text, capped, ready to go into a prompt.
+    pub fn clipboard_block(text: &str) -> String {
+        let cut: String = text.chars().take(MAX_CLIPBOARD).collect();
+        format!("The user copied this text and is asking about it:\n<clipboard>\n{cut}\n</clipboard>")
+    }
 }
 
 #[derive(Serialize)]
@@ -106,6 +119,9 @@ pub async fn send(
                     text.push_str(&format!(", URL: {url}"));
                 }
                 content.push(json!({ "type": "text", "text": text }));
+            }
+            Some(ChatContext::Clipboard { text }) => {
+                content.push(json!({ "type": "text", "text": ChatContext::clipboard_block(text) }));
             }
             None => {}
         }

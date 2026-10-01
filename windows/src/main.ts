@@ -51,6 +51,9 @@ async function main() {
   });
 
   await onEvent<null>("screen-changed", () => void Bridge.reposition());
+
+  // The global shortcut (Settings → General): straight to the chat, focused.
+  await onEvent<null>("hotkey", () => island.alert("prompt"));
   await onEvent<null>("outside-click", () => island.dismissOutside());
 
   // The settings window writes preferences; apply them here without a restart.

@@ -209,6 +209,24 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         .unwrap_or_default()
         .to_string();
 
+    if event == "Stop" {
+        // What Claude said last, read from its local transcript; the path
+        // itself never reaches the webview.
+        let path = payload.get("transcript_path").and_then(Value::as_str).map(str::to_string);
+        if let Some(map) = payload.as_object_mut() {
+            map.remove("transcript_path");
+        }
+        if let Some(path) = path {
+            let summary = tauri::async_runtime::spawn_blocking(move || crate::transcript::last_reply(&path))
+                .await
+                .ok()
+                .flatten();
+            if let Some(summary) = summary {
+                payload["summary"] = json!(summary);
+            }
+        }
+    }
+
     if event != "PermissionRequest" {
         log::line(format!("hook {event}"));
         let _ = app.emit_to(WINDOW_LABEL, "hook", payload);

@@ -286,6 +286,7 @@ fn context_line(context: Option<&ChatContext>) -> Option<String> {
             }
             Some(s)
         }
+        ChatContext::Clipboard { text } => Some(ChatContext::clipboard_block(text)),
     }
 }
 

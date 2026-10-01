@@ -400,7 +400,7 @@ function buildError(actions: ViewActions): ViewHost {
 
 function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
-  const title = h("div", { class: "title" });
+  const title = h("div", { class: "title clamp2" });
   const row = h("div", { class: "actions" },
     btn("Open terminal", "primary", () => actions.openTerminal()),
     btn("OK", "secondary", () => actions.collapse()),
@@ -411,7 +411,9 @@ function buildFinished(actions: ViewActions): ViewHost {
     sync() {
       clear(who);
       who.append(agentWho(State.focusTask, "Claude Code finished"));
-      title.textContent = State.focusTask?.steps.at(-1) ?? "Session finished";
+      // What Claude said last beats the last tool step: it says what was done.
+      title.textContent = State.focusTask?.summary || State.focusTask?.steps.at(-1) || "Session finished";
+      title.title = title.textContent;
     },
   };
 }

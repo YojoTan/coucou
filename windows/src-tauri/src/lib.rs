@@ -1,9 +1,11 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
 mod claude;
+mod clipboard;
 mod cli_chat;
 mod files;
 mod hooks;
+mod hotkey;
 mod integrations;
 mod island;
 mod log;
@@ -11,6 +13,7 @@ mod openai_chat;
 mod pipe;
 mod secrets;
 mod settings;
+mod transcript;
 mod tray;
 mod win_user;
 
@@ -88,7 +91,7 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut settings: Settings) {
-    let (screen_changed, autostart_changed, engine_changed) = {
+    let (screen_changed, autostart_changed, engine_changed, hotkey_changed) = {
         let mut current = shared.settings.lock().unwrap();
         // The island saves its own preferences (sound, volume, auto-close), but
         // where the chat sends a conversation is the settings window's call
@@ -109,9 +112,13 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             || current.model != settings.model
             || current.openai_base_url != settings.openai_base_url
             || current.openai_model != settings.openai_model;
+        let hotkey_changed = current.hotkey != settings.hotkey;
         *current = settings.clone();
-        (screen_changed, autostart_changed, engine_changed)
+        (screen_changed, autostart_changed, engine_changed, hotkey_changed)
     };
+    if hotkey_changed {
+        let _ = hotkey::apply(&app, &settings.hotkey);
+    }
     // Each engine keeps its own history shape; switching starts a new chat.
     if engine_changed {
         app.state::<Chat>().reset();
@@ -397,6 +404,37 @@ fn chat_reset(chat: State<Chat>, cli: State<CliChat>, openai: State<OpenAiChat>)
     openai.reset();
 }
 
+/// The clipboard's text, read only when the user clicks the clipboard button.
+#[tauri::command]
+fn clipboard_text(webview: Webview) -> Result<Option<String>, String> {
+    only(&webview, island::WINDOW_LABEL, "clipboard_text")?;
+    Ok(clipboard::text())
+}
+
+/// Shortcut choices for Settings, and whether the current one could be registered.
+#[tauri::command]
+fn hotkey_choices() -> Vec<(String, String)> {
+    hotkey::CHOICES.iter().map(|(id, label)| (id.to_string(), label.to_string())).collect()
+}
+
+/// Applies and saves a shortcut, reporting a combination another program owns.
+#[tauri::command]
+fn hotkey_set(app: AppHandle, webview: Webview, shared: State<Shared>, spec: String) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "hotkey_set")?;
+    if !hotkey::CHOICES.iter().any(|(id, _)| *id == spec) {
+        return Err("Unknown shortcut.".into());
+    }
+    let result = hotkey::apply(&app, &spec);
+    let updated = {
+        let mut current = shared.settings.lock().unwrap();
+        current.hotkey = if result.is_ok() { spec } else { "off".into() };
+        let _ = settings::save(&current);
+        current.clone()
+    };
+    let _ = app.emit("settings-changed", updated);
+    result
+}
+
 /// Which chat engines are installed, with their versions, for Settings → Chat.
 #[tauri::command]
 async fn chat_engines() -> Vec<EngineInfo> {
@@ -609,6 +647,9 @@ pub fn run() {
             chat_reset,
             chat_engines,
             chat_engine_active,
+            clipboard_text,
+            hotkey_choices,
+            hotkey_set,
             ingest_file,
             secret_present,
             secret_set,
@@ -635,6 +676,9 @@ pub fn run() {
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);
+            if let Err(err) = hotkey::apply(&handle, &loaded.hotkey) {
+                log::line(format!("hotkey not registered: {err}"));
+            }
             pipe::start(handle.clone());
             integrations::start(handle.clone());
             Ok(())

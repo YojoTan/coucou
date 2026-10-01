@@ -19,6 +19,8 @@ export interface AgentTask {
   miniEye?: EyeShape | null;
   pillBadge?: PillBadge | null;
   sessionCwd?: string | null;
+  /** Start of Claude's last reply when the session stopped. */
+  summary?: string | null;
 }
 
 export interface ApprovalInfo {
@@ -99,6 +101,8 @@ export interface Settings {
   /** OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 (Ollama). */
   openaiBaseUrl: string;
   openaiModel: string;
+  /** Global shortcut that opens the chat: "off", "ctrl+alt+space", … */
+  hotkey: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -117,6 +121,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cliModel: "",
   openaiBaseUrl: "",
   openaiModel: "",
+  hotkey: "ctrl+alt+space",
 };
 
 type Listener = () => void;

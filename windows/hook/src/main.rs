@@ -144,6 +144,11 @@ fn read_event() -> Option<(String, String)> {
     map.insert("hook_event_name".into(), serde_json::Value::String(event.clone()));
 
     for field in DROPPED_FIELDS {
+        // Stop keeps its transcript path: Coucou reads Claude's last reply from
+        // it to show what the session did. The path is a short string.
+        if *field == "transcript_path" && event == "Stop" {
+            continue;
+        }
         map.remove(*field);
     }
 

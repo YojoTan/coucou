@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Build checks only read the repository.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: macos-latest

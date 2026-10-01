@@ -7,6 +7,10 @@ on:
 
 # Notarization is done locally with scripts/release.sh.
 # This workflow only verifies the build compiles on a clean machine.
+# Build checks only read the repository.
+permissions:
+  contents: read
+
 jobs:
   build-check:
     runs-on: macos-latest

@@ -28,6 +28,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `npm ci` runs dependency install scripts; none of them needs the
+          # repo token, so it is not left in .git/config for them to find.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -51,11 +55,15 @@ jobs:
       # Three files carry the version and they drift silently. Publishing a
       # "0.1.1" that installs a 0.1.0 is the kind of thing nobody notices until
       # a bug report arrives against the wrong build.
+      # Values from the event go through env:, never pasted into the script:
+      # a tag name may contain `$(...)`, which pwsh would run.
       - name: Check the tag and every version agree
         if: startsWith(github.ref, 'refs/tags/windows-v')
         shell: pwsh
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          $tag  = "${{ github.ref_name }}" -replace '^windows-v', ''
+          $tag  = $env:REF_NAME -replace '^windows-v', ''
           $conf = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $pkg  = (Get-Content package.json | ConvertFrom-Json).version
           $cargo = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
@@ -89,8 +97,10 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+          VERSION: ${{ steps.pack.outputs.version }}
         run: |
-          $v = "${{ steps.pack.outputs.version }}"
+          $v = $env:VERSION
           $notes = @"
           Coucou for Windows $v — Mochi at the top of your screen.
 
@@ -102,7 +112,7 @@ jobs:
           # whichever release was published last, and the site's Download for Mac
           # button points at /releases/latest. A Windows tag would silently send
           # Mac users to the .exe. The macOS `v*` releases own that slot.
-          gh release create "${{ github.ref_name }}" `
+          gh release create "$env:REF_NAME" `
             "release/Coucou-Windows-$v-setup.exe" `
             --title "Coucou for Windows $v" `
             --notes $notes `
@@ -113,15 +123,18 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pack.outputs.version }}
+          SHA: ${{ github.sha }}
         run: |
-          $v = "${{ steps.pack.outputs.version }}"
+          $v = $env:VERSION
           $exists = gh release view windows-latest 2>$null
           if ($LASTEXITCODE -eq 0) {
             # The tag has to follow the release, or windows-latest keeps pointing
             # at the first commit it was ever created from and anyone building
             # from it gets an old tree.
-            git tag -f windows-latest "${{ github.sha }}"
-            git push -f origin windows-latest
+            # Moved through the API (persist-credentials is off, so a git push
+            # would have no token to use).
+            gh api -X PATCH "repos/{owner}/{repo}/git/refs/tags/windows-latest" -f sha="$env:SHA" -F force=true
             gh release edit windows-latest --title "Coucou for Windows (latest)" --notes "Always the newest Windows build — currently $v."
             gh release upload windows-latest "release/Coucou-Windows-setup.exe" --clobber
           } else {

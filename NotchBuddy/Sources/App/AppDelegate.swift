@@ -80,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SystemMochi.shared.start()
         WeatherMochi.shared.start()
         DesktopMochi.shared.apply()
+        Worktrees.shared.start()
         LanService.shared.apply()
         #endif
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings),

@@ -34,6 +34,7 @@ extension AgentTask {
         AgentTask(id: "integration_calendar", name: "Calendar", color: "#FF6B6B", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_system",  name: "Mac",       color: "#94A3B8", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_weather", name: "Weather",   color: "#38BDF8", state: .idle, steps: [], source: .n8n, isIntegration: true),
+        AgentTask(id: "integration_worktrees", name: "Worktrees", color: "#F97316", state: .idle, steps: [], source: .n8n, isIntegration: true),
     ]
 
     /// IDs that can be toggled (VS Code is always on and excluded from this list)
@@ -44,7 +45,7 @@ extension AgentTask {
     static let builtInToggleable: [String] = [
         "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
         "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan", "integration_discord",
-        "integration_calendar", "integration_system", "integration_weather",
+        "integration_calendar", "integration_system", "integration_weather", "integration_worktrees",
     ]
 
 }
@@ -261,6 +262,10 @@ final class AppState: ObservableObject {
     @Published var weatherError: String? = nil
     /// Levels, streaks and trophies (MochiPet).
     @Published var pet = MochiPet.load()
+    /// Worktrees (Worktrees.swift): each repo's state, the form or run on screen, the repo picked.
+    @Published var wtState: [String: WTRepoState] = [:]
+    @Published var wtRun: WTRun? = nil
+    @Published var wtRepoId: String? = nil
     /// A level-up or trophy, for Mochi to celebrate (MochiExtrasSync).
     @Published var petEvent: UUID? = nil
     @Published var discordNotes: [DiscordNote] = []

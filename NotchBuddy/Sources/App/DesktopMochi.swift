@@ -26,6 +26,8 @@ extension NSScreen {
 extension Notification.Name {
     /// The pet asks the island to open on this screen (object: CGDirectDisplayID).
     static let petOpenIsland = Notification.Name("coucou.petOpenIsland")
+    /// The pet asks the island to come to this screen, without opening (object: CGDirectDisplayID).
+    static let petBringIsland = Notification.Name("coucou.petBringIsland")
     /// The pet hopped to another screen: a squash and happy eyes.
     static let petHop = Notification.Name("coucou.petHop")
     /// The pet teleports: sparkles (object: true on arrival, false on leaving).
@@ -100,6 +102,7 @@ final class DesktopMochi {
             p.level = .floating
             p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             let drag = PetDragView(frame: NSRect(x: 0, y: 0, width: s, height: s))
+            drag.toolTip = String(localized: "Click: Mochi's menu (island, chat, worktrees…) · Double click: back to the notch")
             let host = NSHostingView(rootView: DesktopMochiView().environmentObject(AppState.shared))
             host.frame = drag.bounds
             host.autoresizingMask = [.width, .height]
@@ -138,6 +141,7 @@ final class DesktopMochi {
     }
 
     private func hide() {
+        PetMenu.shared.close()
         panel?.orderOut(nil)
         bubble?.orderOut(nil)
         timer?.invalidate()
@@ -246,6 +250,19 @@ final class DesktopMochi {
         })
     }
 
+    /// The island to the pet's screen, without opening it (a menu choice opens what it needs).
+    func bringIslandHere() {
+        if let id = panel?.screen?.displayID { NotificationCenter.default.post(name: .petBringIsland, object: id) }
+    }
+
+    func openIslandHere() { openIsland() }
+
+    /// The pet's menu, beside it (PetMenu.swift).
+    func toggleMenu() {
+        guard let panel, let screen = panel.screen else { return }
+        PetMenu.shared.toggle(beside: panel.frame, on: screen)
+    }
+
     /// Click: open the island on the pet's screen.
     func openIsland() {
         guard let screen = panel?.screen else { return }
@@ -281,14 +298,26 @@ private final class PetDragView: NSView {
         MainActor.assumeIsolated { DesktopMochi.shared.moved(save: false) }
     }
 
+    private var pendingClick: DispatchWorkItem?
+
+    /// Right click: the menu straight away.
+    override func rightMouseDown(with event: NSEvent) {
+        MainActor.assumeIsolated { DesktopMochi.shared.toggleMenu() }
+    }
+
     override func mouseUp(with event: NSEvent) {
         MainActor.assumeIsolated {
+            pendingClick?.cancel()
             if dragged {
                 DesktopMochi.shared.moved()
             } else if event.clickCount >= 2 {
+                PetMenu.shared.close()
                 DesktopMochi.shared.dock()
             } else {
-                DesktopMochi.shared.openIsland()
+                // A click opens the menu — once it's clear no second click is coming.
+                let open = DispatchWorkItem { MainActor.assumeIsolated { DesktopMochi.shared.toggleMenu() } }
+                pendingClick = open
+                DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: open)
             }
         }
     }

@@ -13,6 +13,7 @@ enum IslandView: String, CaseIterable {
     case confused, upload, uploading, choose, mail, prompt
     case searching, result, note, settings, greeting
     case lan   // Mochis on the network: a pairing code, a file, a message
+    case worktrees  // a repo's worktrees: list, provider forms, progress
 }
 
 // MARK: - Bot State
@@ -128,6 +129,7 @@ enum IslandConst {
         .result:    ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .note:      ViewLayout(height: 160, botX: 60,  botY: nil, botDiameter: 50, agentMode: .column),
         .lan:       ViewLayout(height: 184, botX: 60,  botY: nil, botDiameter: 50, agentMode: .column),
+        .worktrees: ViewLayout(height: 300, botX: 54,  botY: 96,  botDiameter: 44, agentMode: .none),
         .settings:  ViewLayout(height: 160, botX: 54,  botY: nil, botDiameter: 46, agentMode: .none),
         // Greeting: bot drawn by GreetingCanvasView; no BotPlacement needed
         .greeting:  ViewLayout(height: 150, botX: 320, botY: 90,  botDiameter: 0,  agentMode: .none),

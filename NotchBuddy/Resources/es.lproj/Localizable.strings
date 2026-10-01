@@ -481,3 +481,45 @@
 "Mochi on the desktop" = "Mochi en el escritorio";
 "It follows me to the screen I'm on" = "Me sigue a la pantalla donde estoy";
 "The island follows me to the screen I'm on" = "La isla me sigue a la pantalla donde estoy";
+
+/* Worktrees */
+"Worktrees" = "Worktrees";
+"Add a repo in Settings › Extras › Worktrees." = "Agrega un repo en Ajustes › Extras › Worktrees.";
+"Open a terminal" = "Abrir una terminal";
+"The provider didn't describe itself (docs/WORKTREES.md)." = "El proveedor no respondió a describe (docs/WORKTREES.md).";
+"Couldn't list the worktrees of %@." = "No se pudieron listar los worktrees de %@.";
+"Terminal opened." = "Terminal abierta.";
+"Opened a terminal: %@" = "Terminal abierta: %@";
+"Done." = "Listo.";
+"Open in VS Code" = "Abrir en VS Code";
+"This removes %@ — the provider checks nothing is lost first." = "Esto elimina %@; el proveedor comprueba antes que no se pierda nada.";
+"Stop" = "Detener";
+"Back to the list" = "Volver a la lista";
+"Force…" = "Forzar…";
+"Forcing loses what isn't pushed or committed in %@." = "Forzar pierde lo que no esté pusheado o commiteado en %@.";
+"Type %@ to confirm:" = "Escribe %@ para confirmar:";
+"Force %@" = "Forzar: %@";
+"%@ is required." = "%@ es obligatorio.";
+"%@ doesn't look right." = "%@ no tiene el formato esperado.";
+"Pick at least one %@." = "Elige al menos un %@.";
+"Manage a repo's worktrees from Mochi — the island, the pill or the desktop pet. Without a provider: the list and a terminal in each. With one, its own actions (create, tear down…) as forms — see docs/WORKTREES.md to write one for your repo. Everything here stays in this Mac's preferences." = "Gestiona los worktrees de un repo desde Mochi: la isla, la pill o la mascota. Sin proveedor: la lista y una terminal en cada uno. Con proveedor, sus propias acciones (crear, desmontar…) como formularios; mira docs/WORKTREES.md para escribir uno para tu repo. Todo esto queda en las preferencias de este Mac.";
+"Provider command (optional) — e.g. bash tools/worktrees-provider.sh" = "Comando del proveedor (opcional) — p. ej. bash tools/worktrees-provider.sh";
+"Remove" = "Quitar";
+"Add a repo…" = "Agregar un repo…";
+"Choose" = "Elegir";
+"❌ That folder isn't a git repository." = "❌ Esa carpeta no es un repositorio git.";
+"Set up worktrees in Settings › Extras…" = "Configura los worktrees en Ajustes › Extras…";
+"Open Worktrees" = "Abrir Worktrees";
+"Send Mochi home" = "Mandar a Mochi al notch";
+
+/* Pet menu */
+"Click: open the island here · Right click: menu (worktrees, chat…) · Double click: back to the notch" = "Click: abrir la isla aquí · Click derecho: menú (worktrees, chat…) · Doble click: volver al notch";
+"Open the island" = "Abrir la isla";
+"Chat with Mochi" = "Chatear con Mochi";
+
+/* Pet menu card */
+"Click: Mochi's menu (island, chat, worktrees…) · Double click: back to the notch" = "Click: menú de Mochi (isla, chat, worktrees…) · Doble click: volver al notch";
+"Island" = "Isla";
+"Chat" = "Chat";
+"Settings" = "Ajustes";
+"Back to the notch" = "Volver al notch";

@@ -29,6 +29,12 @@ struct IslandViewContent: View {
             #else
             LanPromptView(state: state)
             #endif
+        case .worktrees:
+            #if APPSTORE
+            EmptyView()
+            #else
+            WorktreesView(state: state)
+            #endif
         case .settings:  SettingsIslandView(state: state)
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
         }
@@ -1375,7 +1381,7 @@ struct IntegrationCardView: View {
             #else
             return NSWorkspace.shared.urlForApplication(withBundleIdentifier: DiscordService.bundleId) != nil
             #endif
-        case "integration_calendar", "integration_system", "integration_weather":
+        case "integration_calendar", "integration_system", "integration_weather", "integration_worktrees":
             #if APPSTORE
             return false
             #else
@@ -1490,6 +1496,7 @@ struct IntegrationCardView: View {
         #else
         switch task.id {
         case CalendarMochi.taskId: return AnyView(CalendarCardView(state: appState))
+        case Worktrees.taskId: return AnyView(WorktreesCardView(state: appState))
         case SystemMochi.taskId: return AnyView(SystemCardView(state: appState))
         case WeatherMochi.taskId: return AnyView(WeatherCardView(state: appState))
         case let id where id.hasPrefix("custom_"):

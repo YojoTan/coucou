@@ -4,6 +4,7 @@ import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, type Settings } from "./core/state";
+import { setLanguage } from "./core/i18n";
 import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
@@ -14,12 +15,18 @@ async function main() {
 
   void Sound.preload();
 
-  const island = new Island(root);
-
+  // The language first: every label is built in it. A preference that differs
+  // from what the page loaded with means one reload, then never again.
   const boot = await Bridge.boot();
   if (boot) {
     State.settings = { ...State.settings, ...boot.settings };
+    if (setLanguage(boot.settings.language)) {
+      location.reload();
+      return;
+    }
   }
+
+  const island = new Island(root);
   island.applySettings();
   State.loadIntegrationTasks();
 
@@ -58,6 +65,10 @@ async function main() {
 
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
+    if (setLanguage(s.language)) {
+      location.reload();
+      return;
+    }
     State.settings = { ...State.settings, ...s };
     island.applySettings();
     State.loadIntegrationTasks();

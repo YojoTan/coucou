@@ -2,6 +2,7 @@
 // colours and wording are copied from the Swift views so both platforms read
 // identically.
 
+import { t } from "../core/i18n";
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { agentForTask, agentOf, cycle as cycleSession, taskIdFor } from "../island/sessions";
@@ -80,12 +81,12 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 // ── Header ────────────────────────────────────────────────────────────────────
 
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: "Overview", onclick: () => go("overview") }, svg(ICONS.house, 13));
-  const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
-  const tabDrop = h("button", { class: "tab", title: "Drop", onclick: () => go("upload") }, svg(ICONS.plus, 13));
+  const tabHome = h("button", { class: "tab", title: t("Overview"), onclick: () => go("overview") }, svg(ICONS.house, 13));
+  const tabChat = h("button", { class: "tab", title: t("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
+  const tabDrop = h("button", { class: "tab", title: t("Drop"), onclick: () => go("upload") }, svg(ICONS.plus, 13));
 
-  const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
-  const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
+  const gearBtn = h("button", { title: t("Settings"), onclick: () => go("settings") }, svg(ICONS.gear, 14));
+  const soundBtn = h("button", { title: t("Mute"), onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
 
   function go(v: IslandViewName) {
     actions.blip();
@@ -125,7 +126,7 @@ function buildOverview(actions: ViewActions): ViewHost {
   const leftBody = h("div", { class: "left-body" });
   const jump = h(
     "button",
-    { class: "icon-btn jump", title: "Open", onclick: () => actions.openTarget() },
+    { class: "icon-btn jump", title: t("Open"), onclick: () => actions.openTarget() },
     svg(ICONS.arrowUpRight, 8),
   );
   const left = card(null, leftBody, jump);
@@ -198,7 +199,7 @@ function buildOverview(actions: ViewActions): ViewHost {
         if (agent && (task.sessionCount ?? 0) > 1) {
           who.append(h("button", {
             class: "session-btn",
-            title: "Show the next session",
+            title: t("Show the next session"),
             onclick: () => {
               cycleSession(agent);
               State.notify();
@@ -298,11 +299,11 @@ function buildEmpty(actions: ViewActions): ViewHost {
     h(
       "div",
       { style: "display:flex;flex-direction:column;gap:5px" },
-      h("div", { class: "title", text: "Nothing running right now." }),
-      h("div", { class: "sub", text: "Drop a file or window, or ask me anything." }),
+      h("div", { class: "title", text: t("Nothing running right now.") }),
+      h("div", { class: "sub", text: t("Drop a file or window, or ask me anything.") }),
     ),
     h("div", { class: "grow" }),
-    btn("Ask Claude", "primary", () => actions.setView("prompt")),
+    btn(t("Ask Claude"), "primary", () => actions.setView("prompt")),
   );
   return { el: h("div", { class: "view" }, card(null, body)), sync() {} };
 }
@@ -333,13 +334,13 @@ function buildApproval(actions: ViewActions): ViewHost {
   // Built once. Rebuilding them between a mouse-down and a mouse-up would
   // swallow the click; only which one shows changes, and only per request.
   // "Always" is gone until the remembered-rules list exists to back it.
-  const allow = btn("Allow", "primary", () => {
+  const allow = btn(t("Allow"), "primary", () => {
     refit();
     if (!fits || performance.now() < armedAt) return;
     actions.decide("allow");
   }, "Y");
-  const review = btn("Review in terminal", "primary", () => actions.decide("terminal"));
-  row.append(btn("Deny", "secondary", () => actions.decide("deny"), "N"), allow, review);
+  const review = btn(t("Review in terminal"), "primary", () => actions.decide("terminal"));
+  row.append(btn(t("Deny"), "secondary", () => actions.decide("deny"), "N"), allow, review);
 
   /** Does the whole text fit the two-line box at the card's current width? */
   function refit() {
@@ -358,7 +359,7 @@ function buildApproval(actions: ViewActions): ViewHost {
       // The card names the session that is asking, whatever the pill shows.
       const asking = State.pendingApproval;
       const askingTask = asking ? State.tasks.find((t) => t.id === taskIdFor(agentOf(asking.agent))) ?? null : null;
-      who.append(agentWho(askingTask ? { ...askingTask, name: asking!.project } : State.focusTask, "needs permission"));
+      who.append(agentWho(askingTask ? { ...askingTask, name: asking!.project } : State.focusTask, t("needs permission")));
       const req = State.pendingApproval;
       // The whole point of approving here rather than in the terminal: this box
       // is the command, the file path or the URL being authorised, in full,
@@ -387,11 +388,11 @@ function buildQuestion(): ViewHost {
     el,
     sync() {
       clear(who);
-      who.append(agentWho(State.focusTask, "Claude Code is asking a question"));
+      who.append(agentWho(State.focusTask, t("Claude Code is asking a question")));
       const task = State.focusTask;
-      title.textContent = task?.steps.at(-1) ?? "Claude needs an answer.";
+      title.textContent = task?.steps.at(-1) ?? t("Claude needs an answer.");
       clear(row);
-      row.append(h("div", { class: "sub", text: "Answer in your terminal — Coucou can't reply for you yet." }));
+      row.append(h("div", { class: "sub", text: t("Answer in your terminal — Coucou can't reply for you yet.") }));
     },
   };
 }
@@ -400,11 +401,11 @@ function buildQuestion(): ViewHost {
 
 function buildError(actions: ViewActions): ViewHost {
   const who = h("div");
-  const title = h("div", { class: "title", text: "Workflow stopped." });
+  const title = h("div", { class: "title", text: t("Workflow stopped.") });
   const detail = h("div", { class: "detail" });
   const row = h("div", { class: "actions" },
-    btn("Retry", "primary", () => actions.setView(State.defaultView())),
-    btn("Open in n8n", "secondary", () => actions.openUrl("")),
+    btn(t("Retry"), "primary", () => actions.setView(State.defaultView())),
+    btn(t("Open in n8n"), "secondary", () => actions.openUrl("")),
   );
   const el = h("div", { class: "view" }, card("red", stack(116, 16, who, title, detail, row)));
   return {
@@ -413,8 +414,8 @@ function buildError(actions: ViewActions): ViewHost {
       const task = State.focusTask;
       clear(who);
       who.append(agentWho(task, task?.source === "n8n" ? "n8n" : "Claude Code"));
-      title.textContent = task?.source === "n8n" ? "Workflow stopped." : "Session stopped on an error.";
-      detail.textContent = task?.steps.at(-1) ?? "No detail available.";
+      title.textContent = t(task?.source === "n8n" ? "Workflow stopped." : "Session stopped on an error.");
+      detail.textContent = task?.steps.at(-1) ?? t("No detail available.");
     },
   };
 }
@@ -425,7 +426,7 @@ function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title clamp2" });
   const row = h("div", { class: "actions" },
-    btn("Open terminal", "primary", () => actions.openTerminal()),
+    btn(t("Open terminal"), "primary", () => actions.openTerminal()),
     btn("OK", "secondary", () => actions.collapse()),
   );
   const el = h("div", { class: "view" }, card("green", stack(116, 16, who, title, row)));
@@ -433,9 +434,9 @@ function buildFinished(actions: ViewActions): ViewHost {
     el,
     sync() {
       clear(who);
-      who.append(agentWho(State.focusTask, "Claude Code finished"));
+      who.append(agentWho(State.focusTask, t("Claude Code finished")));
       // What Claude said last beats the last tool step: it says what was done.
-      title.textContent = State.focusTask?.summary || State.focusTask?.steps.at(-1) || "Session finished";
+      title.textContent = State.focusTask?.summary || State.focusTask?.steps.at(-1) || t("Session finished");
       title.title = title.textContent;
     },
   };
@@ -447,8 +448,8 @@ function buildConfused(): ViewHost {
   const body = h(
     "div",
     { class: "stack", style: "padding:0 18px 0 128px" },
-    h("div", { class: "title", text: "Too many hits at once." }),
-    h("div", { class: "sub", text: "Give me a sec — back to work in three seconds." }),
+    h("div", { class: "title", text: t("Too many hits at once.") }),
+    h("div", { class: "sub", text: t("Give me a sec — back to work in three seconds.") }),
   );
   return { el: h("div", { class: "view" }, card("pink", body)), sync() {} };
 }
@@ -484,7 +485,7 @@ function buildSettings(actions: ViewActions): ViewHost {
   const rows = h(
     "div",
     { class: "settings-rows" },
-    h("div", { class: "settings-row" }, soundSwitch, h("span", { text: "Sound" }), volume),
+    h("div", { class: "settings-row" }, soundSwitch, h("span", { text: t("Sound") }), volume),
     h(
       "div",
       { class: "settings-row" },
@@ -501,7 +502,7 @@ function buildSettings(actions: ViewActions): ViewHost {
       h("button", {
         class: "link-btn",
         style: "color:#8e939c;font-size:11.5px",
-        text: "Settings…",
+        text: t("Settings…"),
         onclick: () => actions.openSettingsWindow(),
       }),
     ),
@@ -525,7 +526,7 @@ function buildSettings(actions: ViewActions): ViewHost {
         h("span", { text: "Claude Code" }),
       );
       clear(apiBadge);
-      apiBadge.append(dot("#F4505E", 6), h("span", { text: "API" }));
+      apiBadge.append(dot("#F4505E", 6), h("span", { text: t("API") }));
     },
   };
 }

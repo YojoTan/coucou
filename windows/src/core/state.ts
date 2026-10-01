@@ -127,6 +127,8 @@ export interface Settings {
   openaiModel: string;
   /** Global shortcut that opens the chat: "off", "ctrl+alt+space", … */
   hotkey: string;
+  /** Interface language: "auto" (system), "en" or "es". */
+  language: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -146,6 +148,7 @@ export const DEFAULT_SETTINGS: Settings = {
   openaiBaseUrl: "",
   openaiModel: "",
   hotkey: "ctrl+alt+space",
+  language: "auto",
 };
 
 type Listener = () => void;

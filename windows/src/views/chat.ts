@@ -1,6 +1,7 @@
 // Chat view — DOM port of PromptView / ChatBubble / TypingDotsView from
 // IslandViewContent.swift.
 
+import { t } from "../core/i18n";
 import { h, svg, clear } from "./dom";
 import { ICONS } from "./icons";
 import { Bridge, type ChatContext } from "../core/bridge";
@@ -33,7 +34,7 @@ function typingDots(): HTMLElement {
 function contextChip(label: string, onRemove?: () => void): HTMLElement {
   const chip = h("div", { class: "chip" }, h("i", { class: "chip-dot" }), h("span", { text: label }));
   if (onRemove) {
-    chip.append(h("button", { class: "chip-x", title: "Remove", onclick: onRemove }, svg(ICONS.close, 10)));
+    chip.append(h("button", { class: "chip-x", title: t("Remove"), onclick: onRemove }, svg(ICONS.close, 10)));
   }
   requestAnimationFrame(() => chip.classList.add("settled"));
   return chip;
@@ -41,11 +42,11 @@ function contextChip(label: string, onRemove?: () => void): HTMLElement {
 
 /** One-click questions about a dropped file: [label, prompt]. */
 const FILE_ACTIONS: [string, string][] = [
-  ["Summarize", "Summarize this file in a few short paragraphs."],
-  ["Explain", "Explain what this file is and what it does, simply."],
-  ["Key points", "List the key points of this file, one per line."],
+  [t("Summarize"), t("Summarize this file in a few short paragraphs.")],
+  [t("Explain"), t("Explain what this file is and what it does, simply.")],
+  [t("Key points"), t("List the key points of this file, one per line.")],
 ];
-const CODE_ACTION: [string, string] = ["Review code", "Review this code: point out bugs, risks and clear improvements, most important first."];
+const CODE_ACTION: [string, string] = [t("Review code"), t("Review this code: point out bugs, risks and clear improvements, most important first.")];
 const CODE_EXT = /\.(rs|ts|tsx|js|jsx|py|swift|go|java|kt|c|cc|cpp|h|cs|rb|php|sh|ps1|sql)$/i;
 
 /** Longest clipboard text attached to one question (Rust caps it again). */
@@ -57,13 +58,13 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   const input = h("input", {
     type: "text",
     class: "chat-input",
-    placeholder: "Ask me anything…",
+    placeholder: t("Ask me anything…"),
     spellcheck: "false",
   }) as HTMLInputElement;
-  const send = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
+  const send = h("button", { class: "send-btn", title: t("Send") }, svg(ICONS.arrowUp, 11));
   // Attaches what is on the clipboard — read only on this click, shown as a
   // chip that can be removed before sending.
-  const clipBtn = h("button", { class: "clip-btn", title: "Ask about the clipboard" }, svg(ICONS.clipboard, 14));
+  const clipBtn = h("button", { class: "clip-btn", title: t("Ask about the clipboard") }, svg(ICONS.clipboard, 14));
   const bar = h("div", { class: "chat-bar" }, clipBtn, input, send);
   const suggestRow = h("div", { class: "suggest-row" });
 
@@ -84,7 +85,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     } else {
       const text = (await Bridge.clipboardText()) ?? null;
       clip = text ? text.slice(0, MAX_CLIP) : null;
-      if (!clip) input.placeholder = "Nothing to attach — copy some text first";
+      if (!clip) input.placeholder = t("Nothing to attach — copy some text first");
     }
     chipRow.dataset.label = "";
     State.notify();
@@ -145,7 +146,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     el,
     sync() {
       const file = State.droppedFile;
-      const clipLabel = clip ? `Clipboard · ${clip.length.toLocaleString()} chars` : "";
+      const clipLabel = clip ? t("Clipboard · {n} chars", { n: clip.length.toLocaleString() }) : "";
       const wantChip = `${file?.name ?? ""}|${clipLabel}`;
       if (chipRow.dataset.label !== wantChip) {
         chipRow.dataset.label = wantChip;
@@ -190,7 +191,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         log.scrollTop = log.scrollHeight;
       }
 
-      input.placeholder = State.chatHistory.length === 0 ? "Ask me anything…" : "Continue…";
+      input.placeholder = t(State.chatHistory.length === 0 ? "Ask me anything…" : "Continue…");
       input.disabled = sending;
     },
     focus() {

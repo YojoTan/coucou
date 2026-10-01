@@ -37,6 +37,13 @@ pub struct Settings {
     /// Global shortcut that opens the chat: "off" or one of hotkey::CHOICES.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    /// Interface language: "auto" (follow Windows), "en" or "es".
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    "auto".into()
 }
 
 fn default_hotkey() -> String {
@@ -73,6 +80,7 @@ impl Default for Settings {
             openai_base_url: String::new(),
             openai_model: String::new(),
             hotkey: default_hotkey(),
+            language: default_language(),
         }
     }
 }

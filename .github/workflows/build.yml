@@ -25,6 +25,9 @@ jobs:
       - name: Test auto-close timing
         run: bash scripts/test-auto-close.sh
 
+      - name: Test multi-screen gaze geometry
+        run: bash scripts/test-gaze-geometry.sh
+
       - name: Build
         run: |
           xcodebuild \

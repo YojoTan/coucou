@@ -17,6 +17,12 @@ Check auto-close timing and live setting changes:
 bash scripts/test-auto-close.sh
 ```
 
+Check gaze tracking across displays with different positions:
+
+```bash
+bash scripts/test-gaze-geometry.sh
+```
+
 ## Good first contributions
 
 - A new integration (a poller + a pill + a detail card). Look at `StripePoller.swift` for a compact example.

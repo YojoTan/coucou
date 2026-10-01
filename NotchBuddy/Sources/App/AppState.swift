@@ -16,12 +16,13 @@ extension AgentTask {
         AgentTask(id: "integration_notion",  name: "Notion",    color: "#8C8C8C", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_calcom",  name: "Cal.com",   color: "#C9956A", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_stripe",  name: "Stripe",    color: "#0570DE", state: .idle, steps: [], source: .n8n, isIntegration: true),
+        AgentTask(id: "integration_orca",    name: "Orca",      color: "#8B5CF6", state: .idle, steps: [], source: .n8n, isIntegration: true),
     ]
 
     /// IDs that can be toggled (VS Code is always on and excluded from this list)
     static let toggleableIntegrationIds: [String] = [
         "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-        "integration_notion", "integration_calcom", "integration_stripe",
+        "integration_notion", "integration_calcom", "integration_stripe", "integration_orca",
     ]
 
 }
@@ -160,6 +161,11 @@ final class AppState: ObservableObject {
 
     // Resend emails (populated by ResendPoller)
     @Published var resendEmails: [ResendEmail] = []
+    #if !APPSTORE
+    /// Orca worktrees (OrcaPoller), and why the last poll found none.
+    @Published var orcaWorktrees: [OrcaWorktree] = []
+    @Published var orcaError: String? = nil
+    #endif
     @Published var resendTotal: Int? = nil
 
     // GitHub stats (populated by GithubPoller)

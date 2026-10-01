@@ -1105,6 +1105,12 @@ struct IntegrationCardView: View {
                 return cmd?.contains("NotchBuddy") == true || cmd?.contains("coucou") == true
             } ?? false }
             #endif
+        case "integration_orca":
+            #if APPSTORE
+            return false
+            #else
+            return appState.orcaError == nil
+            #endif
         case "integration_codex":
             #if APPSTORE
             return false
@@ -1186,6 +1192,15 @@ struct IntegrationCardView: View {
         task.id == "integration_notion" && appState.notionLoaded
     }
 
+    // Orca: as soon as the runtime has answered once
+    private var orcaHasData: Bool {
+        #if APPSTORE
+        return false
+        #else
+        return task.id == "integration_orca" && appState.orcaError == nil && !appState.orcaWorktrees.isEmpty
+        #endif
+    }
+
     var body: some View {
         if showingDetail && n8nHasActivity {
             N8nDetailView(task: task) {
@@ -1217,6 +1232,11 @@ struct IntegrationCardView: View {
         } else if notionHasData {
             NotionCardView()
                 .transition(.opacity)
+        } else if orcaHasData {
+            #if !APPSTORE
+            OrcaCardView(worktrees: appState.orcaWorktrees)
+                .transition(.opacity)
+            #endif
         } else if vsCodeSessionActive {
             // Active session view — reuse overview layout
             VStack(alignment: .leading, spacing: 0) {
@@ -2975,3 +2995,63 @@ extension Color {
         )
     }
 }
+
+
+// MARK: - Orca card (GitHub build) — worktrees from OrcaPoller
+
+#if !APPSTORE
+struct OrcaCardView: View {
+    let worktrees: [OrcaWorktree]
+
+    private func color(_ status: String) -> Color {
+        switch status {
+        case "permission": return Color(hex: "#F5A524")
+        case "working":    return Color(hex: "#38BDF8")
+        case "done":       return Color(hex: "#22C55E")
+        default:           return Color(hex: "#5F646D")
+        }
+    }
+
+    private func label(_ status: String) -> LocalizedStringKey {
+        switch status {
+        case "permission": return "needs permission"
+        case "working":    return "working"
+        case "done":       return "done"
+        case "active":     return "active"
+        default:           return "idle"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Circle().fill(Color(hex: "#8B5CF6")).frame(width: 7, height: 7)
+                Text("Orca").font(.system(size: 12, weight: .semibold)).foregroundColor(Color(hex: "#F5F6F8"))
+                Text("Worktrees").font(.system(size: 11)).foregroundColor(Color(hex: "#8E939C"))
+                Spacer(minLength: 2)
+            }
+            .padding(.top, 6)
+            ForEach(worktrees.prefix(3)) { w in
+                HStack(spacing: 6) {
+                    Circle().fill(color(w.status)).frame(width: 5, height: 5)
+                    Text(w.name.isEmpty ? w.repo : w.name)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color(hex: "#E8E9EC"))
+                        .lineLimit(1).truncationMode(.tail)
+                    Text(label(w.status))
+                        .font(.system(size: 10.5))
+                        .foregroundColor(Color(hex: "#8E939C"))
+                        .lineLimit(1)
+                }
+            }
+            Button("Open Orca") { OrcaPoller.openOrca() }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color(hex: "#8B5CF6"))
+                .buttonStyle(.plain)
+        }
+        .padding(.leading, 108)
+        .padding(.trailing, 36)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+#endif

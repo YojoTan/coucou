@@ -139,3 +139,13 @@
 "needs permission" = "pide permiso";
 "Claude Code finished" = "Claude Code terminó";
 "Claude Code is asking a question" = "Claude Code te hace una pregunta";
+
+/* Orca */
+"%@ needs permission" = "%@ pide permiso";
+"%@ finished" = "%@ terminó";
+"Orca isn't running on this Mac." = "Orca no está abierto en este Mac.";
+"Open Orca" = "Abrir Orca";
+"working" = "trabajando";
+"done" = "terminado";
+"active" = "activo";
+"idle" = "inactivo";

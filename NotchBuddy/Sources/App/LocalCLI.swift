@@ -112,6 +112,17 @@ enum LocalCLI {
         return found
     }
 
+    /// Trimmed stdout of a short command (e.g. `gh auth token`), nil on failure. Blocking.
+    static func capture(_ executable: String, _ args: [String], timeout: TimeInterval = 10) -> String? {
+        let r = runBlocking(executable, args, cwd: URL(fileURLWithPath: NSHomeDirectory()),
+                            stdin: nil, env: childEnvironment(), timeout: timeout)
+        guard r.status == 0, !r.timedOut,
+              let s = String(data: r.stdout, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty else { return nil }
+        return s
+    }
+
     static func run(_ executable: String, _ args: [String], cwd: URL, stdin: String?,
                     timeout: TimeInterval) async -> CLIResult {
         await withCheckedContinuation { cont in

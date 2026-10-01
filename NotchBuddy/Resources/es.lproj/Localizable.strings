@@ -38,7 +38,6 @@
 "Settings…" = "Ajustes…";
 "Deployments" = "Despliegues";
 "Emails" = "Correos";
-"Overview" = "Resumen";
 "Payments" = "Pagos";
 "Schedule" = "Agenda";
 "No calls scheduled" = "No hay llamadas programadas";
@@ -158,3 +157,27 @@
 "System default" = "Idioma del sistema";
 "Coucou needs to restart to change its language." = "Coucou tiene que reiniciarse para cambiar de idioma.";
 "Restart now" = "Reiniciar ahora";
+
+/* GitHub pull requests */
+"Pull requests" = "Pull requests";
+"%lld to review" = "%lld por revisar";
+"Nothing waiting on you." = "Nada espera por ti.";
+"by %@" = "de %@";
+"review" = "revisión";
+"draft" = "borrador";
+"approved" = "aprobado";
+"changes requested" = "cambios pedidos";
+"CI failing" = "CI fallando";
+"CI running" = "CI en curso";
+"CI passed" = "CI pasó";
+"Personal Access Token (optional — overrides gh)" = "Token de acceso personal (opcional — reemplaza a gh)";
+"Using gh login" = "Usando la sesión de gh";
+"Using gh login as %@" = "Usando la sesión de gh como %@";
+"Using the token below" = "Usando el token de abajo";
+"Using the token below as %@" = "Usando el token de abajo como %@";
+"Paste a token to connect." = "Pega un token para conectar.";
+"gh not found or not logged in — run gh auth login, or paste a token." = "gh no está o no tiene sesión — ejecuta gh auth login, o pega un token.";
+"gh login expired — run gh auth login" = "La sesión de gh caducó — ejecuta gh auth login";
+"Token rejected" = "Token rechazado";
+"GitHub error %lld" = "Error de GitHub %lld";
+"GitHub error" = "Error de GitHub";

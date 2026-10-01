@@ -53,6 +53,26 @@ struct SettingsView: View {
         )
     }
 
+    /// Which GitHub login the pill uses, or why there isn't one (after upstream PR #15).
+    private var githubStatus: String {
+        let login = state.githubSummary?.login ?? ""
+        let source: String
+        switch state.githubAuthSource {
+        case .gh:
+            source = login.isEmpty ? String(localized: "Using gh login") : String(localized: "Using gh login as \(login)")
+        case .manual:
+            source = login.isEmpty ? String(localized: "Using the token below") : String(localized: "Using the token below as \(login)")
+        case nil:
+            #if APPSTORE
+            return String(localized: "Paste a token to connect.")
+            #else
+            return String(localized: "gh not found or not logged in — run gh auth login, or paste a token.")
+            #endif
+        }
+        if let err = state.githubError { return "\(source) — \(err)" }
+        return source
+    }
+
     /// Settings in tabs, as in upstream PR #33: the window had grown into one long scroll.
     @AppStorage("settingsTab") private var settingsTab: String = "general"
     // Interface language; it applies on the next launch.
@@ -442,8 +462,17 @@ struct SettingsView: View {
                                     Circle().fill(Color(hex: "#F4505E")).frame(width: 8, height: 8)
                                     Text("GitHub").font(.system(size: 12, weight: .semibold))
                                 }
+                                Text(githubStatus)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(state.githubError == nil ? .secondary : .orange)
+                                    .lineLimit(2)
+                                #if APPSTORE
                                 SecureField("Personal Access Token", text: $githubToken)
                                     .textFieldStyle(.roundedBorder)
+                                #else
+                                SecureField("Personal Access Token (optional — overrides gh)", text: $githubToken)
+                                    .textFieldStyle(.roundedBorder)
+                                #endif
                             }
 
                             // Stripe
@@ -538,6 +567,7 @@ struct SettingsView: View {
         }
         .padding(.vertical, 12)
         .frame(width: 480, height: 720)
+        .onAppear { GithubPoller.shared.pollNow() }
     }
 
     /// One tab's content: the GroupBoxes, scrolling, with the old padding.
@@ -772,6 +802,7 @@ struct SettingsView: View {
         saveKey("stripe-api-key",  value: stripeKey)
         saveKey("calcom-api-key",  value: calcomKey)
         saveKey("notion-api-key",  value: notionKey)
+        GithubPoller.shared.pollNow()
         statusMessage = "✓ Integration keys saved."
     }
 

@@ -38,10 +38,10 @@ final class SpotifyWatcher: @unchecked Sendable {
         }
     }
 
-    /// "playpause", "next track" or "previous track".
+    /// "playpause", "play", "pause", "next track" or "previous track".
     @MainActor
     static func control(_ command: String) {
-        guard ["playpause", "next track", "previous track"].contains(command),
+        guard ["playpause", "play", "pause", "next track", "previous track"].contains(command),
               NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").first != nil
         else { return }
         var error: NSDictionary?

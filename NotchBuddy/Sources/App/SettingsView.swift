@@ -570,6 +570,12 @@ struct SettingsView: View {
                 }
                 .tabItem { Label("Mochis", systemImage: "dot.radiowaves.left.and.right") }
                 .tag("lan")
+
+                settingsPane {
+                    DiscordSettingsSection(state: state)
+                }
+                .tabItem { Label("Discord", systemImage: "bubble.left.and.bubble.right") }
+                .tag("discord")
                 #endif
             }
 

@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !APPSTORE
         OrcaPoller.shared.start()
         SpotifyWatcher.shared.start()
+        DiscordService.shared.start()
         LanService.shared.apply()
         #endif
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings),

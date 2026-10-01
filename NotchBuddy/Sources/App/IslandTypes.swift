@@ -100,6 +100,8 @@ enum AgentLayoutMode {
 // MARK: - Constants (from NW, NH, EW in prototype)
 
 enum IslandConst {
+    /// How much a compact toast widens the island (both ears together).
+    static let toastExtraWidth: CGFloat = 220
     static let notchWidth: CGFloat  = IslandScreenGeometry.fallbackNotchWidth
     static let notchHeight: CGFloat = 32
     static let expandedWidth: CGFloat = 640
@@ -164,6 +166,7 @@ enum IslandConst {
         .init(id: "integration_orca",    name: "Orca",    color: "#8B5CF6"),
         .init(id: "integration_spotify", name: "Spotify", color: "#1DB954"),
         .init(id: "integration_lan",     name: "Mochis",  color: "#F472B6"),
+        .init(id: "integration_discord", name: "Discord", color: "#5865F2"),
     ]
 
     /// Returns the fixed project color for a display name, or a stable fallback.

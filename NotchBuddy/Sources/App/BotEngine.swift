@@ -31,7 +31,7 @@ struct Tween {
 // MARK: - Particle
 
 struct Particle {
-    enum ParticleType { case heart, star, spark, sweat, z, note }
+    enum ParticleType { case heart, star, spark, sweat, z, note, confetti }
     var type: ParticleType
     var x, y, vx, vy: CGFloat
     var age: Double        // seconds
@@ -256,8 +256,31 @@ final class BotEngine: ObservableObject {
     // Music (Spotify pill): headphones on, and a dance on a steady beat while
     // playing. Spotify gives no tempo or beat to other apps, so the beat is a
     // fixed groove restarted on each track (musicStart), not the song's own.
-    var wantsHeadphones = false
+    var musicHeadphones = false      // Spotify (MusicSync)
     var musicPlaying = false
+    // Discord call (DiscordSync): a headset with a mic, the mouth while you talk,
+    // waves while the others do.
+    var voiceHeadset = false
+    var talking = false
+    var micMuted = false
+    var deafened = false
+    var othersSpeaking = false
+    var micBoom: CGFloat = 0
+    var talk: CGFloat = 0
+    private var nextVoiceWave: Double = 0
+    var wantsHeadphones: Bool { musicHeadphones || voiceHeadset }
+    /// Where the person speaking sits on the card (DiscordSync), in look units; nil when nobody.
+    var glance: CGPoint? = nil
+    private var lastSleepZ: Double = 0
+    /// The call's choir (DiscordViews): a mouth and sleep without the headset.
+    var mouthAlways = false
+    /// When the call began (DiscordSync): an hour in, yawns; two, sweat and tired eyes.
+    var callStartedAt: Date? = nil
+    private var nextYawn: Double = 0
+    private var lastSweat: Double = 0
+    /// Past 23:00 in a call: a nightcap. Checked twice a minute.
+    private(set) var nightcap = false
+    private var nightcapCheck: Double = 0
     var headphones: CGFloat = 0      // 0→1, eases in and out
     var groove: CGFloat = 0          // 0→1, how much Mochi dances
     var whistle: CGFloat = 0         // 0→1, the puckered mouth: 8 beats of every 16
@@ -810,7 +833,42 @@ final class BotEngine: ObservableObject {
         let k = CGFloat(1 - pow(0.03, dt))
         headphones += ((wantsHeadphones ? 1 : 0) - headphones) * k
         groove += ((musicPlaying ? 1 : 0) - groove) * k
+        micBoom += ((voiceHeadset ? 1 : 0) - micBoom) * k
+        talk += ((talking ? 1 : 0) - talk) * CGFloat(1 - pow(0.0005, dt))
         waveStarts.removeAll { now - $0 > 1.1 }
+        if othersSpeaking && voiceHeadset && now > nextVoiceWave {
+            waveStarts.append(now)
+            nextVoiceWave = now + 0.45
+        }
+        // A long call wears Mochi out; a late one gets a nightcap.
+        if voiceHeadset, !isMini, let start = callStartedAt {
+            let minutes = Date().timeIntervalSince(start) / 60
+            if minutes > 60 && now > nextYawn {
+                nextYawn = now + 240
+                triggerEmote(.yawn, silent: true)
+            }
+            if minutes > 120 && now - lastSweat > 2.4 {
+                lastSweat = now
+                emit(.sweat, count: 1)
+                if eyeOverride == nil || eyeOverride == permanentEye {
+                    eyeOverride = .tired
+                    eyeOverrideUntil = now + 1.2
+                }
+            }
+        }
+        if now > nightcapCheck {
+            nightcapCheck = now + 30
+            let hour = Calendar.current.component(.hour, from: Date())
+            nightcap = voiceHeadset && !isMini && (hour >= 23 || hour < 5)
+        }
+        // Deafened in a call: eyes shut, a z now and then.
+        if deafened && (voiceHeadset || mouthAlways) && morph < 0.05 {
+            if eyeOverride == nil || eyeOverride == permanentEye || eyeOverride == .closed {
+                eyeOverride = .closed
+                eyeOverrideUntil = now + 0.2
+            }
+            if now - lastSleepZ > 1.6 { lastSleepZ = now; emit(.z, count: 1) }
+        }
         let beats = max(0, (now - beatT0) * bpm / 60)
         // Bars of 16 beats: 8 dancing, then 8 whistling along.
         let whistling = musicPlaying && Int(beats) % 16 >= 8
@@ -863,14 +921,25 @@ final class BotEngine: ObservableObject {
         ))
     }
 
+    /// Where the mouth sits, projected on the head like the eyes (drawEyes): it
+    /// follows yaw and pitch, narrows (f) as the head turns, and is nil when it
+    /// has turned out of sight. Below the eyes by a fixed angle on the sphere.
+    private func mouthSpot(rx: CGFloat, ry: CGFloat) -> (CGFloat, CGFloat, CGFloat)? {
+        let p = MochiConst.eyeP - 0.36 + pitch + roll
+        let cp = cos(p)
+        guard cos(yaw) * cp > 0.1 else { return nil }
+        return (sin(yaw) * cp * rx, -sin(p) * ry, max(0.3, cos(yaw)))
+    }
+
     /// The whistling "o", low on the face and turned with the gaze.
     private func drawWhistleMouth(ctx: GraphicsContext, path: Path, R: CGFloat, rx: CGFloat, ry: CGFloat) {
         var c = ctx
         c.clip(to: path)
         let beats = max(0, (CACurrentMediaTime() - beatT0) * bpm / 60)
         let pulse = 1 + 0.18 * pow(1 - CGFloat(beats.truncatingRemainder(dividingBy: 1)), 2)
-        let w = R * 0.13 * whistle * pulse, h = R * 0.16 * whistle * pulse
-        let x = sin(yaw) * rx * 0.8 + R * 0.07, y = ry * 0.46
+        guard let (mx, y, f) = mouthSpot(rx: rx, ry: ry) else { return }
+        let w = R * 0.13 * whistle * pulse * f, h = R * 0.16 * whistle * pulse
+        let x = mx + R * 0.07 * f
         let mouth = Path(ellipseIn: CGRect(x: x - w / 2, y: y - h / 2, width: w, height: h))
         c.fill(mouth, with: .color(Color(cgColor: isMini ? MochiConst.miniInk : MochiConst.ink)))
     }
@@ -911,11 +980,17 @@ final class BotEngine: ObservableObject {
         // Eyes
         drawEyes(ctx: &ctx, path: bodyPath, R: R, rx: rx, ry: ry)
 
+        if morph < 0.05 && whistle < 0.02 && (micBoom > 0.01 || mouthAlways) && (talk > 0.02 || micMuted) {
+            drawTalkMouth(ctx: bodySpace, path: bodyPath, R: R, rx: rx, ry: ry)
+        }
         if whistle > 0.02 && morph < 0.05 {
             drawWhistleMouth(ctx: bodySpace, path: bodyPath, R: R, rx: rx, ry: ry)
         }
         if headphones > 0.01 && morph < 0.05 {
             drawHeadphones(ctx: bodySpace, R: R, rx: rx, ry: ry)
+        }
+        if nightcap && morph < 0.05 {
+            drawNightcap(ctx: bodySpace, R: R, rx: rx, ry: ry)
         }
 
         // Mouth hole — dark pill cutout inside the box face
@@ -1073,7 +1148,7 @@ final class BotEngine: ObservableObject {
         let cx = W / 2 + ox * R
         let cy = H / 2 + particleOverhang / 2 + (oy + danceOy) * R + R * 0.06
 
-        if !waveStarts.isEmpty && groove > 0.01 {
+        if !waveStarts.isEmpty && (groove > 0.01 || micBoom > 0.01) {
             drawSoundWaves(context: context, R: R, rx: rx, cx: cx, cy: cy)
         }
 
@@ -1115,8 +1190,97 @@ final class BotEngine: ObservableObject {
             c.stroke(cup, with: .color(Color.white.opacity(0.14)), lineWidth: max(0.5, R * 0.025))
             // A small green light on the outer side of each cup.
             let dot = Path(ellipseIn: CGRect(x: x - cw * 0.14, y: rect.midY - cw * 0.14, width: cw * 0.28, height: cw * 0.28))
-            c.fill(dot, with: .color(Color(hex: "#1DB954").opacity(0.55 + 0.45 * Double(groove))))
+            c.fill(dot, with: .color((deafened && voiceHeadset ? Color(hex: "#DA373C") : accent)
+                .opacity(0.55 + 0.45 * Double(max(groove, talk)))))
         }
+        if micBoom > 0.01 { drawMic(c: c, R: R, rx: rx, ry: ry) }
+    }
+
+    /// A floppy cap over the headband, its pompom hanging off to the right.
+    private func drawNightcap(ctx: GraphicsContext, R: CGFloat, rx: CGFloat, ry: CGFloat) {
+        let t = CGFloat(CACurrentMediaTime())
+        let sway = sin(t * 1.3) * R * 0.04
+        let cap = Path { p in
+            p.move(to: CGPoint(x: -rx * 0.62, y: -ry * 0.78))
+            p.addQuadCurve(to: CGPoint(x: rx * 0.95 + sway, y: -ry * 0.62),
+                           control: CGPoint(x: rx * 0.15, y: -ry * 1.75))
+            p.addQuadCurve(to: CGPoint(x: rx * 0.55, y: -ry * 0.84),
+                           control: CGPoint(x: rx * 0.55, y: -ry * 1.05))
+            p.addQuadCurve(to: CGPoint(x: -rx * 0.62, y: -ry * 0.78),
+                           control: CGPoint(x: 0, y: -ry * 0.98))
+        }
+        ctx.fill(cap, with: .linearGradient(Gradient(colors: [Color(hex: "#3C45A5"), Color(hex: "#272D73")]),
+                                            startPoint: CGPoint(x: 0, y: -ry * 1.5), endPoint: CGPoint(x: 0, y: -ry * 0.8)))
+        let band = Path { p in
+            p.move(to: CGPoint(x: -rx * 0.64, y: -ry * 0.8))
+            p.addQuadCurve(to: CGPoint(x: rx * 0.56, y: -ry * 0.86), control: CGPoint(x: 0, y: -ry * 1.02))
+        }
+        ctx.stroke(band, with: .color(.white.opacity(0.9)), style: StrokeStyle(lineWidth: max(1.2, R * 0.1), lineCap: .round))
+        let r = R * 0.11
+        ctx.fill(Path(ellipseIn: CGRect(x: rx * 0.95 + sway - r, y: -ry * 0.62 - r, width: r * 2, height: r * 2)),
+                 with: .color(.white))
+    }
+
+    /// A Discord reaction (DiscordSync): confetti, hearts, a laugh, a question, fire.
+    func react(_ r: DiscordReaction) {
+        switch r {
+        case .confetti: emit(.confetti, count: 16)
+        case .hearts: emit(.heart, count: 6)
+        case .laugh: triggerEmote(.happy, silent: true); squash()
+        case .question:
+            setBadge(.question(CGColor(red: 0.6, green: 0.66, blue: 1, alpha: 1)))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.setBadge(nil) }
+        case .fire:
+            emit(.spark, count: 8)
+            anim("blush", keys: [TweenKey(target: 1, duration: 200, ease: Ease.out),
+                                 TweenKey(target: 1, duration: 900, ease: Ease.lin),
+                                 TweenKey(target: 0, duration: 500, ease: Ease.inOut)])
+        }
+    }
+
+    /// Spotify green for music, Discord blurple for a call.
+    private var accent: Color { voiceHeadset ? Color(hex: "#9AA8FF") : Color(hex: "#1DB954") }
+
+    /// The headset's boom, from the left cup to beside the mouth; a red tip when muted.
+    private func drawMic(c: GraphicsContext, R: CGFloat, rx: CGFloat, ry: CGFloat) {
+        var m = c
+        m.opacity = Double(micBoom) * c.opacity
+        let start = CGPoint(x: -rx * 0.97, y: ry * 0.3)
+        // The tip sits just left of and below the mouth, wherever the gaze takes it.
+        let tip: CGPoint = mouthSpot(rx: rx, ry: ry).map {
+            CGPoint(x: max(-rx * 0.7, $0.0 - R * 0.34), y: min(ry * 0.78, $0.1 + ry * 0.14))
+        } ?? CGPoint(x: -R * 0.38, y: ry * 0.62)
+        let boom = Path { p in
+            p.move(to: start)
+            p.addQuadCurve(to: tip, control: CGPoint(x: -rx * 0.9, y: ry * 0.7))
+        }
+        m.stroke(boom, with: .color(Color(hex: "#23262D")), style: StrokeStyle(lineWidth: max(1.2, R * 0.07), lineCap: .round))
+        let r = max(1.5, R * 0.09)
+        let head = Path(ellipseIn: CGRect(x: tip.x - r, y: tip.y - r * 0.8, width: r * 2, height: r * 1.6))
+        m.fill(head, with: .color(micMuted ? Color(hex: "#DA373C") : Color(hex: "#3A3E47")))
+    }
+
+    /// While talking in a call, a mouth that opens and closes; muted, a closed line.
+    private func drawTalkMouth(ctx: GraphicsContext, path: Path, R: CGFloat, rx: CGFloat, ry: CGFloat) {
+        var c = ctx
+        c.clip(to: path)
+        let ink = Color(cgColor: isMini ? MochiConst.miniInk : MochiConst.ink)
+        guard let (x, y, f) = mouthSpot(rx: rx, ry: ry) else { return }
+        if micMuted {
+            let line = Path { p in
+                p.move(to: CGPoint(x: x - R * 0.11 * f, y: y))
+                p.addLine(to: CGPoint(x: x + R * 0.11 * f, y: y))
+            }
+            c.opacity = Double(mouthAlways ? 1 : micBoom)
+            c.stroke(line, with: .color(ink), style: StrokeStyle(lineWidth: max(1, R * 0.045), lineCap: .round))
+            return
+        }
+        let t = CGFloat(CACurrentMediaTime())
+        // Two sines out of step: it reads as syllables, not a metronome.
+        let open = (0.5 + 0.5 * abs(sin(t * 11)) * (0.6 + 0.4 * sin(t * 3.7))) * talk
+        let w = R * 0.2 * f, h = R * (0.03 + 0.15 * open)
+        c.fill(Path(roundedRect: CGRect(x: x - w / 2, y: y - h / 2, width: w, height: h), cornerRadius: min(w, h) / 2),
+               with: .color(ink))
     }
 
     /// Arcs on both sides, one pair per beat, spreading out and fading.
@@ -1126,14 +1290,14 @@ final class BotEngine: ObservableObject {
             let k = CGFloat((now - start) / 1.1)
             guard k >= 0, k < 1 else { continue }
             let radius = rx * (1.12 + 0.42 * k)
-            let alpha = Double((1 - k) * (1 - k) * 0.55 * groove)
+            let alpha = Double((1 - k) * (1 - k) * 0.55 * max(groove, micBoom))
             for sd in [-1.0, 1.0] {
                 let mid: Double = sd > 0 ? 0 : 180
                 let arc = Path { p in
                     p.addArc(center: CGPoint(x: cx, y: cy), radius: radius,
                              startAngle: .degrees(mid - 28), endAngle: .degrees(mid + 28), clockwise: false)
                 }
-                context.stroke(arc, with: .color(Color(hex: "#1DB954").opacity(alpha)),
+                context.stroke(arc, with: .color(accent.opacity(alpha)),
                                style: StrokeStyle(lineWidth: max(1, R * 0.05 * (1 - k * 0.5)), lineCap: .round))
             }
         }
@@ -1506,6 +1670,12 @@ final class BotEngine: ObservableObject {
                 drop.addQuadCurve(to: CGPoint(x: 0, y: sz*0.6), control: CGPoint(x: sz*0.8, y: sz*0.2))
                 drop.addQuadCurve(to: CGPoint(x: 0, y: -sz), control: CGPoint(x: -sz*0.8, y: sz*0.2))
                 pctx.fill(drop, with: .color(Color(hex: "#7CC7FF")))
+            case .confetti:
+                let palette = ["#F87171", "#FBBF24", "#34D399", "#60A5FA", "#A78BFA", "#F472B6"]
+                let color = palette[Int(abs(p.rot) * 100) % palette.count]
+                pctx.rotate(by: .radians(p.rot + CGFloat(p.age) * 7))
+                pctx.fill(Path(CGRect(x: -sz * 0.45, y: -sz * 0.22, width: sz * 0.9, height: sz * 0.44)),
+                          with: .color(Color(hex: color)))
             case .note:
                 pctx.rotate(by: .radians(p.rot + sin(CGFloat(p.age) * 5) * 0.25))
                 pctx.draw(Text(verbatim: p.size > 0.185 ? "♫" : "♪")

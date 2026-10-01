@@ -633,6 +633,9 @@ struct ChooseView: View {
                     ForEach(Array(state.lanSnapshot.peers.filter { $0.paired && $0.online }.prefix(2))) { p in
                         SecondaryButton(String(localized: "Send to \(p.name)")) { sendToPeer(p) }
                     }
+                    if DiscordWebhook.url != nil {
+                        SecondaryButton(String(localized: "Send to Discord")) { sendToDiscord() }
+                    }
                     #endif
                 }
             }
@@ -642,6 +645,17 @@ struct ChooseView: View {
     }
 
     #if !APPSTORE
+    private func sendToDiscord() {
+        guard let file = state.droppedFile else { return }
+        let url = file.url, fileName = file.name
+        state.noteMessage = String(localized: "Sending \(fileName) to Discord…")
+        state.view = .note
+        Task {
+            let error = await DiscordWebhook.send(text: "", file: url)
+            state.noteMessage = error ?? String(localized: "\(fileName) sent to Discord ✓")
+        }
+    }
+
     private func sendToPeer(_ p: LanPeer) {
         guard let file = state.droppedFile else { return }
         let id = p.id, name = p.name, url = file.url, fileName = file.name
@@ -1353,6 +1367,12 @@ struct IntegrationCardView: View {
             #else
             return appState.lanSnapshot.enabled
             #endif
+        case "integration_discord":
+            #if APPSTORE
+            return false
+            #else
+            return NSWorkspace.shared.urlForApplication(withBundleIdentifier: DiscordService.bundleId) != nil
+            #endif
         case "integration_codex":
             #if APPSTORE
             return false
@@ -1453,6 +1473,15 @@ struct IntegrationCardView: View {
         #endif
     }
 
+    // Discord: while the app runs
+    private var discordHasData: Bool {
+        #if APPSTORE
+        return false
+        #else
+        return task.id == DiscordService.taskId && appState.discordRunning
+        #endif
+    }
+
     // Orca: as soon as the runtime has answered once
     private var orcaHasData: Bool {
         #if APPSTORE
@@ -1501,6 +1530,11 @@ struct IntegrationCardView: View {
         } else if spotifyHasData {
             #if !APPSTORE
             SpotifyCardView(track: appState.spotifyNow!)
+                .transition(.opacity)
+            #endif
+        } else if discordHasData {
+            #if !APPSTORE
+            DiscordCardView(state: appState)
                 .transition(.opacity)
             #endif
         } else if lanHasData {

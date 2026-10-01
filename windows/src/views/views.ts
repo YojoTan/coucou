@@ -4,8 +4,9 @@
 
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
+import { agentForTask, agentOf, cycle as cycleSession, taskIdFor } from "../island/sessions";
 import { Ticker } from "./ticker";
-import { State, type AgentTask } from "../core/state";
+import { isAgentTask, SOURCE_LABELS, State, type AgentTask } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
@@ -141,6 +142,7 @@ function buildOverview(actions: ViewActions): ViewHost {
   let lastFocus: string | null = null;
   let mode: "ticker" | "card" | null = null;
   let cardKey = "";
+  let tickerSession: string | null = null;
 
   const hooks: IntegrationCardHooks = {
     get detailOpen() {
@@ -176,7 +178,7 @@ function buildOverview(actions: ViewActions): ViewHost {
       // VS Code with a live Claude Code session keeps the ticker; every other
       // pill shows its own card, exactly like IntegrationCardView.
       const sessionActive =
-        task?.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0);
+        isAgentTask(task) && !!task && (task.state !== "idle" || task.steps.length > 0);
 
       if (task && sessionActive) {
         if (mode !== "ticker") {
@@ -189,8 +191,26 @@ function buildOverview(actions: ViewActions): ViewHost {
         who.append(
           dot(task.color, 7),
           h("span", { class: "name", text: task.name }),
-          h("span", { class: "tool", text: task.source === "claudeCode" ? "Claude Code" : "n8n" }),
+          h("span", { class: "tool", text: SOURCE_LABELS[task.source] }),
         );
+        // Several sessions of this agent at once: ⇄ shows the next one.
+        const agent = agentForTask(task);
+        if (agent && (task.sessionCount ?? 0) > 1) {
+          who.append(h("button", {
+            class: "session-btn",
+            title: "Show the next session",
+            onclick: () => {
+              cycleSession(agent);
+              State.notify();
+            },
+          }, `⇄ ${task.sessionCount}`));
+        }
+        // A different session: start its ticker fresh instead of scrolling
+        // through another project's steps.
+        if (task.sessionKey !== tickerSession) {
+          tickerSession = task.sessionKey ?? null;
+          ticker.reset();
+        }
         if (task.steps.length > 1) {
           who.append(h("span", {
             class: "count",
@@ -335,7 +355,10 @@ function buildApproval(actions: ViewActions): ViewHost {
     el,
     sync() {
       clear(who);
-      who.append(agentWho(State.focusTask, "needs permission"));
+      // The card names the session that is asking, whatever the pill shows.
+      const asking = State.pendingApproval;
+      const askingTask = asking ? State.tasks.find((t) => t.id === taskIdFor(agentOf(asking.agent))) ?? null : null;
+      who.append(agentWho(askingTask ? { ...askingTask, name: asking!.project } : State.focusTask, "needs permission"));
       const req = State.pendingApproval;
       // The whole point of approving here rather than in the terminal: this box
       // is the command, the file path or the URL being authorised, in full,

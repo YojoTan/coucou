@@ -10,6 +10,7 @@ mod integrations;
 mod island;
 mod log;
 mod openai_chat;
+mod opencode;
 mod pipe;
 mod secrets;
 mod settings;
@@ -79,7 +80,7 @@ pub struct BootInfo {
 fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
     let mut settings = shared.settings.lock().unwrap().clone();
     // The real state of ~/.claude/settings.json wins over whatever we stored.
-    settings.hooks_installed = hooks::status().installed;
+    settings.hooks_installed = hooks::status(hooks::Target::Claude).installed;
     let screen = island::screen_info(&app, &settings.screen);
     BootInfo {
         settings,
@@ -277,15 +278,15 @@ fn set_paused(paused: bool) {
 // ── Claude Code hooks ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn hooks_status() -> HookStatus {
-    hooks::status()
+fn hooks_status(target: Option<String>) -> HookStatus {
+    hooks::status(hooks::Target::from_id(target.as_deref()).unwrap_or(hooks::Target::Claude))
 }
 
 /// Returns the diff the user has to look at before anything is written.
 #[tauri::command]
-fn hooks_preview(webview: Webview, install: bool) -> Result<HookPreview, String> {
+fn hooks_preview(webview: Webview, install: bool, target: Option<String>) -> Result<HookPreview, String> {
     only(&webview, SETTINGS_LABEL, "hooks_preview")?;
-    hooks::preview(install)
+    hooks::preview(hooks::Target::from_id(target.as_deref())?, install)
 }
 
 /// Only ever called from an explicit click in the settings window.
@@ -296,11 +297,16 @@ fn hooks_apply(
     shared: State<Shared>,
     install: bool,
     fingerprint: String,
+    target: Option<String>,
 ) -> Result<String, String> {
     only(&webview, SETTINGS_LABEL, "hooks_apply")?;
     // The fingerprint comes from the preview the user actually looked at, so a
     // settings.json that changed in between is refused rather than overwritten.
-    let backup = hooks::write(install, &fingerprint)?;
+    let target = hooks::Target::from_id(target.as_deref())?;
+    let backup = hooks::write(target, install, &fingerprint)?;
+    if target == hooks::Target::Codex {
+        return Ok(backup);
+    }
     let updated = {
         let mut current = shared.settings.lock().unwrap();
         current.hooks_installed = install;
@@ -433,6 +439,25 @@ fn hotkey_set(app: AppHandle, webview: Webview, shared: State<Shared>, spec: Str
     };
     let _ = app.emit("settings-changed", updated);
     result
+}
+
+/// opencode plugin state for Settings (experimental).
+#[tauri::command]
+fn opencode_status() -> opencode::PluginStatus {
+    opencode::status()
+}
+
+/// The plugin's text, shown before anything is written.
+#[tauri::command]
+fn opencode_plugin_text() -> String {
+    opencode::PLUGIN.to_string()
+}
+
+/// Installs or removes Coucou's opencode plugin — only from an explicit click.
+#[tauri::command]
+fn opencode_apply(webview: Webview, install: bool) -> Result<String, String> {
+    only(&webview, SETTINGS_LABEL, "opencode_apply")?;
+    opencode::apply(install)
 }
 
 /// Which chat engines are installed, with their versions, for Settings → Chat.
@@ -650,6 +675,9 @@ pub fn run() {
             clipboard_text,
             hotkey_choices,
             hotkey_set,
+            opencode_status,
+            opencode_plugin_text,
+            opencode_apply,
             ingest_file,
             secret_present,
             secret_set,

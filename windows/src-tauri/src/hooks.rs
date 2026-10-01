@@ -1,4 +1,8 @@
-// Claude Code hook installation.
+// Claude Code and Codex hook installation.
+//
+// Two targets share every rule below: Claude Code's settings.json and Codex's
+// hooks.json (%CODEX_HOME% or %USERPROFILE%\.codex). Codex hooks also need a
+// one-time review inside Codex (/hooks) before Codex runs them.
 //
 // The rule from CLAUDE.md is strict and is followed to the letter:
 // read %USERPROFILE%\.claude\settings.json, take a dated backup, merge without
@@ -35,8 +39,65 @@ pub const HOOK_EVENTS: &[(&str, u64)] = &[
     ("SubagentStop", 10),
 ];
 
+/// Codex's events (after upstream PR #14): no Notification or StopFailure, an
+/// Interrupt of its own, and SessionEnd/Interrupt capped at 3 s by Codex.
+pub const CODEX_EVENTS: &[(&str, u64)] = &[
+    ("SessionStart", 10),
+    ("SessionEnd", 3),
+    ("UserPromptSubmit", 10),
+    ("PreToolUse", 10),
+    ("PostToolUse", 10),
+    ("PermissionRequest", 120),
+    ("Stop", 10),
+    ("SubagentStart", 10),
+    ("SubagentStop", 10),
+    ("Interrupt", 3),
+];
+
 /// Marker that identifies a Coucou entry inside settings.json.
 const MARKER: &str = "coucou-hook";
+
+/// Which agent's hook file is being read or written.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Target {
+    Claude,
+    Codex,
+}
+
+impl Target {
+    pub fn from_id(id: Option<&str>) -> Result<Target, String> {
+        match id.unwrap_or("claude") {
+            "claude" => Ok(Target::Claude),
+            "codex" => Ok(Target::Codex),
+            other => Err(format!("Unknown hook target: {other}")),
+        }
+    }
+
+    fn events(self) -> &'static [(&'static str, u64)] {
+        match self {
+            Target::Claude => HOOK_EVENTS,
+            Target::Codex => CODEX_EVENTS,
+        }
+    }
+
+    fn path(self) -> PathBuf {
+        match self {
+            Target::Claude => settings_path(),
+            Target::Codex => std::env::var_os("CODEX_HOME")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home().join(".codex"))
+                .join("hooks.json"),
+        }
+    }
+
+    fn file_label(self) -> &'static str {
+        match self {
+            Target::Claude => "settings.json",
+            Target::Codex => "hooks.json",
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,8 +135,8 @@ pub fn settings_path() -> PathBuf {
 /// Everything else — a lock held by another process, a permission problem, JSON
 /// we cannot parse — is reported, because the alternative is treating somebody's
 /// unreadable settings as an empty object and then writing that back over them.
-fn read_settings() -> Result<Value, String> {
-    let path = settings_path();
+fn read_settings(target: Target) -> Result<Value, String> {
+    let path = target.path();
     match std::fs::read(&path) {
         Ok(bytes) => parse_settings(&bytes, &path.display().to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
@@ -107,13 +168,33 @@ fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
 /// The settings as they are, or an empty object when we cannot tell. Only for
 /// read-only paths like `status()`, which must never fail loudly; anything that
 /// writes uses `read_settings()` and surfaces the error instead.
-fn read_settings_lossy() -> Value {
-    read_settings().unwrap_or_else(|_| json!({}))
+fn read_settings_lossy(target: Target) -> Value {
+    read_settings(target).unwrap_or_else(|_| json!({}))
 }
 
-fn hook_command(event: &str) -> String {
+fn hook_command(target: Target, event: &str) -> String {
     let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
-    format!("\"{exe}\" {event}")
+    match target {
+        Target::Claude => format!("\"{exe}\" {event}"),
+        Target::Codex => format!("\"{exe}\" --agent codex {event}"),
+    }
+}
+
+/// Codex runs `commandWindows` through PowerShell, where a quoted path is an
+/// expression, not a call. The script calls the relay with `&`, keeps the path
+/// in a single-quoted string, and travels as -EncodedCommand (Base64 of
+/// UTF-16LE), so spaces, apostrophes and non-ASCII names in the profile path
+/// can't break or inject anything. Approach from upstream PR #23.
+fn codex_command_windows(event: &str) -> String {
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\'', "''");
+    let script = format!(
+        "$u = [System.Text.UTF8Encoding]::new($false); [Console]::InputEncoding = $u; [Console]::OutputEncoding = $u; & '{exe}' --agent codex {event}; exit $LASTEXITCODE"
+    );
+    let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    format!(
+        "powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
+        crate::claude::base64_for(&bytes)
+    )
 }
 
 /// Characters that stay live inside double quotes for the shells Claude Code
@@ -145,7 +226,7 @@ fn entry_is_ours(entry: &Value) -> bool {
 }
 
 /// Settings with Coucou's hooks added; everything else is left untouched.
-fn merged(existing: &Value) -> Value {
+fn merged(existing: &Value, target: Target) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
     let mut hooks = root
         .get("hooks")
@@ -153,20 +234,22 @@ fn merged(existing: &Value) -> Value {
         .cloned()
         .unwrap_or_else(Map::new);
 
-    for (event, timeout) in HOOK_EVENTS {
+    for (event, timeout) in target.events() {
         let mut list = hooks
             .get(*event)
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
         list.retain(|entry| !entry_is_ours(entry));
-        list.push(json!({
-            "hooks": [{
-                "type": "command",
-                "command": hook_command(event),
-                "timeout": timeout,
-            }]
-        }));
+        let mut handler = json!({
+            "type": "command",
+            "command": hook_command(target, event),
+            "timeout": timeout,
+        });
+        if target == Target::Codex {
+            handler["commandWindows"] = json!(codex_command_windows(event));
+        }
+        list.push(json!({ "hooks": [handler] }));
         hooks.insert((*event).to_string(), Value::Array(list));
     }
 
@@ -217,9 +300,9 @@ fn stamp() -> String {
     )
 }
 
-fn backup_path() -> PathBuf {
-    let p = settings_path();
-    p.with_file_name(format!("settings.json.bak-{}", stamp()))
+fn backup_path(target: Target) -> PathBuf {
+    let p = target.path();
+    p.with_file_name(format!("{}.bak-{}", target.file_label(), stamp()))
 }
 
 /// Identifies the exact bytes a preview was computed from. FNV-1a is plenty:
@@ -233,8 +316,8 @@ fn fingerprint(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
-fn current_fingerprint() -> String {
-    match std::fs::read(settings_path()) {
+fn current_fingerprint(target: Target) -> String {
+    match std::fs::read(target.path()) {
         Ok(bytes) => fingerprint(&bytes),
         Err(_) => fingerprint(b""),
     }
@@ -242,8 +325,8 @@ fn current_fingerprint() -> String {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-pub fn status() -> HookStatus {
-    let current = read_settings_lossy();
+pub fn status(target: Target) -> HookStatus {
+    let current = read_settings_lossy(target);
     let installed = current
         .get("hooks")
         .and_then(Value::as_object)
@@ -258,23 +341,23 @@ pub fn status() -> HookStatus {
     let hook_path = settings::hook_exe_path();
     HookStatus {
         installed,
-        settings_path: settings_path().to_string_lossy().to_string(),
+        settings_path: target.path().to_string_lossy().to_string(),
         hook_ready: hook_path.exists(),
         hook_path: hook_path.to_string_lossy().to_string(),
     }
 }
 
-pub fn preview(install: bool) -> Result<HookPreview, String> {
+pub fn preview(target: Target, install: bool) -> Result<HookPreview, String> {
     if install {
         command_is_safe(&settings::hook_exe_path().to_string_lossy())?;
     }
-    let current = read_settings()?;
-    let next = if install { merged(&current) } else { without_ours(&current) };
+    let current = read_settings(target)?;
+    let next = if install { merged(&current, target) } else { without_ours(&current) };
     Ok(HookPreview {
         diff: unified_diff(&pretty(&current), &pretty(&next)),
-        backup: backup_path().to_string_lossy().to_string(),
-        settings_path: settings_path().to_string_lossy().to_string(),
-        fingerprint: current_fingerprint(),
+        backup: backup_path(target).to_string_lossy().to_string(),
+        settings_path: target.path().to_string_lossy().to_string(),
+        fingerprint: current_fingerprint(target),
     })
 }
 
@@ -284,30 +367,30 @@ pub fn preview(install: bool) -> Result<HookPreview, String> {
 /// in between — another tool, another window, the user's own editor — we stop
 /// and make them look at a fresh diff, because the only thing worse than not
 /// installing the hooks is silently reverting somebody else's edit.
-pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
+pub fn write(target: Target, install: bool, fingerprint: &str) -> Result<String, String> {
     if install {
         command_is_safe(&settings::hook_exe_path().to_string_lossy())?;
     }
-    let path = settings_path();
+    let path = target.path();
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
 
     // Read before the backup: an unreadable file must abort before we touch
     // anything at all.
-    let current = read_settings()?;
-    if current_fingerprint() != fingerprint {
+    let current = read_settings(target)?;
+    if current_fingerprint(target) != fingerprint {
         return Err(format!(
             "{} changed since the preview. Nothing was written — review the new diff.",
             path.display()
         ));
     }
 
-    let backup = backup_path();
+    let backup = backup_path(target);
     if path.exists() {
         std::fs::copy(&path, &backup).map_err(|e| format!("backup failed: {e}"))?;
     }
 
-    let next = if install { merged(&current) } else { without_ours(&current) };
+    let next = if install { merged(&current, target) } else { without_ours(&current) };
     let mut text = pretty(&next);
     text.push('\n');
 
@@ -509,7 +592,7 @@ mod tests {
             }
         });
 
-        let after = merged(&existing);
+        let after = merged(&existing, Target::Claude);
         assert_eq!(after["model"], "claude-opus-5");
         assert_eq!(after["theme"], "dark");
         assert_eq!(after["enabledPlugins"], serde_json::json!(["a", "b"]));
@@ -543,6 +626,23 @@ mod tests {
     }
 
     #[test]
+    fn codex_entries_tag_the_agent_and_carry_an_encoded_powershell_command() {
+        let after = merged(&json!({ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "other.exe" }] }] } }), Target::Codex);
+        let stop = after["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2, "another tool's hook stays");
+        let ours = &stop[1]["hooks"][0];
+        assert!(ours["command"].as_str().unwrap().ends_with("--agent codex Stop"));
+        let win = ours["commandWindows"].as_str().unwrap();
+        assert!(win.starts_with("powershell.exe -NoProfile -NonInteractive -EncodedCommand "));
+        // Only Base64 after the flag: nothing a shell could read as syntax.
+        let b64 = win.rsplit(' ').next().unwrap();
+        assert!(b64.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
+        assert!(after["hooks"].get("Notification").is_none(), "Codex has no Notification event");
+        assert_eq!(after["hooks"]["Interrupt"][0]["hooks"][0]["timeout"], 3);
+        assert_eq!(without_ours(&after)["hooks"]["Stop"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
     fn a_fingerprint_notices_any_change() {
         assert_eq!(fingerprint(b"{}"), fingerprint(b"{}"));
         assert_ne!(fingerprint(b"{}"), fingerprint(b"{ }"));
@@ -568,9 +668,9 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
 
         // Install.
-        let plan = preview(true).expect("a BOM must not stop the preview");
+        let plan = preview(Target::Claude, true).expect("a BOM must not stop the preview");
         assert!(plan.diff.contains("coucou-hook"), "the diff must show what changes");
-        let backup = write(true, &plan.fingerprint).expect("install should succeed");
+        let backup = write(Target::Claude, true, &plan.fingerprint).expect("install should succeed");
 
         // The backup holds the original bytes, BOM and all.
         assert_eq!(std::fs::read(&backup).unwrap(), bytes);
@@ -582,20 +682,20 @@ mod tests {
         assert_eq!(after["tui"]["x"], 1);
         let pre = after["hooks"]["PreToolUse"].as_array().unwrap();
         assert!(pre.iter().any(|e| serde_json::to_string(e).unwrap().contains("other-tool.exe")));
-        assert!(status().installed);
+        assert!(status(Target::Claude).installed);
 
         // A file that moved since the preview is refused, and left alone.
-        let stale = preview(false).unwrap();
+        let stale = preview(Target::Claude, false).unwrap();
         std::fs::write(&path, br#"{"model":"someone-else-edited-this"}"#).unwrap();
-        let err = write(false, &stale.fingerprint).unwrap_err();
+        let err = write(Target::Claude, false, &stale.fingerprint).unwrap_err();
         assert!(err.contains("changed since the preview"), "got: {err}");
         let untouched: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(untouched["model"], "someone-else-edited-this");
 
         // Content we cannot parse is refused before anything is written.
         std::fs::write(&path, b"{ broken").unwrap();
-        assert!(preview(true).is_err());
-        assert!(write(true, "whatever").is_err());
+        assert!(preview(Target::Claude, true).is_err());
+        assert!(write(Target::Claude, true, "whatever").is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"{ broken");
 
         let _ = std::fs::remove_dir_all(&tmp);

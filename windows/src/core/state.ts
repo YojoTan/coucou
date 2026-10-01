@@ -3,7 +3,22 @@
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
 
-export type AgentSource = "claudeCode" | "n8n";
+export type AgentSource = "claudeCode" | "codex" | "opencode" | "n8n";
+
+/** The pills fed by a coding agent's hooks rather than by an API poller. */
+export const AGENT_TASK_IDS = ["integration_claude", "integration_codex", "integration_opencode"];
+
+export function isAgentTask(task: { id: string } | null | undefined): boolean {
+  return !!task && AGENT_TASK_IDS.includes(task.id);
+}
+
+/** What the overview calls each source next to the project name. */
+export const SOURCE_LABELS: Record<AgentSource, string> = {
+  claudeCode: "Claude Code",
+  codex: "Codex",
+  opencode: "opencode",
+  n8n: "n8n",
+};
 export type PillBadge = "approval" | "finished" | "error";
 
 export interface AgentTask {
@@ -21,6 +36,9 @@ export interface AgentTask {
   sessionCwd?: string | null;
   /** Start of Claude's last reply when the session stopped. */
   summary?: string | null;
+  /** Agent pills: which session they show, and how many are live. */
+  sessionKey?: string | null;
+  sessionCount?: number;
 }
 
 export interface ApprovalInfo {
@@ -28,6 +46,10 @@ export interface ApprovalInfo {
   sessionId: string;
   tool: string;
   command: string;
+  /** Which agent and session asked, and its project, for the card. */
+  agent: string;
+  sessionKey: string;
+  project: string;
 }
 
 export interface ChatMessage {
@@ -61,6 +83,8 @@ const task = (
 /** AgentTask.integrationAgents — same ids, names and colours as macOS. */
 export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_claude", "VS Code", "#F5F6F8", "claudeCode"),
+  task("integration_codex", "Codex", "#10A37F", "codex"),
+  task("integration_opencode", "opencode", "#F59E0B", "opencode"),
   task("integration_resend", "Resend", "#22C55E", "n8n"),
   task("integration_n8n", "n8n", "#F29B38", "n8n"),
   task("integration_vercel", "Vercel", "#7C5CFF", "n8n"),
@@ -153,6 +177,8 @@ class AppState {
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
   pendingApproval: ApprovalInfo | null = null;
+  /** Agent pills (Codex, opencode) shown because their hooks sent something. */
+  liveAgents = new Set<string>();
 
   integrations: Record<string, IntegrationInfo> = {};
 
@@ -219,7 +245,9 @@ class AppState {
   loadIntegrationTasks() {
     for (const proto of INTEGRATION_AGENTS) {
       const shouldLoad =
-        proto.id === "integration_claude" || this.settings.activeIntegrations.includes(proto.id);
+        proto.id === "integration_claude" ||
+        this.liveAgents.has(proto.id) ||
+        this.settings.activeIntegrations.includes(proto.id);
       const idx = this.tasks.findIndex((t) => t.id === proto.id);
       if (shouldLoad && idx < 0) this.tasks.push({ ...proto, steps: [] });
       if (!shouldLoad && idx >= 0) this.tasks.splice(idx, 1);

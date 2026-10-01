@@ -594,6 +594,24 @@ body {
   overflow: hidden;
 }
 
+/* ⇄ n — several sessions of one agent; cycles the one the pill shows. */
+.session-btn {
+  margin-left: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-2);
+  font: 500 10.5px var(--font);
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  cursor: default;
+}
+
+.session-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 /* Quick actions under a dropped file, and the clipboard chip's remove button. */
 .suggest-row {
   display: flex;

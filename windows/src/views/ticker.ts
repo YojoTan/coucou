@@ -94,6 +94,13 @@ export class Ticker {
     place(this.c, ROW_H * 2, 0, 0);
   }
 
+  /** Forget what was shown: the next sync drops straight into place. */
+  reset() {
+    this.queue = [];
+    this.startMs = null;
+    this.displayIndex = -1;
+  }
+
   get animating(): boolean {
     return this.startMs != null || this.queue.length > 0;
   }

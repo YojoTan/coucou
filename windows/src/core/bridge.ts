@@ -61,15 +61,17 @@ export const Bridge = {
   log: (message: string) => call<void>("log_line", { message }),
 
   // ── Claude Code hooks ─────────────────────────────────────────────────────
-  hooksStatus: () => call<HookStatus>("hooks_status"),
+  /** `target`: "claude" (default) or "codex". */
+  hooksStatus: (target?: HookTarget) => call<HookStatus>("hooks_status", { target }),
   /** Diff to show before anything is written. `install: false` previews removal. */
-  hooksPreview: (install: boolean) => callOrThrow<HookPreview>("hooks_preview", { install }),
+  hooksPreview: (install: boolean, target?: HookTarget) =>
+    callOrThrow<HookPreview>("hooks_preview", { install, target }),
   /**
    * Writes ~/.claude/settings.json — only ever after an explicit click, and only
    * when the file still matches the preview the user looked at.
    */
-  hooksApply: (install: boolean, fingerprint: string) =>
-    callOrThrow<string>("hooks_apply", { install, fingerprint }),
+  hooksApply: (install: boolean, fingerprint: string, target?: HookTarget) =>
+    callOrThrow<string>("hooks_apply", { install, fingerprint, target }),
 
   approvalDecision: (requestId: string, decision: "allow" | "deny") =>
     call<void>("approval_decision", { requestId, decision }),
@@ -86,6 +88,9 @@ export const Bridge = {
   /** Clipboard text — only ever read on an explicit click in the chat. */
   clipboardText: () => call<string | null>("clipboard_text"),
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
+  opencodeStatus: () => call<PluginStatus>("opencode_status"),
+  opencodePluginText: () => call<string>("opencode_plugin_text"),
+  opencodeApply: (install: boolean) => callOrThrow<string>("opencode_apply", { install }),
   hotkeySet: (spec: string) => callOrThrow<void>("hotkey_set", { spec }),
   /** Installed chat CLIs and their versions (slow: runs each `--version`). */
   chatEngines: () => call<EngineInfo[]>("chat_engines"),
@@ -132,6 +137,16 @@ export interface DroppedFile {
   name: string;
   path: string;
   size: number;
+}
+
+export type HookTarget = "claude" | "codex";
+
+export interface PluginStatus {
+  path: string;
+  installed: boolean;
+  outdated: boolean;
+  foreign: boolean;
+  opencodeFound: boolean;
 }
 
 export interface HookStatus {

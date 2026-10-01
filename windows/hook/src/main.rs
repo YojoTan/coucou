@@ -132,9 +132,15 @@ fn read_event() -> Option<(String, String)> {
     let mut payload = serde_json::from_slice::<serde_json::Value>(&raw).ok()?;
     let map = payload.as_object_mut()?;
 
-    // The event name is passed as argv[1] by the hook command; the JSON usually
-    // carries it too. Trust argv when the JSON is missing it.
-    let arg_event = std::env::args().nth(1).unwrap_or_default();
+    // argv is what the hook command passed: `coucou-hook.exe PreToolUse` for
+    // Claude Code, `coucou-hook.exe --agent codex` for Codex and opencode. The
+    // JSON usually carries the event too, and it wins when present.
+    let (agent, arg_event) = parse_args(std::env::args().skip(1).collect());
+    // Which agent the hook was installed for; absent means Claude Code, so
+    // every hook command written by older builds keeps working unchanged.
+    if let Some(agent) = agent {
+        map.insert("coucou_agent".into(), serde_json::Value::String(agent));
+    }
     let event = map
         .get("hook_event_name")
         .and_then(|v| v.as_str())
@@ -193,6 +199,19 @@ fn read_event() -> Option<(String, String)> {
     let mut line = payload.to_string();
     line.push('\n');
     Some((line, event))
+}
+
+/// `--agent <name> [Event]` or `[Event]`. Only the agents Coucou knows are
+/// accepted as a tag, so a stray argument can never invent one.
+fn parse_args(args: Vec<String>) -> (Option<String>, String) {
+    const AGENTS: &[&str] = &["claude", "codex", "opencode"];
+    match args.first().map(String::as_str) {
+        Some("--agent") => {
+            let agent = args.get(1).filter(|a| AGENTS.contains(&a.as_str())).cloned();
+            (agent, args.get(2).cloned().unwrap_or_default())
+        }
+        _ => (None, args.first().cloned().unwrap_or_default()),
+    }
 }
 
 /// Caps every string in the payload. A single Write can carry a whole file.
@@ -257,6 +276,16 @@ fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_agent_tag_comes_only_from_a_known_name() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(parse_args(v(&["PreToolUse"])), (None, "PreToolUse".into()));
+        assert_eq!(parse_args(v(&["--agent", "codex"])), (Some("codex".into()), String::new()));
+        assert_eq!(parse_args(v(&["--agent", "opencode", "Stop"])), (Some("opencode".into()), "Stop".into()));
+        assert_eq!(parse_args(v(&["--agent", "evil"])).0, None);
+        assert_eq!(parse_args(vec![]), (None, String::new()));
+    }
 
     #[test]
     fn decision_json_matches_the_documented_shape() {

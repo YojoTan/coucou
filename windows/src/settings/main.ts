@@ -187,7 +187,69 @@ const ENGINE_LABELS: Record<string, string> = {
   codex: "Codex",
   gemini: "Gemini CLI",
   opencode: "opencode",
+  openai: "OpenAI-compatible endpoint",
 };
+
+/** Common OpenAI-compatible servers: [label, base URL, example model]. */
+const OPENAI_PRESETS: [string, string, string][] = [
+  ["Ollama (this PC)", "http://localhost:11434/v1", "llama3.2"],
+  ["LM Studio (this PC)", "http://localhost:1234/v1", "qwen2.5-7b-instruct"],
+  ["OpenRouter", "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4.5"],
+  ["OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"],
+];
+
+/** Base URL, model and optional key for the OpenAI-compatible engine. */
+function openaiPanel(): HTMLElement {
+  const preset = h("select", {}) as HTMLSelectElement;
+  preset.append(h("option", { value: "", text: "Preset…" }));
+  for (const [label, url] of OPENAI_PRESETS) preset.append(h("option", { value: url, text: label }));
+  const base = h("input", { type: "text", placeholder: "http://localhost:11434/v1", spellcheck: "false", autocomplete: "off", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const model = h("input", { type: "text", placeholder: "model name", spellcheck: "false", autocomplete: "off", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const key = h("input", { type: "password", placeholder: "optional — local servers need none", autocomplete: "off", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const saveKey = h("button", { text: "Save key" });
+  const note = h("div", { class: "hint" });
+  base.value = settings.openaiBaseUrl;
+  model.value = settings.openaiModel;
+
+  async function refreshKey() {
+    const present = (await Bridge.secretPresent("openai-api-key")) ?? false;
+    key.placeholder = present ? "••••••••  (stored)" : "optional — local servers need none";
+  }
+  preset.addEventListener("change", async () => {
+    const p = OPENAI_PRESETS.find(([, url]) => url === preset.value);
+    if (!p) return;
+    base.value = p[1];
+    if (!model.value) model.value = p[2];
+    settings.openaiBaseUrl = base.value;
+    settings.openaiModel = model.value;
+    await save();
+  });
+  for (const [input, field] of [[base, "openaiBaseUrl"], [model, "openaiModel"]] as const) {
+    input.addEventListener("change", async () => {
+      settings[field] = input.value.trim();
+      await save();
+    });
+  }
+  saveKey.addEventListener("click", async () => {
+    try {
+      await Bridge.secretSet("openai-api-key", key.value.trim());
+      key.value = "";
+      note.textContent = "Key saved in the Windows Credential Manager.";
+    } catch (err) {
+      note.textContent = `Could not save: ${String(err)}`;
+    }
+    await refreshKey();
+  });
+  void refreshKey();
+  note.textContent = "https only, except servers on this PC (localhost). Text and images; PDFs need the Anthropic API or a CLI.";
+  return h("div", { style: "display:flex;flex-direction:column;gap:6px" },
+    h("div", { class: "row" }, h("label", { text: "Server" }), preset),
+    h("div", { class: "row" }, h("label", { text: "Base URL" }), base),
+    h("div", { class: "row" }, h("label", { text: "Model" }), model),
+    h("div", { class: "row" }, h("label", { text: "API key" }), key, saveKey),
+    note,
+  );
+}
 
 /**
  * Which brain answers the island's chat. A CLI uses the login it already has —
@@ -209,6 +271,7 @@ function chatSection(): HTMLElement {
   cliModel.value = settings.cliModel;
 
   let engines: EngineInfo[] = [];
+  const openai = openaiPanel();
 
   function fillSelect() {
     clear(select);
@@ -218,8 +281,10 @@ function chatSection(): HTMLElement {
       const tag = e.experimental ? " · experimental" : "";
       select.append(h("option", { value: e.id, text: `${e.label} (${state})${tag}`, disabled: !e.installed && settings.chatEngine !== e.id }));
     }
+    select.append(h("option", { value: "openai", text: "OpenAI-compatible (Ollama, LM Studio, OpenRouter…)" }));
     select.append(h("option", { value: "api", text: "Anthropic API (key below)" }));
     select.value = settings.chatEngine || "auto";
+    openai.style.display = select.value === "openai" ? "" : "none";
   }
 
   function fillList() {
@@ -254,6 +319,7 @@ function chatSection(): HTMLElement {
 
   select.addEventListener("change", async () => {
     settings.chatEngine = select.value;
+    openai.style.display = select.value === "openai" ? "" : "none";
     await save();
     await refreshActive();
   });
@@ -275,6 +341,7 @@ function chatSection(): HTMLElement {
     h("div", { class: "row" }, h("label", { text: "Engine" }), select),
     list,
     h("div", { class: "row" }, h("label", { text: "CLI model" }), cliModel, detect),
+    openai,
     active,
   );
 }

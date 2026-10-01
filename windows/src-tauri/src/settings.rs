@@ -28,6 +28,12 @@ pub struct Settings {
     /// Model passed to the CLI engine; empty means the CLI's own default.
     #[serde(default)]
     pub cli_model: String,
+    /// OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter…). Not a
+    /// secret; its optional key is in the Credential Manager.
+    #[serde(default)]
+    pub openai_base_url: String,
+    #[serde(default)]
+    pub openai_model: String,
 }
 
 fn default_model() -> String {
@@ -57,6 +63,8 @@ impl Default for Settings {
             model: default_model(),
             chat_engine: default_chat_engine(),
             cli_model: String::new(),
+            openai_base_url: String::new(),
+            openai_model: String::new(),
         }
     }
 }

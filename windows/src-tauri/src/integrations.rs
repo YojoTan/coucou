@@ -68,11 +68,12 @@ fn client() -> reqwest::Client {
         .unwrap_or_default()
 }
 
-/// Is `raw` a base URL the n8n API key may travel to? https anywhere, plain
-/// http only to this machine. The key rides in a header on every poll, so an
-/// `http://` instance on the network would send it in the clear every 15 s.
-/// Returns the base without its trailing slash.
-pub fn n8n_base(raw: &str) -> Result<String, String> {
+/// Is `raw` a base URL an API key (and a conversation) may travel to? https
+/// anywhere, plain http only to this machine. Used for the n8n instance — whose
+/// key rides in a header on every 15 s poll — and for OpenAI-compatible chat
+/// endpoints such as a local Ollama or LM Studio. Returns the base without its
+/// trailing slash.
+pub fn secure_base_url(raw: &str) -> Result<String, String> {
     let parsed = url::Url::parse(raw.trim()).map_err(|_| "Not a valid URL.".to_string())?;
     let host = parsed.host_str().unwrap_or_default();
     if host.is_empty() {
@@ -654,7 +655,7 @@ async fn poll_n8n(app: AppHandle) {
         return;
     };
     // Checked again here: a URL saved by an older build never went through it.
-    let base = match n8n_base(&raw_base) {
+    let base = match secure_base_url(&raw_base) {
         Ok(base) => base,
         Err(why) => {
             emit(&app, IntegrationUpdate {
@@ -824,15 +825,15 @@ fn fmt_value(v: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::n8n_base;
+    use super::secure_base_url;
 
     #[test]
     fn the_n8n_key_only_travels_over_https_or_to_this_machine() {
-        assert_eq!(n8n_base("https://n8n.example.com/").unwrap(), "https://n8n.example.com");
-        assert_eq!(n8n_base(" https://n8n.example.com/base ").unwrap(), "https://n8n.example.com/base");
-        assert!(n8n_base("http://localhost:5678").is_ok());
-        assert!(n8n_base("http://127.0.0.1:5678/").is_ok());
-        assert!(n8n_base("http://[::1]:5678").is_ok());
+        assert_eq!(secure_base_url("https://n8n.example.com/").unwrap(), "https://n8n.example.com");
+        assert_eq!(secure_base_url(" https://n8n.example.com/base ").unwrap(), "https://n8n.example.com/base");
+        assert!(secure_base_url("http://localhost:5678").is_ok());
+        assert!(secure_base_url("http://127.0.0.1:5678/").is_ok());
+        assert!(secure_base_url("http://[::1]:5678").is_ok());
         for bad in [
             "http://n8n.example.com",
             "http://192.168.1.20:5678",
@@ -843,7 +844,7 @@ mod tests {
             "n8n.example.com",
             "",
         ] {
-            assert!(n8n_base(bad).is_err(), "{bad:?} must be refused");
+            assert!(secure_base_url(bad).is_err(), "{bad:?} must be refused");
         }
     }
 }

@@ -7,6 +7,7 @@ mod hooks;
 mod integrations;
 mod island;
 mod log;
+mod openai_chat;
 mod pipe;
 mod secrets;
 mod settings;
@@ -27,6 +28,7 @@ use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
 
 use claude::{Chat, ChatContext, ChatReply};
 use cli_chat::{CliChat, Engine, EngineInfo};
+use openai_chat::OpenAiChat;
 use files::DroppedFile;
 use hooks::{HookPreview, HookStatus};
 use island::{PollGate, ScreenInfo};
@@ -85,14 +87,28 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
+fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut settings: Settings) {
     let (screen_changed, autostart_changed, engine_changed) = {
         let mut current = shared.settings.lock().unwrap();
+        // The island saves its own preferences (sound, volume, auto-close), but
+        // where the chat sends a conversation is the settings window's call
+        // alone: the island renders outside text and must not be able to point
+        // the chat — and its key — at another server.
+        if webview.label() != SETTINGS_LABEL {
+            settings.chat_engine = current.chat_engine.clone();
+            settings.cli_model = current.cli_model.clone();
+            settings.model = current.model.clone();
+            settings.openai_base_url = current.openai_base_url.clone();
+            settings.openai_model = current.openai_model.clone();
+            settings.hooks_installed = current.hooks_installed;
+        }
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
         let engine_changed = current.chat_engine != settings.chat_engine
             || current.cli_model != settings.cli_model
-            || current.model != settings.model;
+            || current.model != settings.model
+            || current.openai_base_url != settings.openai_base_url
+            || current.openai_model != settings.openai_model;
         *current = settings.clone();
         (screen_changed, autostart_changed, engine_changed)
     };
@@ -100,6 +116,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     if engine_changed {
         app.state::<Chat>().reset();
         app.state::<CliChat>().reset();
+        app.state::<OpenAiChat>().reset();
     }
     if let Err(err) = settings::save(&settings) {
         eprintln!("[coucou] could not save settings: {err}");
@@ -325,17 +342,16 @@ async fn chat_send(
     shared: State<'_, Shared>,
     chat: State<'_, Chat>,
     cli: State<'_, CliChat>,
+    openai: State<'_, OpenAiChat>,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
     only(&webview, island::WINDOW_LABEL, "chat_send")?;
-    let (model, pref, cli_model) = {
-        let s = shared.settings.lock().unwrap();
-        (s.model.clone(), s.chat_engine.clone(), s.cli_model.clone())
-    };
-    match resolve_engine(&pref) {
-        Backend::Api => claude::send(&chat, &model, query, context).await,
-        Backend::Cli(engine) => cli_chat::send(&cli, engine, &cli_model, query, context).await,
+    let s = shared.settings.lock().unwrap().clone();
+    match resolve_engine(&s) {
+        Backend::Api => claude::send(&chat, &s.model, query, context).await,
+        Backend::Cli(engine) => cli_chat::send(&cli, engine, &s.cli_model, query, context).await,
+        Backend::OpenAi => openai_chat::send(&openai, &s.openai_base_url, &s.openai_model, query, context).await,
         Backend::None => Err(
             "No chat engine yet: install Claude Code (or Codex, Gemini CLI, opencode), or add an Anthropic API key in Settings → Chat."
                 .into(),
@@ -346,33 +362,39 @@ async fn chat_send(
 enum Backend {
     Api,
     Cli(Engine),
+    OpenAi,
     None,
 }
 
-/// "auto" keeps the API for anyone who saved a key (nothing changes for them)
-/// and otherwise picks the first CLI that is installed, Claude Code first.
-fn resolve_engine(pref: &str) -> Backend {
-    match pref {
+/// "auto" keeps the API for anyone who saved a key (nothing changes for them),
+/// then picks the first CLI installed (Claude Code first), then a configured
+/// OpenAI-compatible endpoint.
+fn resolve_engine(s: &Settings) -> Backend {
+    match s.chat_engine.as_str() {
         "api" => Backend::Api,
+        "openai" => Backend::OpenAi,
         "auto" | "" => {
             if secrets::present("anthropic-api-key") {
-                Backend::Api
-            } else {
-                let found = cli_chat::installed();
-                Engine::ALL
-                    .into_iter()
-                    .find(|e| found.contains_key(e))
-                    .map_or(Backend::None, Backend::Cli)
+                return Backend::Api;
             }
+            let found = cli_chat::installed();
+            if let Some(e) = Engine::ALL.into_iter().find(|e| found.contains_key(e)) {
+                return Backend::Cli(e);
+            }
+            if !s.openai_base_url.trim().is_empty() {
+                return Backend::OpenAi;
+            }
+            Backend::None
         }
         id => Engine::from_id(id).map_or(Backend::Api, Backend::Cli),
     }
 }
 
 #[tauri::command]
-fn chat_reset(chat: State<Chat>, cli: State<CliChat>) {
+fn chat_reset(chat: State<Chat>, cli: State<CliChat>, openai: State<OpenAiChat>) {
     chat.reset();
     cli.reset();
+    openai.reset();
 }
 
 /// Which chat engines are installed, with their versions, for Settings → Chat.
@@ -384,10 +406,11 @@ async fn chat_engines() -> Vec<EngineInfo> {
 /// The engine "auto" resolves to right now, for the island's badge and Settings.
 #[tauri::command]
 fn chat_engine_active(shared: State<Shared>) -> String {
-    let pref = shared.settings.lock().unwrap().chat_engine.clone();
-    match resolve_engine(&pref) {
+    let s = shared.settings.lock().unwrap().clone();
+    match resolve_engine(&s) {
         Backend::Api => "api".into(),
         Backend::Cli(e) => e.id().into(),
+        Backend::OpenAi => "openai".into(),
         Backend::None => String::new(),
     }
 }
@@ -438,7 +461,7 @@ fn secret_set(webview: Webview, key: String, value: String) -> Result<(), String
     // The n8n API key is sent to whatever this URL says, so it has to be a URL
     // the key can safely travel to.
     if key == "n8n-url" && !value.trim().is_empty() {
-        integrations::n8n_base(&value)?;
+        integrations::secure_base_url(&value)?;
     }
     secrets::set(&key, &value)
 }
@@ -551,6 +574,7 @@ pub fn run() {
         .manage(Pending::default())
         .manage(Chat::default())
         .manage(CliChat::default())
+        .manage(OpenAiChat::default())
         .manage(Dropped::default())
         // Depending on the webview, a drop arrives as a window or a webview
         // event; both feed the same list.

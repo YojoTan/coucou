@@ -96,6 +96,9 @@ export interface Settings {
   chatEngine: string;
   /** Model passed to a CLI engine; empty = the CLI's own default. */
   cliModel: string;
+  /** OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 (Ollama). */
+  openaiBaseUrl: string;
+  openaiModel: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -112,6 +115,8 @@ export const DEFAULT_SETTINGS: Settings = {
   model: "claude-opus-5",
   chatEngine: "auto",
   cliModel: "",
+  openaiBaseUrl: "",
+  openaiModel: "",
 };
 
 type Listener = () => void;

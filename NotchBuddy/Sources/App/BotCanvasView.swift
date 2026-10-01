@@ -103,6 +103,9 @@ struct BotCanvasView: View {
         .onReceive(NotificationCenter.default.publisher(for: .botGreet)) { _ in
             engine.greet()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .botTravel)) { _ in
+            engine.travel()
+        }
         .onAppear {
             engine.setState(state.effectiveState, force: true)
         }
@@ -112,6 +115,7 @@ struct BotCanvasView: View {
         #if !APPSTORE
         .background(MusicSync(engine: engine, active: state.focusTask?.id == "integration_spotify"))
         .background(DiscordSync(engine: engine, active: state.focusTask?.id == DiscordService.taskId))
+        .background(MochiExtrasSync(engine: engine, taskId: state.focusTask?.id, isMain: true))
         #endif
     }
 
@@ -225,6 +229,7 @@ struct MiniBotCanvasView: View {
         .background {
             if task.id == "integration_spotify" { MusicSync(engine: engine, active: true) }
             if task.id == DiscordService.taskId { DiscordSync(engine: engine, active: true) }
+            MochiExtrasSync(engine: engine, taskId: task.id, isMain: false)
         }
         #endif
     }
@@ -317,6 +322,84 @@ struct DiscordSync: View {
         } else {
             engine.glance = nil
         }
+    }
+}
+
+/// Accessories and moods from the Extras, for one Mochi:
+/// a custom Mochi's outfit, the weather's, the Mac's moods (sweat, sleepy, panic,
+/// hard hat while building), the meeting about to start; and for the main one,
+/// a Focus mode's mask or glasses, else its trophy, and scruffy when neglected.
+struct MochiExtrasSync: View {
+    @ObservedObject private var state = AppState.shared
+    let engine: BotEngine
+    let taskId: String?
+    let isMain: Bool
+
+    var body: some View {
+        // A ticking date: the meeting countdown moves on its own.
+        TimelineView(.periodic(from: .now, by: 15)) { t in
+            Color.clear
+                .onAppear(perform: apply)
+                .onChange(of: t.date) { _, _ in apply() }
+        }
+        .onChange(of: taskId) { _, _ in apply() }
+        .onChange(of: state.system) { _, _ in apply() }
+        .onChange(of: state.weather) { _, _ in apply() }
+        .onChange(of: state.calendarNext) { _, _ in apply() }
+        .onChange(of: state.focusMode) { _, _ in apply() }
+        .onChange(of: state.pet) { _, _ in apply() }
+        .onChange(of: state.customStatus) { _, _ in apply() }
+        .onChange(of: state.petEvent) { _, e in
+            guard isMain, e != nil else { return }
+            engine.react(.confetti)
+            engine.greet()
+        }
+    }
+
+    private func apply() {
+        var accessory = MochiAccessory.none
+        var color: Color? = nil
+        var sweat = false, sleepy = false, panic = false
+        switch taskId {
+        case let id? where id.hasPrefix("custom_"):
+            if let m = CustomMochis.all.first(where: { $0.id == id }) {
+                accessory = m.accessory
+                color = Color(hex: m.color).opacity(0.95)
+            }
+        case WeatherMochi.taskId?:
+            accessory = state.weather?.accessory ?? .none
+        case SystemMochi.taskId?:
+            if let s = state.system {
+                accessory = s.building != nil ? .hardhat : .none
+                sweat = s.cpu > 85
+                sleepy = (s.battery ?? 100) < 15 && !s.charging
+                panic = s.diskFreePercent < 5
+            }
+        case CalendarMochi.taskId?:
+            if let e = state.calendarNext {
+                let minutes = e.start.timeIntervalSinceNow / 60
+                sweat = minutes <= 2 && minutes > -1
+                accessory = minutes <= 5 && minutes > -10 ? .glasses : .none
+            }
+        default:
+            break
+        }
+        if isMain {
+            switch state.focusMode {
+            case .doNotDisturb, .sleep: accessory = .sleepMask
+            case .work: accessory = .glasses
+            case .normal:
+                // The trophy, unless the focused pill already dresses Mochi.
+                if accessory == .none && !(taskId ?? "").hasPrefix("custom_") { accessory = state.pet.worn }
+            }
+        }
+        engine.accessory = accessory
+        engine.accessoryColor = color
+        engine.sweating = sweat
+        let neglected = isMain && state.pet.scruffy && state.focusMode == .normal
+        engine.sleepy = sleepy || neglected
+        engine.scruffy = neglected
+        if engine.panicked != panic { engine.panicked = panic }
     }
 }
 #endif

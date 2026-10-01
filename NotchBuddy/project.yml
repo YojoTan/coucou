@@ -81,6 +81,7 @@ targets:
         NSAccessibilityUsageDescription: "Pour lire le titre de la fenêtre active et l'attacher comme contexte."
         NSLocalNetworkUsageDescription: "To find and talk to the Mochis you pair with on this network (Settings → Mochis, off by default)."
         NSMicrophoneUsageDescription: "Only if you turn it on in Settings › Discord: to warn you when you talk while muted in a call, and to transcribe your own voice for a call summary. Nothing is recorded or sent."
+        NSCalendarsFullAccessUsageDescription: "Only if you turn on the Calendar pill: to show your next meeting and its Join link. Nothing leaves this Mac."
         NSSpeechRecognitionUsageDescription: "Only if you turn it on in Settings › Discord: to transcribe your own voice, on this Mac, for a call summary."
     settings:
       base:

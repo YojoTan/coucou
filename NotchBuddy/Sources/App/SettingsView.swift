@@ -576,6 +576,12 @@ struct SettingsView: View {
                 }
                 .tabItem { Label("Discord", systemImage: "bubble.left.and.bubble.right") }
                 .tag("discord")
+
+                settingsPane {
+                    ExtrasSettingsSection(state: state)
+                }
+                .tabItem { Label("Extras", systemImage: "sparkles") }
+                .tag("extras")
                 #endif
             }
 

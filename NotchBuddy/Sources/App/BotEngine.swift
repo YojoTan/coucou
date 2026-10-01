@@ -272,6 +272,14 @@ final class BotEngine: ObservableObject {
     /// Where the person speaking sits on the card (DiscordSync), in look units; nil when nobody.
     var glance: CGPoint? = nil
     private var lastSleepZ: Double = 0
+    // Accessories and moods (MochiAccessories.swift), set by MochiExtrasSync.
+    var accessory: MochiAccessory = .none
+    var accessoryColor: Color? = nil
+    var sweating = false
+    var sleepy = false
+    var scruffy = false
+    var panicked = false { didSet { if !panicked { ox = 0 } } }
+    var lastMoodSweat: Double = 0
     /// The call's choir (DiscordViews): a mouth and sleep without the headset.
     var mouthAlways = false
     /// When the call began (DiscordSync): an hour in, yawns; two, sweat and tired eyes.
@@ -775,6 +783,7 @@ final class BotEngine: ObservableObject {
         }
 
         updateDance(now: now, dt: dt)
+        updateMoods(now: now)
 
         // Smooth look
         let kLook = CGFloat(1 - pow(0.0025, dt))
@@ -992,6 +1001,7 @@ final class BotEngine: ObservableObject {
         if nightcap && morph < 0.05 {
             drawNightcap(ctx: bodySpace, R: R, rx: rx, ry: ry)
         }
+        drawAccessory(ctx: bodySpace, bodyPath: bodyPath, R: R, rx: rx, ry: ry)
 
         // Mouth hole — dark pill cutout inside the box face
         // Spec: left/right margins 0.10R, top margin 0.08R from box top (-0.94R)
@@ -1219,6 +1229,23 @@ final class BotEngine: ObservableObject {
         let r = R * 0.11
         ctx.fill(Path(ellipseIn: CGRect(x: rx * 0.95 + sway - r, y: -ry * 0.62 - r, width: r * 2, height: r * 2)),
                  with: .color(.white))
+    }
+
+    /// A trip to a paired Mochi (LAN send): it hops off to the right, out of the
+    /// island, and comes back in from the left a moment later.
+    func travel() {
+        anim("ox", keys: [
+            TweenKey(target: -0.25, duration: 160, ease: Ease.out),     // a little run-up
+            TweenKey(target: 24, duration: 900, ease: Ease.inOut),      // off it goes
+            TweenKey(target: -10, duration: 1, ease: Ease.lin),         // round the back
+            TweenKey(target: -10, duration: 700, ease: Ease.lin),       // away a moment
+            TweenKey(target: 0, duration: 750, ease: Ease.out),         // and back in
+        ])
+        anim("oy", keys: (0..<10).flatMap { _ in
+            [TweenKey(target: -0.12, duration: 110, ease: Ease.out), TweenKey(target: 0, duration: 110, ease: Ease.inOut)]
+        })
+        eyeOverride = .happy
+        eyeOverrideUntil = CACurrentMediaTime() + 2.6
     }
 
     /// A Discord reaction (DiscordSync): confetti, hearts, a laugh, a question, fire.

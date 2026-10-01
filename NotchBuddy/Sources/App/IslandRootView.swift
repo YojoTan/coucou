@@ -499,6 +499,12 @@ struct IslandHeader: View {
 
             Spacer()
 
+            #if !APPSTORE
+            // Paired Mochis on the network, always at hand — no pill needed.
+            NearbyMochisView(state: state)
+                .padding(.trailing, 14)
+            #endif
+
             // Right: action icons
             HStack(spacing: 14) {
                 Button(action: {

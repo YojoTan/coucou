@@ -56,8 +56,23 @@ struct LanPromptView: View {
             VStack(alignment: .leading, spacing: 6) { content }
                 .padding(.leading, 98)
                 .padding(.trailing, 18)
+            // The sender's Mochi walks in to deliver it.
+            if let from = visitor {
+                GuestMochiView(name: from)
+                    .id(from + "\(String(describing: state.lanPrompt))")
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 22)
+            }
         }
         .onChange(of: state.lanPrompt) { _, _ in waiting = false }
+    }
+
+    /// Who's visiting: the peer behind a file, a message or a pairing.
+    private var visitor: String? {
+        switch state.lanPrompt {
+        case .file(_, let peer, _, _)?, .message(let peer, _, _)?, .received(let peer, _, _)?, .pair(_, let peer, _)?: return peer
+        default: return nil
+        }
     }
 
     private func done() {
@@ -261,6 +276,98 @@ struct LanSettingsSection: View {
         Task {
             let result = await LanService.run { try LanService.shared.pair(id: id) }
             if case .failure(let e) = result { message = e.localizedDescription }
+        }
+    }
+}
+
+/// A paired Mochi, in its owner's colour, walking in from the right edge.
+private struct GuestMochiView: View {
+    let name: String
+    @StateObject private var engine = BotEngine()
+    @State private var arrived = false
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let now = timeline.date.timeIntervalSinceReferenceDate
+                engine.update(dt: min(0.05, now - engine.lastTime))
+                engine.draw(context: context, size: size)
+                engine.drawHandsAndExtras(context: context, size: size)
+            }
+        }
+        .frame(width: 54, height: 54)
+        .offset(x: arrived ? 0 : 260)
+        .onAppear {
+            engine.bodyColor = cgColorFromHex(IslandConst.colorForProject(name))
+            engine.setState(.idle, force: true)
+            engine.lookX = -0.7
+            engine.anim("oy", keys: (0..<6).flatMap { _ in
+                [TweenKey(target: -0.12, duration: 120, ease: Ease.out), TweenKey(target: 0, duration: 120, ease: Ease.inOut)]
+            })
+            withAnimation(.easeOut(duration: 1.2)) { arrived = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { engine.greet() }
+        }
+        .help(Text(verbatim: name))
+    }
+}
+
+/// The island header's paired Mochis: a tiny Mochi each, in the owner's colour,
+/// dimmed when offline; a click opens what you can do with it. Works with the
+/// Mochis pill on or off.
+struct NearbyMochisView: View {
+    @ObservedObject var state: AppState
+
+    var body: some View {
+        let peers = Array(state.lanSnapshot.peers.filter(\.paired).sorted { $0.online && !$1.online }.prefix(4))
+        if state.lanSnapshot.enabled && !peers.isEmpty {
+            HStack(spacing: 2) {
+                ForEach(peers) { p in
+                    Menu {
+                        Text(verbatim: p.online ? "\(p.name) · \(peerStatusText(p))" : String(localized: "\(p.name) · offline"))
+                        if p.online {
+                            Button("Message") { composeToPeer(p, asking: false) }
+                            Button("Ask their Mochi") { composeToPeer(p, asking: true) }
+                            Button("Send a file…") { sendFile(to: p) }
+                        }
+                    } label: {
+                        MiniBotCanvasView(task: AgentTask(id: "peer_" + p.id, name: p.name, color: IslandConst.colorForProject(p.name),
+                                                          state: peerBotState(p), steps: [], source: .n8n, isIntegration: true))
+                            .frame(width: 22, height: 22)
+                            .frame(width: 18, height: 18)
+                            .opacity(p.online ? 1 : 0.35)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help(Text(verbatim: p.name))
+                }
+            }
+        }
+    }
+
+    private func peerBotState(_ p: LanPeer) -> BotState {
+        guard p.online else { return .sleeping }
+        return BotState(rawValue: p.state) ?? .idle
+    }
+
+    /// A file picker, then the same trip as dropping a file on Mochi.
+    private func sendFile(to p: LanPeer) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let id = p.id, name = p.name, fileName = url.lastPathComponent
+        state.noteMessage = String(localized: "Waiting for \(name) to accept \(fileName)…")
+        state.view = .note
+        NotificationCenter.default.post(name: .botTravel, object: nil)
+        Task {
+            let result = await LanService.run { try LanService.shared.sendFile(id: id, url: url) }
+            switch result {
+            case .success: state.noteMessage = String(localized: "\(fileName) sent to \(name) ✓")
+            case .failure(let e): state.noteMessage = e.localizedDescription
+            }
         }
     }
 }

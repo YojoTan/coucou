@@ -39,7 +39,7 @@ final class SoundEngine {
     }
 
     func play(_ name: String) {
-        guard enabled && AppState.shared.soundEnabled else { return }
+        guard enabled && AppState.shared.soundEnabled && !AppState.shared.focusMode.silences else { return }
         #if !APPSTORE
         // Call mode: nothing over the user's Discord call (counted for the summary).
         if DiscordCall.shared.shouldSilence() { return }

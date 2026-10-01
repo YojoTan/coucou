@@ -32,6 +32,8 @@
 	<string>Pour lire le titre de la fenêtre active et l'attacher comme contexte.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Pour sauter au terminal et envoyer des mails.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Only if you turn on the Calendar pill: to show your next meeting and its Join link. Nothing leaves this Mac.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>

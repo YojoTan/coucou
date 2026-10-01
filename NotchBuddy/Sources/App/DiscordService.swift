@@ -347,6 +347,7 @@ final class DiscordService: @unchecked Sendable {
                 if s.discordNotes.count > 5 { s.discordNotes.removeLast() }
                 Self.alert(String(localized: "\(name) on Discord"), note.text)
                 s.showToast("\(name): \(note.text)", color: "#5865F2", icon: "at")
+                MochiVoice.say(String(localized: "\(name) wrote to you"))
             }
         default:
             break

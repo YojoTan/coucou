@@ -88,6 +88,13 @@ and SHA-256 matched.
 
 With `shared` = 32 × `0x11` and `th` = 32 × `0x22`:
 
-- `c2s` = `see lan/wire.rs tests`
-- the AES-GCM frame of `{"t":"ping"}` under `c2s`, counter 0, is checked against
-  the same bytes on both builds (`tests/LanWireTests.swift`, `wire.rs`).
+| | |
+| --- | --- |
+| `c2s` | `79e710446fec5c1a25ca933ae813742df85a90d1c6dece6c53a2685334615be7` |
+| `s2c` | `56dc67ea8dda757573d99b394936dfbd514aef17be380a46b392d44e72ede183` |
+| pairing code | `887393` |
+| `{"t":"ping"}` sealed under `c2s`, counter 0 | `e76f7fd2787a6fd5d917bb1df1e481fde6d915ccf46d0835a2f5d704` |
+| `th` for keys 32×`01`, 32×`02`, 32×`03`, 32×`04` | `8571d68592452ea22865d5892957abd5b82d2ce955dde7b6affddc3c1a585dbc` |
+
+Checked by `windows/src-tauri/src/lan/wire.rs` (cargo test) and
+`tests/LanWireTests.swift` (CI, `scripts/test-lan-wire.sh`).

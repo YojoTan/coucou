@@ -46,6 +46,15 @@ enum FileDropHandler {
     @MainActor
     static func handle(urls: [URL], state: AppState) async {
         guard let url = urls.first else { return }
+        // Files only: a dropped folder would be copied whole, however large.
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            // AppKit sends no draggingExited after a drop: end the drag look here.
+            state.fileDragOver = false
+            NotificationCenter.default.post(name: .botMorphTo, object: CGFloat(0))
+            return
+        }
         let name = url.lastPathComponent
 
         // Start animation immediately — do NOT block on file copy.

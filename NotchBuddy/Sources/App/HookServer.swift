@@ -31,15 +31,22 @@ final class HookServer: @unchecked Sendable {
 
     private var serverFD: Int32 = -1
     private var pendingApprovalFD: Int32 = -1   // held open while user decides
+    private var pendingApprovalID: UUID? = nil  // the ApprovalInfo on screen
     private var activeSessionId: String? = nil  // current Claude Code session
+
+    /// Largest hook line accepted. nb-hook sends one JSON line per event.
+    private static let maxPayload = 1 << 20
 
     private init() {}
 
     // MARK: - Start
 
     func start() {
-        // Ensure support directory exists before socket server tries to bind
+        // Ensure support directory exists before socket server tries to bind.
+        // Owner-only: it holds the socket and the hook relay Claude Code runs.
         try? FileManager.default.createDirectory(at: Self.supportDir, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700 as NSNumber],
+                                               ofItemAtPath: Self.supportDir.path)
         #if !APPSTORE
         installHookScript()
         #endif
@@ -73,6 +80,8 @@ final class HookServer: @unchecked Sendable {
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         guard bindRC == 0 else { close(fd); return }
+        // Owner-only socket: the umask default (usually 0755) is not a promise.
+        _ = chmod(path, 0o600)
         guard Darwin.listen(fd, 10) == 0 else { close(fd); return }
 
         while true {
@@ -85,6 +94,17 @@ final class HookServer: @unchecked Sendable {
     // MARK: - Client handler (background thread)
 
     private func handleClient(fd: Int32) {
+        // Only our own user may talk to us, whatever the socket's mode says.
+        var peerUID = uid_t(0)
+        var peerGID = gid_t(0)
+        guard getpeereid(fd, &peerUID, &peerGID) == 0, peerUID == getuid() else {
+            close(fd)
+            return
+        }
+        // nb-hook writes its line straight away; a silent client must not pin a thread.
+        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+
         // Read newline-delimited JSON
         var raw = Data()
         var buf = [UInt8](repeating: 0, count: 4096)
@@ -94,6 +114,10 @@ final class HookServer: @unchecked Sendable {
             for i in 0..<n {
                 if buf[i] == UInt8(ascii: "\n") { break outer }
                 raw.append(buf[i])
+            }
+            if raw.count > Self.maxPayload {
+                close(fd)
+                return
             }
         }
 
@@ -167,7 +191,9 @@ final class HookServer: @unchecked Sendable {
             let input = payload["tool_input"] as? [String: Any] ?? [:]
             let step = frenchStep(tool: tool, input: input)
             appendStep(id: "integration_claude", step: step)
-            nbLog("PreToolUse \(step)")
+            // Tool name only: the step text holds the start of the command, and
+            // commands carry tokens and passwords often enough to keep them off disk.
+            nbLog("PreToolUse \(tool)")
 
         case "PostToolUse":
             state.updateTask(id: "integration_claude", state: .working)
@@ -274,11 +300,8 @@ final class HookServer: @unchecked Sendable {
         }
 
         let tool = payload["tool_name"] as? String ?? "Tool"
-        var command = tool
-        if let input = payload["tool_input"] as? [String: Any] {
-            command = input["command"] as? String ?? tool
-        }
-        nbLog("PermissionRequest \(tool): \(command)")
+        let command = Self.approvalSummary(tool: tool, input: payload["tool_input"] as? [String: Any] ?? [:])
+        nbLog("PermissionRequest \(tool)")
 
         if pendingApprovalFD >= 0 {
             let old = pendingApprovalFD
@@ -293,7 +316,9 @@ final class HookServer: @unchecked Sendable {
 
         upsertTask(projectName: projectName, cwd: cwd)
         state.updateTask(id: "integration_claude", state: .approval)
-        state.pendingApproval = ApprovalInfo(sessionId: sessionId, tool: tool, command: command)
+        let info = ApprovalInfo(sessionId: sessionId, tool: tool, command: command)
+        pendingApprovalID = info.id
+        state.pendingApproval = info
         state.isPinned = true
         SoundEngine.shared.play("approval")
 
@@ -301,19 +326,76 @@ final class HookServer: @unchecked Sendable {
         state.focusId = "integration_claude"
         expandIfNeeded(to: .approval)
 
-        let captured = fd
+        // Keyed by the request id, not the fd: the OS reuses fd numbers, and a
+        // stale timer must never act on a newer request that got the same one.
+        let captured = info.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 115) { [weak self] in
-            guard let self, self.pendingApprovalFD == captured else { return }
+            guard let self, self.pendingApprovalID == captured else { return }
             // "ask" → nb-hook outputs nothing → Claude Code re-asks rather than denying
             self.sendApprovalDecision("ask")
         }
     }
 
-    /// Called by ApprovalView buttons. Writes the decision to the waiting nb-hook and cleans up.
+    /// What the card shows for a request: the whole thing Allow would authorise.
+    /// A bare tool name ("Write", "mcp__x__y") tells the user nothing, so the
+    /// path, URL or full input is shown, with invisible characters made visible.
+    static func approvalSummary(tool: String, input: [String: Any]) -> String {
+        if let cmd = input["command"] as? String { return revealInvisible(cmd) }
+        for key in ["file_path", "notebook_path", "path", "url", "query", "pattern", "prompt"] {
+            if let value = input[key] as? String, !value.isEmpty {
+                return revealInvisible("\(tool) · \(value)")
+            }
+        }
+        if !input.isEmpty, JSONSerialization.isValidJSONObject(input),
+           let data = try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8) {
+            return revealInvisible("\(tool) · \(json)")
+        }
+        return revealInvisible(tool)
+    }
+
+    /// Control characters (other than tab and newline), bidi overrides and
+    /// zero-width marks become a literal `\u{…}`, so a command cannot show the
+    /// user something other than what runs.
+    static func revealInvisible(_ text: String) -> String {
+        var out = ""
+        for scalar in text.unicodeScalars {
+            let v = scalar.value
+            let hidden = (v < 0x20 && v != 0x09 && v != 0x0A) || (0x7F...0x9F).contains(v)
+                || scalar.properties.generalCategory == .format
+                || v == 0x2028 || v == 0x2029
+            if hidden {
+                out += "\\u{" + String(v, radix: 16, uppercase: true) + "}"
+            } else {
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
+    }
+
+    /// True when the card cannot show the request in full, so it must be
+    /// answered in VS Code. Views get a fixed 98 pt frame (IslandRootView), which
+    /// leaves one line of 12 pt monospaced text, about 65 columns; non-ASCII
+    /// counts double because CJK and emoji take two columns.
+    static func needsFullReview(_ summary: String) -> Bool {
+        let columns = summary.unicodeScalars.reduce(0) { $0 + ($1.isASCII ? 1 : 2) }
+        return columns > 60 || summary.contains("\n") || summary.contains("\\u{")
+    }
+
+    /// Called by ApprovalView buttons with the id of the card the user saw.
+    /// A click on a card that has since been replaced does nothing.
+    @MainActor
+    func sendApprovalDecision(_ decision: String, for id: UUID?) {
+        guard let id, id == pendingApprovalID else { return }
+        sendApprovalDecision(decision)
+    }
+
+    /// Writes the decision to the waiting nb-hook and cleans up.
     @MainActor
     func sendApprovalDecision(_ decision: String) {
         let fd = pendingApprovalFD
         pendingApprovalFD = -1
+        pendingApprovalID = nil
 
         let json: String
         switch decision {
@@ -433,9 +515,16 @@ final class HookServer: @unchecked Sendable {
             .appendingPathComponent("Logs/NotchBuddy")
         try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
         let logFile = logsDir.appendingPathComponent("nb.log")
+        // Start fresh past ~1 MB, so the log can't grow forever.
+        if let size = (try? FileManager.default.attributesOfItem(atPath: logFile.path))?[.size] as? NSNumber,
+           size.intValue > 1_000_000 {
+            try? FileManager.default.removeItem(at: logFile)
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        let line = "\(formatter.string(from: Date())) \(message)\n"
+        // One event, one line: a newline in a project or tool name can't forge entries.
+        let oneLine = message.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
+        let line = "\(formatter.string(from: Date())) \(oneLine)\n"
         guard let data = line.data(using: .utf8) else { return }
         if FileManager.default.fileExists(atPath: logFile.path) {
             if let handle = try? FileHandle(forWritingTo: logFile) {
@@ -445,6 +534,8 @@ final class HookServer: @unchecked Sendable {
             }
         } else {
             try? data.write(to: logFile)
+            _ = try? FileManager.default.setAttributes([.posixPermissions: 0o600 as NSNumber],
+                                                       ofItemAtPath: logFile.path)
         }
     }
 
@@ -496,7 +587,7 @@ final class HookServer: @unchecked Sendable {
             if let hookList = matcher["hooks"] as? [[String: Any]] {
                 for hook in hookList {
                     if let cmd = hook["command"] as? String,
-                       (cmd.contains("NotchBuddy") || cmd.contains("coucou")),
+                       isCoucouHook(cmd),
                        let timeout = hook["timeout"] as? Int,
                        timeout < 120 {
                         return true
@@ -523,33 +614,74 @@ final class HookServer: @unchecked Sendable {
         guard let data = _pendingHooksData else { return }
         let settingsURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
-        // Backup first
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmm"
-        let stamp = formatter.string(from: Date())
-        let backupURL = settingsURL.deletingLastPathComponent()
-            .appendingPathComponent("settings.json.bak-\(stamp)")
-        try? FileManager.default.copyItem(at: settingsURL, to: backupURL)
-        try? FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(),
-                                                  withIntermediateDirectories: true)
+        // Only what the user looked at: if settings.json moved since the preview
+        // (Claude Code, an editor, another tool), stop and show a fresh one.
+        let current = try buildHooksData()
+        guard current == data else {
+            _pendingHooksData = current
+            throw Self.settingsError("settings.json changed since the preview — nothing was written. Review the new one.")
+        }
+        // Backup first, and a backup that fails stops the write.
+        try Self.backupSettings(settingsURL)
+        try FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
         try data.write(to: settingsURL, options: .atomic)
         _pendingHooksData = nil
+    }
+
+    private static func settingsError(_ message: String) -> NSError {
+        NSError(domain: "Coucou", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    /// Reads settings.json. Only a missing or empty file means "start from
+    /// nothing": anything unreadable or not a JSON object is an error, because
+    /// treating it as {} and writing back would erase the user's permissions,
+    /// env and other tools' hooks.
+    private static func loadSettings(_ url: URL) throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        let data = try Data(contentsOf: url)
+        if data.isEmpty { return [:] }
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let settings = object as? [String: Any] else {
+            throw settingsError("\(url.path) isn't a valid JSON object — Coucou won't overwrite it. Fix or move it, then try again.")
+        }
+        return settings
+    }
+
+    /// Dated copy next to settings.json, down to the second so two changes in
+    /// the same minute never collide. Throws, so a failed backup stops the write.
+    private static func backupSettings(_ url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let backupURL = url.deletingLastPathComponent()
+            .appendingPathComponent("settings.json.bak-\(formatter.string(from: Date()))")
+        try FileManager.default.copyItem(at: url, to: backupURL)
+    }
+
+    /// Single-quoted for /bin/sh: inside double quotes `$`, backticks and `\`
+    /// stay live, so a path holding `$(…)` would run on every hook event.
+    static func shellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Coucou's own entries only: the relay's path, not any command that happens
+    /// to contain "coucou" (a common French word) or "NotchBuddy".
+    static func isCoucouHook(_ command: String?) -> Bool {
+        guard let command else { return false }
+        return command.contains("/NotchBuddy/nb-hook") || command.contains("/coucou/nb-hook")
     }
 
     private func buildHooksData() throws -> Data {
         let settingsURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
-        var settings: [String: Any] = [:]
-        if let data = try? Data(contentsOf: settingsURL),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            settings = parsed
-        }
+        var settings = try Self.loadSettings(settingsURL)
         let hookPath = Self.hookScriptPath
         #if APPSTORE
         // Sandboxed apps create quarantined files; /bin/sh bypasses the quarantine flag
-        let quotedCmd = "/bin/sh \"\(hookPath.replacingOccurrences(of: "\"", with: "\\\""))\""
+        let quotedCmd = "/bin/sh " + Self.shellQuote(hookPath)
         #else
-        let quotedCmd = "\"\(hookPath.replacingOccurrences(of: "\"", with: "\\\""))\""
+        let quotedCmd = Self.shellQuote(hookPath)
         #endif
         let events: [(String, Int)] = [
             ("SessionStart", 10), ("SessionEnd", 10),
@@ -563,7 +695,7 @@ final class HookServer: @unchecked Sendable {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         for (event, timeout) in events {
             var existing = hooks[event] as? [[String: Any]] ?? []
-            existing.removeAll { ($0["hooks"] as? [[String: Any]])?.contains { ($0["command"] as? String)?.contains("NotchBuddy") == true || ($0["command"] as? String)?.contains("coucou") == true } ?? false }
+            existing.removeAll { ($0["hooks"] as? [[String: Any]])?.contains { Self.isCoucouHook($0["command"] as? String) } ?? false }
             existing.append(["hooks": [["type": "command", "command": quotedCmd, "timeout": timeout]]])
             hooks[event] = existing
         }
@@ -574,16 +706,14 @@ final class HookServer: @unchecked Sendable {
     func uninstallClaudeHooks() throws {
         let settingsURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
-        guard let data = try? Data(contentsOf: settingsURL),
-              var settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = settings["hooks"] as? [String: Any] else { return }
+        var settings = try Self.loadSettings(settingsURL)
+        guard var hooks = settings["hooks"] as? [String: Any] else { return }
 
         for key in hooks.keys {
             if var matchers = hooks[key] as? [[String: Any]] {
                 matchers.removeAll { matcher in
                     (matcher["hooks"] as? [[String: Any]])?.contains {
-                        ($0["command"] as? String)?.contains("NotchBuddy") == true ||
-                        ($0["command"] as? String)?.contains("coucou") == true
+                        Self.isCoucouHook($0["command"] as? String)
                     } ?? false
                 }
                 if matchers.isEmpty { hooks.removeValue(forKey: key) }
@@ -592,6 +722,7 @@ final class HookServer: @unchecked Sendable {
         }
         settings["hooks"] = hooks
         let newData = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys])
+        try Self.backupSettings(settingsURL)
         try newData.write(to: settingsURL, options: .atomic)
     }
 
@@ -613,27 +744,22 @@ final class HookServer: @unchecked Sendable {
         try nbHookPythonAppStore.write(to: pyURL, atomically: true, encoding: .utf8)
         _ = try? FileManager.default.setAttributes([.posixPermissions: 0o755 as NSNumber], ofItemAtPath: pyURL.path)
 
-        // Write settings.json (with backup)
+        // Write settings.json (with a backup that must succeed first)
         let settingsURL = claudeURL.appendingPathComponent("settings.json")
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmm"
-        let backupURL = claudeURL.appendingPathComponent("settings.json.bak-\(formatter.string(from: Date()))")
-        try? FileManager.default.copyItem(at: settingsURL, to: backupURL)
+        try Self.backupSettings(settingsURL)
         try data.write(to: settingsURL, options: .atomic)
         UserDefaults.standard.set(true, forKey: "coucouHooksInstalled")
     }
 
     func uninstallClaudeHooksAppStore(claudeURL: URL) throws {
         let settingsURL = claudeURL.appendingPathComponent("settings.json")
-        guard let data = try? Data(contentsOf: settingsURL),
-              var settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = settings["hooks"] as? [String: Any] else { return }
+        var settings = try Self.loadSettings(settingsURL)
+        guard var hooks = settings["hooks"] as? [String: Any] else { return }
         for key in hooks.keys {
             if var matchers = hooks[key] as? [[String: Any]] {
                 matchers.removeAll { matcher in
                     (matcher["hooks"] as? [[String: Any]])?.contains {
-                        ($0["command"] as? String)?.contains("coucou") == true ||
-                        ($0["command"] as? String)?.contains("NotchBuddy") == true
+                        Self.isCoucouHook($0["command"] as? String)
                     } ?? false
                 }
                 if matchers.isEmpty { hooks.removeValue(forKey: key) }
@@ -642,20 +768,17 @@ final class HookServer: @unchecked Sendable {
         }
         settings["hooks"] = hooks
         let newData = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys])
+        try Self.backupSettings(settingsURL)
         try newData.write(to: settingsURL, options: .atomic)
         UserDefaults.standard.set(false, forKey: "coucouHooksInstalled")
     }
 
     private func buildHooksData(claudeURL: URL) throws -> Data {
         let settingsURL = claudeURL.appendingPathComponent("settings.json")
-        var settings: [String: Any] = [:]
-        if let data = try? Data(contentsOf: settingsURL),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            settings = parsed
-        }
+        var settings = try Self.loadSettings(settingsURL)
         // Derive hook path from the panel-selected claudeURL (real ~/.claude, not container)
         let hookPath = claudeURL.appendingPathComponent("coucou/nb-hook").path
-        let quotedCmd = "/bin/sh \"\(hookPath.replacingOccurrences(of: "\"", with: "\\\""))\""
+        let quotedCmd = "/bin/sh " + Self.shellQuote(hookPath)
         let events: [(String, Int)] = [
             ("SessionStart", 10), ("SessionEnd", 10),
             ("UserPromptSubmit", 10),
@@ -669,8 +792,7 @@ final class HookServer: @unchecked Sendable {
         for (event, timeout) in events {
             var existing = hooks[event] as? [[String: Any]] ?? []
             existing.removeAll { ($0["hooks"] as? [[String: Any]])?.contains {
-                ($0["command"] as? String)?.contains("coucou") == true ||
-                ($0["command"] as? String)?.contains("NotchBuddy") == true
+                Self.isCoucouHook($0["command"] as? String)
             } ?? false }
             existing.append(["hooks": [["type": "command", "command": quotedCmd, "timeout": timeout]]])
             hooks[event] = existing
@@ -737,6 +859,13 @@ def main():
     socket_path = os.path.expanduser(
         '~/Library/Application Support/NotchBuddy/nb.sock'
     )
+    # Only a socket owned by this user is Coucou: anything else listening on the
+    # path could answer 'allow' to every permission request.
+    try:
+        if os.stat(socket_path).st_uid != os.getuid():
+            sys.exit(0)
+    except Exception:
+        sys.exit(0)
 
     if event == 'PermissionRequest':
         # Block and wait for Coucou's decision (Claude Code allows up to 120s)
@@ -767,8 +896,12 @@ def main():
                     sys.stdout.flush()
                     sys.exit(0)
                 elif decision == 'always':
-                    # Let Claude Code persist the rule via updatedPermissions
-                    suggestions = payload.get('permission_suggestions', [])
+                    # Only plain rule additions are passed on: a suggestion can also
+                    # switch the permission mode or add directories, and none of it
+                    # is shown on the card the user clicked.
+                    suggestions = [s for s in payload.get('permission_suggestions', [])
+                                   if isinstance(s, dict) and s.get('type') == 'addRules'
+                                   and s.get('destination') in ('session', 'localSettings')]
                     out = {'hookSpecificOutput': {'hookEventName': 'PermissionRequest', 'decision': {'behavior': 'allow', 'updatedPermissions': suggestions}}}
                     sys.stdout.write(json.dumps(out) + '\\n')
                     sys.stdout.flush()
@@ -828,6 +961,13 @@ def main():
     socket_path = os.path.expanduser(
         '~/Library/Containers/fr.louisraille.Coucou/Data/nb.sock'
     )
+    # Only a socket owned by this user is Coucou: anything else listening on the
+    # path could answer 'allow' to every permission request.
+    try:
+        if os.stat(socket_path).st_uid != os.getuid():
+            sys.exit(0)
+    except Exception:
+        sys.exit(0)
 
     if event == 'PermissionRequest':
         # Block and wait for Coucou's decision (Claude Code allows up to 120s)
@@ -858,8 +998,12 @@ def main():
                     sys.stdout.flush()
                     sys.exit(0)
                 elif decision == 'always':
-                    # Let Claude Code persist the rule via updatedPermissions
-                    suggestions = payload.get('permission_suggestions', [])
+                    # Only plain rule additions are passed on: a suggestion can also
+                    # switch the permission mode or add directories, and none of it
+                    # is shown on the card the user clicked.
+                    suggestions = [s for s in payload.get('permission_suggestions', [])
+                                   if isinstance(s, dict) and s.get('type') == 'addRules'
+                                   and s.get('destination') in ('session', 'localSettings')]
                     out = {'hookSpecificOutput': {'hookEventName': 'PermissionRequest', 'decision': {'behavior': 'allow', 'updatedPermissions': suggestions}}}
                     sys.stdout.write(json.dumps(out) + '\\n')
                     sys.stdout.flush()

@@ -31,6 +31,9 @@ enum BotEmote: String, CaseIterable {
 // MARK: - Approval info (pending PermissionRequest from Claude Code)
 
 struct ApprovalInfo: Sendable {
+    /// Ties a click to the request that was on screen: a newer request replacing
+    /// this one gets a new id, and a decision for a stale id is ignored.
+    let id = UUID()
     var sessionId: String
     var tool: String
     var command: String

@@ -62,7 +62,22 @@ enum WindowContextCapture {
               let script = browserScripts[bundleId] else { return nil }
         var error: NSDictionary?
         let result = NSAppleScript(source: script)?.executeAndReturnError(&error)
-        return error == nil ? result?.stringValue : nil
+        return error == nil ? result?.stringValue.map(redact) : nil
         #endif
+    }
+
+    /// The page, not its secrets: query strings and fragments routinely carry
+    /// OAuth codes, magic-link and reset tokens or signed URLs, and the chip
+    /// only ever showed the host. They are dropped before the URL is sent.
+    static func redact(_ raw: String) -> String {
+        // Unparseable: still cut at the first ? or #, never send it whole.
+        guard var components = URLComponents(string: raw) else {
+            return String(raw.prefix { $0 != "?" && $0 != "#" })
+        }
+        components.query = nil
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+        return components.string ?? raw
     }
 }

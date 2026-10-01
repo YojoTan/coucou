@@ -427,6 +427,9 @@ struct SettingsView: View {
             hookNeedsUpdate = false
         } catch {
             statusMessage = "❌ Write error: \(error.localizedDescription)"
+            // If settings.json moved, show the fresh preview: the next click must
+            // write only what is on screen.
+            if let fresh = try? HookServer.shared.previewClaudeHooks() { pendingHookJSON = fresh }
         }
     }
 
@@ -440,6 +443,12 @@ struct SettingsView: View {
     }
 
     private func saveIntegrations() {
+        // The n8n key is sent to this URL on every poll: refuse anything it
+        // could travel to unencrypted, and save nothing until it is fixed.
+        if !n8nUrl.isEmpty && !N8nPoller.isAcceptableBaseURL(n8nUrl) {
+            statusMessage = "❌ n8n URL must start with https:// (http:// only for localhost)."
+            return
+        }
         saveKey("resend-api-key",  value: resendKey)
         saveKey("resend-from",     value: resendFrom)
         saveKey("n8n-url",         value: n8nUrl)
@@ -495,6 +504,10 @@ struct SettingsView: View {
         guard let apiKey  = KeychainStore.shared.get("n8n-api-key"),
               let rawBase = KeychainStore.shared.get("n8n-url") else {
             statusMessage = "❌ Save n8n URL and API key first."
+            return
+        }
+        guard N8nPoller.isAcceptableBaseURL(rawBase) else {
+            statusMessage = "❌ n8n URL must start with https:// (http:// only for localhost)."
             return
         }
         loadingN8n = true

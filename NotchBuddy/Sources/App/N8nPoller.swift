@@ -23,10 +23,25 @@ final class N8nPoller: @unchecked Sendable {
 
     // MARK: - Poll list endpoint
 
+    /// A base URL the API key may travel to: https anywhere, plain http only to
+    /// this Mac. ATS exempts IP addresses, `.local` and bare host names, so an
+    /// `http://192.168.x.x` instance would otherwise get the key in the clear.
+    static func isAcceptableBaseURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(), !host.isEmpty,
+              url.user == nil, url.password == nil else { return false }
+        return scheme == "https" || (scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(host))
+    }
+
     private func poll() {
         guard let apiKey  = KeychainStore.shared.get("n8n-api-key"),
               let rawBase = KeychainStore.shared.get("n8n-url") else {
             n8nLog("No API key or URL configured")
+            return
+        }
+        guard Self.isAcceptableBaseURL(rawBase) else {
+            n8nLog("Refusing a non-https n8n URL")
             return
         }
         let base = rawBase.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -256,6 +271,9 @@ final class N8nPoller: @unchecked Sendable {
     // MARK: - Logging
 
     private func n8nLog(_ message: String) {
+        // Debug builds only: these lines carry raw workflow output (which can hold
+        // personal data or tokens) and were written every 15 s, forever.
+        #if DEBUG
         let logsDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/NotchBuddy")
         try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
@@ -268,5 +286,6 @@ final class N8nPoller: @unchecked Sendable {
                 fh.seekToEndOfFile(); fh.write(data); try? fh.close()
             }
         } else { try? data.write(to: logFile) }
+        #endif
     }
 }

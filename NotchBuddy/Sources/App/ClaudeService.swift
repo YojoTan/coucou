@@ -334,6 +334,11 @@ final class ClaudeService {
     // MARK: - File content block builder
 
     private func readFileAsBlock(url: URL) -> [String: Any]? {
+        // Read whole and base64-encoded below: past this the API refuses the
+        // request anyway, after the memory to build it has been spent.
+        if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size > 24_000_000 {
+            return nil
+        }
         guard let data = try? Data(contentsOf: url) else { return nil }
         let ext = url.pathExtension.lowercased()
         let base64 = data.base64EncodedString()

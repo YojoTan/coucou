@@ -4,7 +4,9 @@ set -euo pipefail
 
 VERSION="${1:?Usage: $0 <version>}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="/tmp/coucou-release-$VERSION"
+# A fresh private directory: a fixed name in the shared /tmp could be
+# pre-created or swapped by another account between notarization and upload.
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/coucou-release-$VERSION.XXXXXX")"
 APP="$BUILD_DIR/Coucou.app"
 ZIP="$BUILD_DIR/Coucou.zip"
 
@@ -19,7 +21,6 @@ echo "Signing with: $IDENTITY"
 # ── 2. xcodegen + Release build ───────────────────────────────────────────────
 cd "$REPO_ROOT/NotchBuddy"
 xcodegen generate
-rm -rf "$BUILD_DIR" && mkdir -p "$BUILD_DIR"
 
 xcodebuild \
   -project NotchBuddy.xcodeproj \

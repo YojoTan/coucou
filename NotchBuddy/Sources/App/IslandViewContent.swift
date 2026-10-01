@@ -130,7 +130,7 @@ struct OverviewView: View {
         case "integration_github":
             NSWorkspace.shared.open(URL(string: "https://github.com")!)
         case "integration_n8n":
-            if let urlStr = KeychainStore.shared.get("n8n-url"), let url = URL(string: urlStr) {
+            if let urlStr = KeychainStore.shared.get("n8n-url"), N8nPoller.isAcceptableBaseURL(urlStr), let url = URL(string: urlStr) {
                 NSWorkspace.shared.open(url)
             }
         case "integration_stripe":
@@ -142,7 +142,7 @@ struct OverviewView: View {
         default:
             // Non-integration real tasks
             if task.source == .n8n {
-                if let urlStr = KeychainStore.shared.get("n8n-url"), let url = URL(string: urlStr) {
+                if let urlStr = KeychainStore.shared.get("n8n-url"), N8nPoller.isAcceptableBaseURL(urlStr), let url = URL(string: urlStr) {
                     NSWorkspace.shared.open(url)
                 }
             } else {
@@ -187,30 +187,74 @@ struct EmptyStateView: View {
     }
 }
 
+/// Opens a link from Claude's output or an API response, but only a web one:
+/// such a URL could otherwise be file://, smb:// or a custom app scheme that
+/// launches something on this Mac.
+@MainActor
+func openWebURL(_ string: String?) {
+    guard let string, let url = URL(string: string),
+          let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return }
+    NSWorkspace.shared.open(url)
+}
+
 // MARK: - Approval
 
 struct ApprovalView: View {
     @ObservedObject var state: AppState
+    /// The request whose Allow is live. Set 0.7 s after a card appears, so a
+    /// click already on its way when the island springs open cannot approve it.
+    @State private var armedID: UUID? = nil
 
     var approval: ApprovalInfo? { state.pendingApproval }
 
+    /// The card shows one line; anything longer, or holding invisible
+    /// characters, is answered in VS Code, where it is shown whole.
+    private var needsFullReview: Bool {
+        guard let approval else { return true }
+        return HookServer.needsFullReview(approval.command)
+    }
+
+    private var canAllow: Bool {
+        armedID != nil && armedID == approval?.id && !needsFullReview
+    }
+
     var body: some View {
+        // Captured with the card: a click acts on the request it was drawn for.
+        let shownID = approval?.id
         ZStack {
             CardBackground(wash: .amber)
             VStack(alignment: .leading, spacing: 5) {
                 AgentWho(task: state.focusTask, label: "needs permission")
+                // One line fits the 98 pt view. Anything longer is already routed
+                // to "Review in VS Code"; the middle cut only ever applies there.
                 CodeBlock(text: approval?.command ?? approval?.tool ?? "…")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 HStack(spacing: 8) {
                     SecondaryButton("Deny") {
-                        HookServer.shared.sendApprovalDecision("deny")
+                        HookServer.shared.sendApprovalDecision("deny", for: shownID)
                     }
-                    PrimaryButton("Allow") {
-                        HookServer.shared.sendApprovalDecision("allow")
-                    }
-                    SecondaryButton("Always") {
-                        HookServer.shared.sendApprovalDecision("always")
+                    if needsFullReview {
+                        // Too long to show here: hand it back to VS Code.
+                        PrimaryButton("Review in VS Code") {
+                            HookServer.shared.sendApprovalDecision("ask", for: shownID)
+                        }
+                    } else {
+                        PrimaryButton("Allow") {
+                            HookServer.shared.sendApprovalDecision("allow", for: shownID)
+                        }
+                        .disabled(!canAllow)
+                        SecondaryButton("Always") {
+                            HookServer.shared.sendApprovalDecision("always", for: shownID)
+                        }
+                        .disabled(!canAllow)
                     }
                 }
+            }
+            .task(id: shownID) {
+                armedID = nil
+                do { try await Task.sleep(nanoseconds: 700_000_000) } catch { return }
+                armedID = shownID
             }
             .padding(.leading, 116)
             .padding(.trailing, 16)
@@ -912,9 +956,7 @@ struct ResultView: View {
 
                     HStack(spacing: 8) {
                         PrimaryButton("Open") {
-                            if let urlStr = result.items.first?.url, let url = URL(string: urlStr) {
-                                NSWorkspace.shared.open(url)
-                            }
+                            openWebURL(result.items.first?.url)
                         }
                         SecondaryButton("Copy") {
                             let text = result.items.map { "\($0.label): \($0.detail)" }.joined(separator: "\n")
@@ -988,7 +1030,7 @@ struct IntegrationCardView: View {
         case "integration_claude":  return nil  // uses terminal button below
         case "integration_resend":  return URL(string: "https://resend.com/emails")
         case "integration_n8n":
-            if let s = KeychainStore.shared.get("n8n-url") { return URL(string: s) }
+            if let s = KeychainStore.shared.get("n8n-url"), N8nPoller.isAcceptableBaseURL(s) { return URL(string: s) }
             return nil
         case "integration_vercel":  return URL(string: "https://vercel.com/dashboard")
         case "integration_github":  return URL(string: "https://github.com")
@@ -1959,7 +2001,7 @@ struct NotionCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(appState.notionPages.prefix(3)) { page in
                     Button {
-                        if let url = URL(string: page.url) { NSWorkspace.shared.open(url) }
+                        openWebURL(page.url)
                     } label: {
                         HStack(spacing: 6) {
                             if let emoji = page.emoji {

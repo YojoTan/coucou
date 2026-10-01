@@ -15,6 +15,7 @@ import { approvalResolved } from "./hooks";
 import { agentOf, byKey, taskIdFor } from "./sessions";
 import { t } from "../core/i18n";
 import { BotEngine, hexToRGB } from "../mochi/engine";
+import { applyExtras, applyMusic } from "../mochi/sync";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -1065,6 +1066,9 @@ export class Island {
 
     syncMiniBotStates(State.tasks);
     this.engine.setState(State.effectiveState);
+    // What the focused pill puts on Mochi: Spotify's headphones, the mode's mask…
+    applyMusic(this.engine, State.focusId === "integration_spotify");
+    applyExtras(this.engine, State.focusId, true);
   }
 
   /** Applies settings coming from Rust at boot. */

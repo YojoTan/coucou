@@ -2,6 +2,7 @@
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
+import type { MochiAccessory } from "../mochi/accessories";
 
 export type AgentSource = "claudeCode" | "codex" | "opencode" | "n8n";
 
@@ -117,6 +118,25 @@ export function silences(mode: FocusMode | string | undefined): boolean {
   return mode === "doNotDisturb" || mode === "sleep";
 }
 
+/** A Mochi of the user's own (Settings → Mochis extras): a command or the local URL feeds it. */
+export interface CustomMochi {
+  id: string;            // custom_xxxxxxxx
+  name: string;
+  color: string;
+  accessory: MochiAccessory;
+  command: string;
+  interval: number;      // seconds, 0 = only the local URL
+}
+
+/** What the extras know right now (filled by their pollers). */
+export interface Extras {
+  weather: { place: string; temperature: number; code: number; day: boolean; rainChance: number; accessory: MochiAccessory } | null;
+  system: { cpu: number; battery: number | null; charging: boolean; diskFreePercent: number; diskFreeGB: number; building: string | null } | null;
+  calendarNext: { title: string; start: number; end: number; link: string | null } | null;
+  pet: { level: number; streak: number; sessions: number; worn: MochiAccessory; scruffy: boolean } | null;
+  customStatus: Record<string, { text: string; state: string; at: number }>;
+}
+
 /** One line in the compact island for a few seconds ("Ana joined"). */
 export interface CompactToast {
   id: number;
@@ -183,6 +203,7 @@ export interface Settings {
   language: string;
   lan: LanPrefs;
   focusMode: FocusMode;
+  customMochis?: CustomMochi[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -227,6 +248,9 @@ class AppState {
 
   isPinned = false;
   paused = false;
+
+  /** Weather, PC, calendar, pet, custom Mochis' news (the extras). */
+  extras: Extras = { weather: null, system: null, calendarNext: null, pet: null, customStatus: {} };
 
   /** What the compact island says right now, and what waits behind it (showToast). */
   toast: CompactToast | null = null;

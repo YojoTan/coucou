@@ -3,6 +3,7 @@
 
 import { BotEngine, hexToRGB } from "./engine";
 import type { AgentTask } from "../core/state";
+import { applyExtras, applyMusic } from "./sync";
 
 interface MiniBot {
   canvas: HTMLCanvasElement;
@@ -69,6 +70,8 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
     if (!task) continue;
     mb.engine.setState(task.state);
     mb.engine.bodyColor = hexToRGB(task.color);
+    if (mb.taskId === "integration_spotify") applyMusic(mb.engine, true);
+    applyExtras(mb.engine, mb.taskId, false);
   }
 }
 

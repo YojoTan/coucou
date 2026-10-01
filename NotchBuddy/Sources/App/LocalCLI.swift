@@ -5,7 +5,7 @@ import Foundation
 // the login the user already has), or the Anthropic API with a key from Settings.
 
 enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini, opencode, api
+    case claude, codex, gemini, opencode, openai, api
 
     var id: String { rawValue }
 
@@ -15,6 +15,7 @@ enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
         case .codex:  return "Codex"
         case .gemini: return "Gemini CLI"
         case .opencode: return "opencode"
+        case .openai: return "OpenAI-compatible"
         case .api:    return "Anthropic API"
         }
     }
@@ -26,6 +27,7 @@ enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
         case .codex:  return "Codex"
         case .gemini: return "Gemini"
         case .opencode: return "opencode"
+        case .openai: return "Local"
         case .api:    return "API"
         }
     }
@@ -37,7 +39,7 @@ enum ChatEngine: String, CaseIterable, Identifiable, Sendable {
         case .codex:  return "codex"
         case .gemini: return "gemini"
         case .opencode: return "opencode"
-        case .api:    return nil
+        case .openai, .api: return nil
         }
     }
 
@@ -292,7 +294,7 @@ final class LocalCLIChat {
             if let f = fileURL { args += ["--file", f.path] }
             args += ["--", prompt]
             stdinText = nil
-        case .api:
+        case .openai, .api:
             return Reply(text: "Not a CLI engine.", isError: true)
         }
 
@@ -386,7 +388,7 @@ final class LocalCLIChat {
             if !p.isError { p.text = nilIfEmpty(text) }
             return p
 
-        case .api:
+        case .openai, .api:
             return Parsed()
         }
     }

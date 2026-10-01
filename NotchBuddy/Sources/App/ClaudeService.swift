@@ -120,6 +120,7 @@ final class ClaudeService {
         #if !APPSTORE
         LocalCLIChat.shared.reset()
         #endif
+        OpenAICompatChat.shared.reset()
     }
 
     /// The engine the chat will use. The App Store build is sandboxed and can't
@@ -153,7 +154,9 @@ final class ClaudeService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         let engine = await resolveEngine(state: state)
         if engine != .api {
-            let reply = await LocalCLIChat.shared.send(engine: engine, query: query, context: context)
+            let reply = engine == .openai
+                ? await OpenAICompatChat.shared.send(query: query, context: context)
+                : await LocalCLIChat.shared.send(engine: engine, query: query, context: context)
             if reply.isError {
                 await showError(reply.text, state: state)
             } else {

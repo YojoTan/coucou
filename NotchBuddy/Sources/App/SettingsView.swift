@@ -36,6 +36,10 @@ struct SettingsView: View {
 
     // Chat engine detection in progress
     @State private var detectingCLIs: Bool = false
+    // OpenAI-compatible engine: the URL and model are preferences, the key is in the Keychain.
+    @State private var openaiBase: String = OpenAICompatChat.baseURL
+    @State private var openaiModel: String = OpenAICompatChat.model
+    @State private var openaiKey: String = ""
 
     // Bindings in minutes for the absence field
     private var absenceMinutes: Binding<Double> {
@@ -86,6 +90,9 @@ struct SettingsView: View {
 
                         if state.chatEngine == .api {
                             apiKeyField
+                        }
+                        if state.chatEngine == .openai {
+                            openAIFields
                         }
                     }
                     .padding(6)
@@ -399,14 +406,64 @@ struct SettingsView: View {
         }
     }
 
+    /// Base URL, model and optional key for the OpenAI-compatible engine.
+    private var openAIFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Menu("Preset…") {
+                ForEach(OpenAICompatChat.presets) { preset in
+                    Button(preset.label) {
+                        openaiBase = preset.url
+                        if openaiModel.isEmpty { openaiModel = preset.model }
+                    }
+                }
+            }
+            .frame(maxWidth: 160)
+            TextField("Base URL (e.g. http://localhost:11434/v1)", text: $openaiBase)
+                .textFieldStyle(.roundedBorder)
+            TextField("Model (e.g. llama3.2)", text: $openaiModel)
+                .textFieldStyle(.roundedBorder)
+            SecureField("API key — optional, local servers need none", text: $openaiKey)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Save") { saveOpenAI() }.buttonStyle(.borderedProminent)
+                Text("https only, except servers on this Mac. Text and images; PDFs need the API or a CLI.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func saveOpenAI() {
+        let base = openaiBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The key and the conversation go to this URL: refuse plain http off this Mac.
+        guard base.isEmpty || N8nPoller.isAcceptableBaseURL(base) else {
+            statusMessage = "❌ Endpoint must start with https:// (http:// only for localhost)."
+            return
+        }
+        UserDefaults.standard.set(base, forKey: OpenAICompatChat.baseURLKey)
+        UserDefaults.standard.set(openaiModel.trimmingCharacters(in: .whitespacesAndNewlines), forKey: OpenAICompatChat.modelKey)
+        if !openaiKey.isEmpty {
+            KeychainStore.shared.set("openai-api-key", value: openaiKey)
+            openaiKey = ""
+        }
+        ClaudeService.shared.clearConversation()
+        state.chatHistory = []
+        statusMessage = "✓ Endpoint saved."
+    }
+
     private func engineRow(_ engine: ChatEngine) -> some View {
         let info = state.detectedCLIs[engine]
-        let available = engine == .api || info != nil
+        let available = engine == .api || engine == .openai || info != nil
         let selected = state.chatEngine == engine
 
         let detail: String
         if engine == .api {
             detail = KeychainStore.shared.get("anthropic-api-key") == nil ? "Needs an API key" : "API key saved"
+        } else if engine == .openai {
+            detail = OpenAICompatChat.isConfigured
+                ? "\(OpenAICompatChat.baseURL) · \(OpenAICompatChat.model)"
+                : "Ollama, LM Studio, OpenRouter… — set it up below"
         } else if let info {
             detail = [info.version, info.path].compactMap { $0 }.joined(separator: " · ")
         } else {

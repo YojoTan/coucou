@@ -152,3 +152,9 @@
 
 /* Settings tabs */
 "Agents" = "Agentes";
+
+/* Language */
+"Language" = "Idioma";
+"System default" = "Idioma del sistema";
+"Coucou needs to restart to change its language." = "Coucou tiene que reiniciarse para cambiar de idioma.";
+"Restart now" = "Reiniciar ahora";

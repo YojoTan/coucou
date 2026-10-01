@@ -55,453 +55,475 @@ struct SettingsView: View {
 
     /// Settings in tabs, as in upstream PR #33: the window had grown into one long scroll.
     @AppStorage("settingsTab") private var settingsTab: String = "general"
+    // Interface language; it applies on the next launch.
+    @State private var language: AppLanguage = AppLanguage.current
+    @State private var languagePending = false
+    private let launchLanguage = AppLanguage.current
 
     var body: some View {
         VStack(spacing: 8) {
             TabView(selection: $settingsTab) {
                 settingsPane {
-                        // MARK: Son
-                        GroupBox("Sound") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Toggle("Enable sounds", isOn: $state.soundEnabled)
+                    // MARK: Son
+                    GroupBox("Sound") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Enable sounds", isOn: $state.soundEnabled)
+                            HStack(spacing: 8) {
+                                Text("Volume")
+                                    .frame(width: 56, alignment: .leading)
+                                Slider(value: $state.soundVolume, in: 0...0.2)
+                                    .disabled(!state.soundEnabled)
+                                Text("\(Int(state.soundVolume / 0.2 * 100)) %")
+                                    .frame(width: 36, alignment: .trailing)
+                                    .monospacedDigit()
+                            }
+                        }
+                        .padding(6)
+                    }
+
+                    // MARK: Timings
+                    GroupBox("Behavior") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Occasional idle glances", isOn: $state.idleAnimationsEnabled)
+                            Text("Mochi occasionally looks around and blinks while resting. Respects Reduce Motion.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                Text("Close after")
+                                TextField("60", value: $state.autoCloseInterval, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 64)
+                                Text("s inactive")
+                            }
+                            HStack(spacing: 8) {
+                                Text("Hide after")
+                                TextField("3", value: absenceMinutes, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 48)
+                                Text("min without movement")
+                            }
+                        }
+                        .padding(6)
+                    }
+
+                    // MARK: Hotkey
+                    GroupBox("Hotkey") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Show island with shortcut", isOn: $state.hotkeyEnabled)
+                            if state.hotkeyEnabled {
                                 HStack(spacing: 8) {
-                                    Text("Volume")
-                                        .frame(width: 56, alignment: .leading)
-                                    Slider(value: $state.soundVolume, in: 0...0.2)
-                                        .disabled(!state.soundEnabled)
-                                    Text("\(Int(state.soundVolume / 0.2 * 100)) %")
-                                        .frame(width: 36, alignment: .trailing)
-                                        .monospacedDigit()
+                                    Text("Shortcut")
+                                        .frame(width: 70, alignment: .leading)
+                                    ShortcutRecorderButton(flags: $hotkeyFlags, code: $hotkeyCode)
+                                        .onChange(of: hotkeyFlags) { _, v in state.hotkeyFlags = v }
+                                        .onChange(of: hotkeyCode)  { _, v in state.hotkeyCode  = v }
+                                    Text("presses this → island opens")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
                                 }
                             }
-                            .padding(6)
                         }
+                        .padding(6)
+                    }
 
-                        // MARK: Timings
-                        GroupBox("Behavior") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Toggle("Occasional idle glances", isOn: $state.idleAnimationsEnabled)
-                                Text("Mochi occasionally looks around and blinks while resting. Respects Reduce Motion.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                HStack(spacing: 8) {
-                                    Text("Close after")
-                                    TextField("60", value: $state.autoCloseInterval, format: .number)
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 64)
-                                    Text("s inactive")
-                                }
-                                HStack(spacing: 8) {
-                                    Text("Hide after")
-                                    TextField("3", value: absenceMinutes, format: .number)
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 48)
-                                    Text("min without movement")
+                    // MARK: Startup
+                    GroupBox("Startup") {
+                        Toggle("Launch at Mac startup", isOn: $launchAtStartup)
+                            .onChange(of: launchAtStartup) { _, on in toggleStartup(on) }
+                            .padding(6)
+                    }
+
+                    // MARK: Language
+                    GroupBox("Language") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker("Language", selection: $language) {
+                                ForEach(AppLanguage.allCases) { lang in
+                                    Text(lang.displayName).tag(lang)
                                 }
                             }
-                            .padding(6)
-                        }
-
-                        // MARK: Hotkey
-                        GroupBox("Hotkey") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Toggle("Show island with shortcut", isOn: $state.hotkeyEnabled)
-                                if state.hotkeyEnabled {
-                                    HStack(spacing: 8) {
-                                        Text("Shortcut")
-                                            .frame(width: 70, alignment: .leading)
-                                        ShortcutRecorderButton(flags: $hotkeyFlags, code: $hotkeyCode)
-                                            .onChange(of: hotkeyFlags) { _, v in state.hotkeyFlags = v }
-                                            .onChange(of: hotkeyCode)  { _, v in state.hotkeyCode  = v }
-                                        Text("presses this → island opens")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
-                                    }
+                            .labelsHidden()
+                            .onChange(of: language) { _, lang in
+                                lang.apply()
+                                languagePending = lang != launchLanguage
+                            }
+                            if languagePending {
+                                HStack(spacing: 8) {
+                                    Text("Coucou needs to restart to change its language.")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                    Spacer(minLength: 4)
+                                    Button("Restart now") { AppLanguage.relaunch() }
                                 }
                             }
-                            .padding(6)
                         }
-
-                        // MARK: Startup
-                        GroupBox("Startup") {
-                            Toggle("Launch at Mac startup", isOn: $launchAtStartup)
-                                .onChange(of: launchAtStartup) { _, on in toggleStartup(on) }
-                                .padding(6)
-                        }
-
-
+                        .padding(6)
+                    }
                 }
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag("general")
 
                 settingsPane {
-                        // MARK: Chat engine
-                        #if APPSTORE
-                        GroupBox("Anthropic API") {
-                            VStack(alignment: .leading, spacing: 8) {
+                    // MARK: Chat engine
+                    #if APPSTORE
+                    GroupBox("Anthropic API") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            apiKeyField
+                        }
+                        .padding(6)
+                    }
+                    #else
+                    GroupBox("Chat") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Who answers in the notch chat. Local CLIs use the login you already have — no API key.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            ForEach(ChatEngine.allCases) { engine in
+                                engineRow(engine)
+                            }
+
+                            HStack(spacing: 8) {
+                                Button("Detect again") {
+                                    detectingCLIs = true
+                                    Task {
+                                        await state.detectCLIs()
+                                        detectingCLIs = false
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(detectingCLIs)
+                                if detectingCLIs {
+                                    ProgressView().controlSize(.small)
+                                }
+                            }
+
+                            if state.chatEngine == .api {
                                 apiKeyField
                             }
-                            .padding(6)
-                        }
-                        #else
-                        GroupBox("Chat") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Who answers in the notch chat. Local CLIs use the login you already have — no API key.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                ForEach(ChatEngine.allCases) { engine in
-                                    engineRow(engine)
-                                }
-
-                                HStack(spacing: 8) {
-                                    Button("Detect again") {
-                                        detectingCLIs = true
-                                        Task {
-                                            await state.detectCLIs()
-                                            detectingCLIs = false
-                                        }
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .disabled(detectingCLIs)
-                                    if detectingCLIs {
-                                        ProgressView().controlSize(.small)
-                                    }
-                                }
-
-                                if state.chatEngine == .api {
-                                    apiKeyField
-                                }
-                                if state.chatEngine == .openai {
-                                    openAIFields
-                                }
-                            }
-                            .padding(6)
-                        }
-                        .task {
-                            if !state.cliDetectionDone {
-                                detectingCLIs = true
-                                await state.detectCLIs()
-                                detectingCLIs = false
+                            if state.chatEngine == .openai {
+                                openAIFields
                             }
                         }
-                        #endif
-
-
+                        .padding(6)
+                    }
+                    .task {
+                        if !state.cliDetectionDone {
+                            detectingCLIs = true
+                            await state.detectCLIs()
+                            detectingCLIs = false
+                        }
+                    }
+                    #endif
                 }
                 .tabItem { Label("Chat", systemImage: "bubble.left") }
                 .tag("chat")
 
                 settingsPane {
-                        // MARK: Hooks
-                        GroupBox("Claude Code Hooks") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                if hookNeedsUpdate {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundColor(.orange)
-                                        Text("Hook timeout outdated — update to fix approvals")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.orange)
-                                    }
-                                    #if APPSTORE
-                                    Button("Update hooks") { installHooksAppStore() }
-                                    #else
-                                    Button("Update hooks") { installHooks() }
-                                    #endif
+                    // MARK: Hooks
+                    GroupBox("Claude Code Hooks") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if hookNeedsUpdate {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Hook timeout outdated — update to fix approvals")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.orange)
                                 }
                                 #if APPSTORE
-                                Text("~/.claude/coucou/nb-hook")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                HStack(spacing: 10) {
-                                    Button("Install hooks") { installHooksAppStore() }
-                                        .buttonStyle(.borderedProminent)
-                                    Button("Uninstall") { uninstallHooksAppStore() }
-                                        .buttonStyle(.bordered)
-                                }
+                                Button("Update hooks") { installHooksAppStore() }
                                 #else
-                                Text("nb-hook : \(HookServer.hookScriptPath)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                HStack(spacing: 10) {
-                                    Button("Install hooks") { installHooks() }
-                                        .buttonStyle(.borderedProminent)
-                                    Button("Uninstall") { uninstallHooks() }
-                                        .buttonStyle(.bordered)
-                                }
-                                #endif
-
-                                #if !APPSTORE
-                                if showDiff {
-                                    ScrollView {
-                                        Text(pendingHookJSON)
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    .frame(height: 140)
-                                    .background(Color(NSColor.textBackgroundColor))
-                                    .cornerRadius(6)
-
-                                    HStack {
-                                        Button("Confirm & write") { confirmInstall() }
-                                            .buttonStyle(.borderedProminent)
-                                        Button("Cancel") { showDiff = false; pendingHookJSON = "" }
-                                            .buttonStyle(.bordered)
-                                    }
-                                }
+                                Button("Update hooks") { installHooks() }
                                 #endif
                             }
-                            .padding(6)
+                            #if APPSTORE
+                            Text("~/.claude/coucou/nb-hook")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                Button("Install hooks") { installHooksAppStore() }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Uninstall") { uninstallHooksAppStore() }
+                                    .buttonStyle(.bordered)
+                            }
+                            #else
+                            Text("nb-hook : \(HookServer.hookScriptPath)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                Button("Install hooks") { installHooks() }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Uninstall") { uninstallHooks() }
+                                    .buttonStyle(.bordered)
+                            }
+                            #endif
+
+                            #if !APPSTORE
+                            if showDiff {
+                                ScrollView {
+                                    Text(pendingHookJSON)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(height: 140)
+                                .background(Color(NSColor.textBackgroundColor))
+                                .cornerRadius(6)
+
+                                HStack {
+                                    Button("Confirm & write") { confirmInstall() }
+                                        .buttonStyle(.borderedProminent)
+                                    Button("Cancel") { showDiff = false; pendingHookJSON = "" }
+                                        .buttonStyle(.bordered)
+                                }
+                            }
+                            #endif
                         }
+                        .padding(6)
+                    }
 
-                        #if !APPSTORE
-                        // MARK: Other coding agents
-                        GroupBox("Codex & opencode") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Codex and opencode sessions get their own pill, and you can approve them from the notch.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                    #if !APPSTORE
+                    // MARK: Other coding agents
+                    GroupBox("Codex & opencode") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Codex and opencode sessions get their own pill, and you can approve them from the notch.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                                // Codex: ~/.codex/hooks.json, previewed before anything is written.
-                                Text("Codex — \(HookServer.codexHooksURL.path)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                HStack(spacing: 10) {
-                                    Button("Install Codex hooks") {
+                            // Codex: ~/.codex/hooks.json, previewed before anything is written.
+                            Text("Codex — \(HookServer.codexHooksURL.path)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                Button("Install Codex hooks") {
+                                    do {
+                                        codexJSON = try HookServer.shared.previewCodexHooks()
+                                        showCodexDiff = true
+                                        agentsMessage = "Review hooks.json below before confirming."
+                                    } catch {
+                                        agentsMessage = "❌ \(error.localizedDescription)"
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Uninstall") {
+                                    do {
+                                        try HookServer.shared.uninstallCodexHooks()
+                                        agentsMessage = "✓ Codex hooks removed."
+                                    } catch {
+                                        agentsMessage = "❌ \(error.localizedDescription)"
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            if showCodexDiff {
+                                ScrollView {
+                                    Text(codexJSON)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(height: 140)
+                                .background(Color(NSColor.textBackgroundColor))
+                                .cornerRadius(6)
+                                HStack {
+                                    Button("Confirm & write") {
                                         do {
-                                            codexJSON = try HookServer.shared.previewCodexHooks()
-                                            showCodexDiff = true
-                                            agentsMessage = "Review hooks.json below before confirming."
+                                            try HookServer.shared.writeCodexHooks()
+                                            showCodexDiff = false
+                                            codexJSON = ""
+                                            agentsMessage = "✓ Codex hooks installed. In Codex, run /hooks once and trust them."
                                         } catch {
                                             agentsMessage = "❌ \(error.localizedDescription)"
+                                            if let fresh = try? HookServer.shared.previewCodexHooks() { codexJSON = fresh }
                                         }
                                     }
                                     .buttonStyle(.borderedProminent)
-                                    Button("Uninstall") {
-                                        do {
-                                            try HookServer.shared.uninstallCodexHooks()
-                                            agentsMessage = "✓ Codex hooks removed."
-                                        } catch {
-                                            agentsMessage = "❌ \(error.localizedDescription)"
-                                        }
-                                    }
-                                    .buttonStyle(.bordered)
-                                }
-                                if showCodexDiff {
-                                    ScrollView {
-                                        Text(codexJSON)
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    .frame(height: 140)
-                                    .background(Color(NSColor.textBackgroundColor))
-                                    .cornerRadius(6)
-                                    HStack {
-                                        Button("Confirm & write") {
-                                            do {
-                                                try HookServer.shared.writeCodexHooks()
-                                                showCodexDiff = false
-                                                codexJSON = ""
-                                                agentsMessage = "✓ Codex hooks installed. In Codex, run /hooks once and trust them."
-                                            } catch {
-                                                agentsMessage = "❌ \(error.localizedDescription)"
-                                                if let fresh = try? HookServer.shared.previewCodexHooks() { codexJSON = fresh }
-                                            }
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        Button("Cancel") { showCodexDiff = false; codexJSON = "" }
-                                            .buttonStyle(.bordered)
-                                    }
-                                }
-
-                                // opencode: one plugin file (experimental).
-                                let plugin = OpencodePlugin.status()
-                                Text("opencode (experimental) — \(plugin.path)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                if plugin.foreign {
-                                    Text("A coucou.js that Coucou didn't write is already there — it is left alone.")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.orange)
-                                } else {
-                                    HStack(spacing: 10) {
-                                        Button(plugin.installed ? (plugin.outdated ? "Update plugin" : "Reinstall plugin") : "Install plugin") {
-                                            do { agentsMessage = "✓ " + (try OpencodePlugin.apply(install: true)) }
-                                            catch { agentsMessage = "❌ \(error.localizedDescription)" }
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        if plugin.installed {
-                                            Button("Remove plugin") {
-                                                do { agentsMessage = "✓ " + (try OpencodePlugin.apply(install: false)) }
-                                                catch { agentsMessage = "❌ \(error.localizedDescription)" }
-                                            }
-                                            .buttonStyle(.bordered)
-                                        }
-                                    }
-                                }
-
-                                if !agentsMessage.isEmpty {
-                                    Text(agentsMessage)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(agentsMessage.hasPrefix("❌") ? .red : .secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    Button("Cancel") { showCodexDiff = false; codexJSON = "" }
+                                        .buttonStyle(.bordered)
                                 }
                             }
-                            .padding(6)
+
+                            // opencode: one plugin file (experimental).
+                            let plugin = OpencodePlugin.status()
+                            Text("opencode (experimental) — \(plugin.path)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            if plugin.foreign {
+                                Text("A coucou.js that Coucou didn't write is already there — it is left alone.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.orange)
+                            } else {
+                                HStack(spacing: 10) {
+                                    Button(plugin.installed ? (plugin.outdated ? "Update plugin" : "Reinstall plugin") : "Install plugin") {
+                                        do { agentsMessage = "✓ " + (try OpencodePlugin.apply(install: true)) }
+                                        catch { agentsMessage = "❌ \(error.localizedDescription)" }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    if plugin.installed {
+                                        Button("Remove plugin") {
+                                            do { agentsMessage = "✓ " + (try OpencodePlugin.apply(install: false)) }
+                                            catch { agentsMessage = "❌ \(error.localizedDescription)" }
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                            }
+
+                            if !agentsMessage.isEmpty {
+                                Text(agentsMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(agentsMessage.hasPrefix("❌") ? .red : .secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        #endif
-
-
+                        .padding(6)
+                    }
+                    #endif
                 }
                 .tabItem { Label("Agents", systemImage: "terminal") }
                 .tag("agents")
 
                 settingsPane {
-                        // MARK: Integrations
-                        GroupBox("Integrations") {
-                            VStack(alignment: .leading, spacing: 14) {
+                    // MARK: Integrations
+                    GroupBox("Integrations") {
+                        VStack(alignment: .leading, spacing: 14) {
 
-                                // Resend
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#22C55E")).frame(width: 8, height: 8)
-                                        Text("Resend").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    SecureField("API key  (re_…)", text: $resendKey)
-                                        .textFieldStyle(.roundedBorder)
-                                    TextField("From address  (you@yourdomain.com)", text: $resendFrom)
-                                        .textFieldStyle(.roundedBorder)
+                            // Resend
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#22C55E")).frame(width: 8, height: 8)
+                                    Text("Resend").font(.system(size: 12, weight: .semibold))
                                 }
-
-                                // n8n
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#F29B38")).frame(width: 8, height: 8)
-                                        Text("n8n").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    TextField("Instance URL  (https://…)", text: $n8nUrl)
-                                        .textFieldStyle(.roundedBorder)
-                                    SecureField("API key", text: $n8nKey)
-                                        .textFieldStyle(.roundedBorder)
-                                    IntegrationFilterRow(
-                                        label: "Workflows",
-                                        items: n8nWorkflows,
-                                        filter: $state.n8nWorkflowFilter,
-                                        loading: loadingN8n,
-                                        onLoad: loadN8nWorkflows
-                                    )
-                                }
-
-                                // Vercel
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#7C5CFF")).frame(width: 8, height: 8)
-                                        Text("Vercel").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    SecureField("Token", text: $vercelToken)
-                                        .textFieldStyle(.roundedBorder)
-                                    IntegrationFilterRow(
-                                        label: "Projects",
-                                        items: vercelProjects,
-                                        filter: $state.vercelProjectFilter,
-                                        loading: loadingVercel,
-                                        onLoad: loadVercelProjects
-                                    )
-                                }
-
-                                // GitHub
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#F4505E")).frame(width: 8, height: 8)
-                                        Text("GitHub").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    SecureField("Personal Access Token", text: $githubToken)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                // Stripe
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#0570DE")).frame(width: 8, height: 8)
-                                        Text("Stripe").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    SecureField("Secret key  (sk_live_… or sk_test_…)", text: $stripeKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                // Cal.com
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#C9956A")).frame(width: 8, height: 8)
-                                        Text("Cal.com").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    SecureField("API key  (cal_live_…)", text: $calcomKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                // Notion
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Circle().fill(Color(hex: "#E8E8E8")).frame(width: 8, height: 8)
-                                        Text("Notion").font(.system(size: 12, weight: .semibold))
-                                    }
-                                    SecureField("Integration token  (secret_…)", text: $notionKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                Button("Save integrations") { saveIntegrations() }
-                                    .buttonStyle(.borderedProminent)
+                                SecureField("API key  (re_…)", text: $resendKey)
+                                    .textFieldStyle(.roundedBorder)
+                                TextField("From address  (you@yourdomain.com)", text: $resendFrom)
+                                    .textFieldStyle(.roundedBorder)
                             }
-                            .padding(6)
-                        }
 
-                        // MARK: Active pills
-                        GroupBox("Active pills") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Text("VS Code")
-                                        .font(.system(size: 12, weight: .semibold))
-                                    Circle().fill(Color(hex: "#F5F6F8")).frame(width: 8, height: 8)
-                                    Spacer()
-                                    Text("Always active")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
+                            // n8n
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#F29B38")).frame(width: 8, height: 8)
+                                    Text("n8n").font(.system(size: 12, weight: .semibold))
                                 }
+                                TextField("Instance URL  (https://…)", text: $n8nUrl)
+                                    .textFieldStyle(.roundedBorder)
+                                SecureField("API key", text: $n8nKey)
+                                    .textFieldStyle(.roundedBorder)
+                                IntegrationFilterRow(
+                                    label: "Workflows",
+                                    items: n8nWorkflows,
+                                    filter: $state.n8nWorkflowFilter,
+                                    loading: loadingN8n,
+                                    onLoad: loadN8nWorkflows
+                                )
+                            }
 
-                                Divider()
+                            // Vercel
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#7C5CFF")).frame(width: 8, height: 8)
+                                    Text("Vercel").font(.system(size: 12, weight: .semibold))
+                                }
+                                SecureField("Token", text: $vercelToken)
+                                    .textFieldStyle(.roundedBorder)
+                                IntegrationFilterRow(
+                                    label: "Projects",
+                                    items: vercelProjects,
+                                    filter: $state.vercelProjectFilter,
+                                    loading: loadingVercel,
+                                    onLoad: loadVercelProjects
+                                )
+                            }
 
-                                Text("\(state.activeIntegrations.count)/4 slots used")
+                            // GitHub
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#F4505E")).frame(width: 8, height: 8)
+                                    Text("GitHub").font(.system(size: 12, weight: .semibold))
+                                }
+                                SecureField("Personal Access Token", text: $githubToken)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            // Stripe
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#0570DE")).frame(width: 8, height: 8)
+                                    Text("Stripe").font(.system(size: 12, weight: .semibold))
+                                }
+                                SecureField("Secret key  (sk_live_… or sk_test_…)", text: $stripeKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            // Cal.com
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#C9956A")).frame(width: 8, height: 8)
+                                    Text("Cal.com").font(.system(size: 12, weight: .semibold))
+                                }
+                                SecureField("API key  (cal_live_…)", text: $calcomKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            // Notion
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color(hex: "#E8E8E8")).frame(width: 8, height: 8)
+                                    Text("Notion").font(.system(size: 12, weight: .semibold))
+                                }
+                                SecureField("Integration token  (secret_…)", text: $notionKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            Button("Save integrations") { saveIntegrations() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(6)
+                    }
+
+                    // MARK: Active pills
+                    GroupBox("Active pills") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("VS Code")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Circle().fill(Color(hex: "#F5F6F8")).frame(width: 8, height: 8)
+                                Spacer()
+                                Text("Always active")
                                     .font(.system(size: 11))
-                                    .foregroundColor(state.activeIntegrations.count >= 4 ? .orange : .secondary)
+                                    .foregroundColor(.secondary)
+                            }
 
-                                ForEach(AgentTask.toggleableIntegrationIds, id: \.self) { id in
-                                    let task = AgentTask.integrationAgents.first { $0.id == id }!
-                                    let isOn = state.activeIntegrations.contains(id)
-                                    let atMax = state.activeIntegrations.count >= 4 && !isOn
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(Color(hex: task.color))
-                                            .frame(width: 10, height: 10)
-                                        Text(task.name)
-                                            .font(.system(size: 12))
-                                            .foregroundColor(atMax ? .secondary : .primary)
-                                        Spacer()
-                                        Toggle("", isOn: Binding(
-                                            get: { isOn },
-                                            set: { _ in state.toggleIntegration(id) }
-                                        ))
-                                        .labelsHidden()
-                                        .disabled(atMax)
-                                    }
+                            Divider()
+
+                            Text("\(state.activeIntegrations.count)/4 slots used")
+                                .font(.system(size: 11))
+                                .foregroundColor(state.activeIntegrations.count >= 4 ? .orange : .secondary)
+
+                            ForEach(AgentTask.toggleableIntegrationIds, id: \.self) { id in
+                                let task = AgentTask.integrationAgents.first { $0.id == id }!
+                                let isOn = state.activeIntegrations.contains(id)
+                                let atMax = state.activeIntegrations.count >= 4 && !isOn
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(Color(hex: task.color))
+                                        .frame(width: 10, height: 10)
+                                    Text(task.name)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(atMax ? .secondary : .primary)
+                                    Spacer()
+                                    Toggle("", isOn: Binding(
+                                        get: { isOn },
+                                        set: { _ in state.toggleIntegration(id) }
+                                    ))
+                                    .labelsHidden()
+                                    .disabled(atMax)
                                 }
                             }
-                            .padding(6)
                         }
-
-
+                        .padding(6)
+                    }
                 }
                 .tabItem { Label("Integrations", systemImage: "square.grid.2x2") }
                 .tag("integrations")

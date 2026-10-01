@@ -61,13 +61,16 @@ targets:
       # Spanish UI strings; copied to Coucou.app/Contents/Resources/es.lproj.
       - path: Resources/es.lproj/Localizable.strings
         buildPhase: resources
+      # Brazilian Portuguese UI strings (after upstream PR #33).
+      - path: Resources/pt-BR.lproj/Localizable.strings
+        buildPhase: resources
     info:
       path: Resources/Info.plist
       properties:
         CFBundleName: Coucou
         CFBundleDisplayName: Coucou
         CFBundleIdentifier: fr.louisraille.NotchBuddy
-        CFBundleLocalizations: [en, es]
+        CFBundleLocalizations: [en, es, pt-BR]
         CFBundleVersion: "2"
         CFBundleShortVersionString: "0.1.1"
         CFBundlePackageType: APPL
@@ -99,13 +102,16 @@ targets:
       # Spanish UI strings; copied to Coucou.app/Contents/Resources/es.lproj.
       - path: Resources/es.lproj/Localizable.strings
         buildPhase: resources
+      # Brazilian Portuguese UI strings (after upstream PR #33).
+      - path: Resources/pt-BR.lproj/Localizable.strings
+        buildPhase: resources
     info:
       path: Resources/InfoAppStore.plist
       properties:
         CFBundleName: Coucou
         CFBundleDisplayName: Coucou
         CFBundleIdentifier: fr.louisraille.Coucou
-        CFBundleLocalizations: [en, es]
+        CFBundleLocalizations: [en, es, pt-BR]
         CFBundleVersion: "4"
         CFBundleShortVersionString: "1.0"
         CFBundlePackageType: APPL

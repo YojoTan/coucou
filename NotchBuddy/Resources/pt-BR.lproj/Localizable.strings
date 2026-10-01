@@ -1,0 +1,161 @@
+/* Brazilian Portuguese localization for Coucou (after upstream PR #33).
+   Keys are the English literals passed to SwiftUI views (Text, Button, Toggle,
+   TextField, SecureField, GroupBox, Menu, .help). Interpolated literals use
+   format keys: %lld for Int, %@ for String. Same keys as es.lproj. */
+
+/* MARK: - Island: empty, question, error, confused */
+"Nothing running right now." = "Nada em execução agora.";
+"Drop a file or window, or ask me anything." = "Solte um arquivo ou uma janela, ou me pergunte qualquer coisa.";
+"Which search engine to use?" = "Qual buscador devo usar?";
+"Workflow stopped." = "Fluxo de trabalho interrompido.";
+"Gmail node timed out after 30s. Retry or open n8n." = "O nó do Gmail excedeu o tempo limite após 30 s. Tente de novo ou abra o n8n.";
+"Too many hits at once." = "Muitos toques de uma vez.";
+"Give me a sec — back to work in three seconds." = "Só um segundo — volto ao trabalho em três segundos.";
+
+/* MARK: - Island: upload, choose, mail */
+"Drop your files here" = "Solte seus arquivos aqui";
+"Uploading %@" = "Enviando %@";
+" is ready." = " está pronto.";
+"%@ is ready." = "%@ está pronto.";
+"What do you want to do with it?" = "O que você quer fazer com ele?";
+"Ask a question about it" = "Fazer uma pergunta sobre ele";
+"Send by email" = "Enviar por e-mail";
+"New email" = "Novo e-mail";
+"with" = "com";
+
+/* MARK: - Island: prompt */
+"Clipboard · %lld chars" = "Área de transferência · %lld caracteres";
+"Ask about the clipboard" = "Perguntar sobre a área de transferência";
+"Ask me anything…" = "Pergunte qualquer coisa…";
+"Continue…" = "Continuar…";
+
+/* MARK: - Island: integration cards */
+"Show the next session" = "Mostrar a próxima sessão";
+"Integration" = "Integração";
+"Open Visual Studio Code" = "Abrir o Visual Studio Code";
+"Open %@" = "Abrir %@";
+"Refresh" = "Atualizar";
+"Settings…" = "Ajustes…";
+"Deployments" = "Implantações";
+"Emails" = "E-mails";
+"Overview" = "Visão geral";
+"Payments" = "Pagamentos";
+"Schedule" = "Agenda";
+"No calls scheduled" = "Nenhuma chamada agendada";
+"Recent" = "Recentes";
+"Completed successfully." = "Concluído com sucesso.";
+"No error details available." = "Sem detalhes do erro.";
+
+/* MARK: - Island: quick settings */
+"Sound" = "Som";
+"Auto-close · %llds" = "Fechar automaticamente · %llds";
+
+/* MARK: - Settings: chat engine */
+"Anthropic API" = "API da Anthropic";
+"Who answers in the notch chat. Local CLIs use the login you already have — no API key." = "Quem responde no chat do notch. As CLIs locais usam o login que você já tem — sem chave de API.";
+"Detect again" = "Detectar de novo";
+"API key (sk-ant-…)" = "Chave de API (sk-ant-…)";
+"Save" = "Salvar";
+"Preset…" = "Predefinição…";
+"Base URL (e.g. http://localhost:11434/v1)" = "URL base (ex.: http://localhost:11434/v1)";
+"Model (e.g. llama3.2)" = "Modelo (ex.: llama3.2)";
+"API key — optional, local servers need none" = "Chave de API — opcional, servidores locais não precisam";
+"https only, except servers on this Mac. Text and images; PDFs need the API or a CLI." = "Só https, exceto servidores neste Mac. Texto e imagens; PDFs precisam da API ou de uma CLI.";
+
+/* MARK: - Settings: Claude Code hooks */
+"Claude Code Hooks" = "Hooks do Claude Code";
+"Hook timeout outdated — update to fix approvals" = "Tempo limite do hook desatualizado — atualize para corrigir as aprovações";
+"Update hooks" = "Atualizar hooks";
+"Install hooks" = "Instalar hooks";
+"Uninstall" = "Desinstalar";
+"Confirm & write" = "Confirmar e gravar";
+"Cancel" = "Cancelar";
+
+/* MARK: - Settings: Codex & opencode */
+"Codex and opencode sessions get their own pill, and you can approve them from the notch." = "As sessões do Codex e do opencode ganham a própria pílula, e você pode aprová-las pelo notch.";
+"Install Codex hooks" = "Instalar hooks do Codex";
+"A coucou.js that Coucou didn't write is already there — it is left alone." = "Já existe um coucou.js que o Coucou não escreveu — ele não será alterado.";
+"Update plugin" = "Atualizar plugin";
+"Reinstall plugin" = "Reinstalar plugin";
+"Install plugin" = "Instalar plugin";
+"Remove plugin" = "Remover plugin";
+
+/* MARK: - Settings: integrations */
+"Integrations" = "Integrações";
+"API key  (re_…)" = "Chave de API  (re_…)";
+"From address  (you@yourdomain.com)" = "Remetente  (voce@seudominio.com)";
+"Instance URL  (https://…)" = "URL da instância  (https://…)";
+"API key" = "Chave de API";
+"Personal Access Token" = "Token de acesso pessoal";
+"Secret key  (sk_live_… or sk_test_…)" = "Chave secreta  (sk_live_… ou sk_test_…)";
+"API key  (cal_live_…)" = "Chave de API  (cal_live_…)";
+"Integration token  (secret_…)" = "Token de integração  (secret_…)";
+"Save integrations" = "Salvar integrações";
+"Load list" = "Carregar lista";
+"Clear" = "Limpar";
+"Watching %lld of %lld" = "Acompanhando %lld de %lld";
+
+/* MARK: - Settings: sound */
+"Enable sounds" = "Ativar sons";
+"Volume" = "Volume";
+
+/* MARK: - Settings: behavior */
+"Behavior" = "Comportamento";
+"Occasional idle glances" = "Olhadas ocasionais em repouso";
+"Mochi occasionally looks around and blinks while resting. Respects Reduce Motion." = "Mochi olha em volta e pisca de vez em quando enquanto descansa. Respeita Reduzir movimento.";
+"Close after" = "Fechar após";
+"s inactive" = "s de inatividade";
+"Hide after" = "Ocultar após";
+"min without movement" = "min sem movimento";
+
+/* MARK: - Settings: active pills */
+"Active pills" = "Pílulas ativas";
+"Always active" = "Sempre ativa";
+"%lld/4 slots used" = "%lld/4 espaços usados";
+
+/* MARK: - Settings: hotkey and startup */
+"Hotkey" = "Atalho de teclado";
+"Show island with shortcut" = "Mostrar a ilha com um atalho";
+"Shortcut" = "Atalho";
+"presses this → island opens" = "ao pressionar → a ilha abre";
+"Startup" = "Inicialização";
+"Launch at Mac startup" = "Abrir ao iniciar o Mac";
+
+/* Custom buttons and the who-row (looked up with LocalizedStringKey) */
+"Ask Claude" = "Perguntar ao Claude";
+"Deny" = "Negar";
+"Allow" = "Permitir";
+"Always" = "Sempre";
+"Review in VS Code" = "Revisar no VS Code";
+"Retry" = "Tentar de novo";
+"Open in n8n" = "Abrir no n8n";
+"Open terminal" = "Abrir terminal";
+"Ask a question" = "Fazer uma pergunta";
+"Open" = "Abrir";
+"Copy" = "Copiar";
+"Close" = "Fechar";
+"Send" = "Enviar";
+"Sending…" = "Enviando…";
+"needs permission" = "pede permissão";
+"Claude Code finished" = "Claude Code terminou";
+"Claude Code is asking a question" = "Claude Code está fazendo uma pergunta";
+
+/* Orca */
+"%@ needs permission" = "%@ pede permissão";
+"%@ finished" = "%@ terminou";
+"Orca isn't running on this Mac." = "O Orca não está aberto neste Mac.";
+"Open Orca" = "Abrir o Orca";
+"working" = "trabalhando";
+"done" = "concluído";
+"active" = "ativo";
+"idle" = "inativo";
+
+/* Settings tabs */
+"General" = "Geral";
+"Agents" = "Agentes";
+
+/* Language */
+"Language" = "Idioma";
+"System default" = "Padrão do sistema";
+"Coucou needs to restart to change its language." = "O Coucou precisa reiniciar para mudar de idioma.";
+"Restart now" = "Reiniciar agora";

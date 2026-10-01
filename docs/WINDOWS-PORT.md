@@ -1,6 +1,6 @@
 # Porting the 2026-10 macOS work to Windows
 
-Brief for whoever (human or agent) brings PRs #1, #2, #3, #5, #6 and #7 to the Windows build
+Brief for whoever (human or agent) brings PRs #1, #2, #3, #5, #6, #7 and #8 to the Windows build
 (`windows/`, Tauri: Rust in `src-tauri/`, TypeScript in `src/`). It says what each
 feature does, where the macOS code is, how to do it on Windows, and how to know
 it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
@@ -31,6 +31,9 @@ wants a live check on a real setup is said in the row.
 | The pet as a companion: approve from it, drop files on it, ask it, the squad, hide while presenting (#7) | done | done (parity 9/n; the card keeps the island's rules: no Always, Allow only when the whole command shows) |
 | The pet's physics and moods: throw, peek, pet, "come here", the window walker (#7) | done | done (parity 9/n) — wants a live try |
 | Seasonal outfits and LAN visitors (#7) | done | done (parity 9/n) |
+| Costumes per pill, expressive hands, the outlaw's tricks (#8) | done | — |
+| Coloured Mochis as a material; the pet's halo in Mochi's colour (#8) | done | — |
+| Answering an Orca agent's permission from the pet and the island (#8) | done | — |
 
 ## Step 0 — build, and check the LAN fix (do this first)
 
@@ -86,6 +89,7 @@ poller works only while its pill is on.
 8. Extras.
 9. Desktop Mochi and the island across screens (section 8).
 10. Worktrees from Mochi, and the pet's menu (section 9).
+11. Costumes, hands, the material; Orca permissions (section 11).
 
 ---
 
@@ -451,6 +455,75 @@ squad, visitors), `DesktopMochi.swift` (drops, the bubble's answers, wiring),
   the sender's colour walks in from the pet's screen's nearest edge (1.6 s, in
   small steps), both wave, the bubble says what it brought, and after a couple
   of seconds it walks back out.
+
+## 11. Costumes, hands, the material; Orca permissions (#8)
+
+**macOS:** `MochiThemes.swift` (costumes, assignments), `MochiHands.swift`
+(poses, props, the outlaw's tricks), `BodyPalette` and `drawBody` in
+`BotEngine.swift`, the pet's halo in `DesktopMochi.swift`, `OrcaPoller.answer`
+and `OrcaParse` (`ExtrasParse.swift`), the cards in `PetHUD.swift` /
+`IslandViewContent.swift`.
+
+### 11.1 Costumes
+
+Assignments `[pill id: theme]` in settings (`mochi-themes`; default Spotify →
+`outlaw`); the main Mochi and the pet wear the focused pill's, minis their
+own. Themes: `outlaw`, `wizard`, `pirate`, `astronaut`, `idol` — original
+designs, keep them so. A costume with headwear hides the pill's accessory
+(a Focus mode's mask stays). **They turn with the face:** `faceShift` is the
+eyes' displacement from straight ahead; clothes (jackets, collar) move by it
+fully, headwear by (0.5, 0.35) of it, the idol's hair stays on the skull and
+only lifts (0.55 of an upward shift); everything on the body starts below the
+mouth (jacket top at 0.6 ry) so the mouth and the whistle show.
+
+### 11.2 Hands
+
+Visible whenever the body radius is over 14 pt (not on minis). Poses in body
+half-units, eased (`k = 1 − 0.0004^dt`), the layer (front/behind) switching at
+once: rest (1.24, 0.66), typing (0.6, 0.56 ± 0.08, front), chin (0.4, 0.42,
+front), shading the eyes (0.22, −0.62, front), raised (1.28, −0.78), cheer
+(1.22, −0.82), cheeks on error (0.78, 0.12, front), music pump (1.28,
+0.35 − 0.55·hit), talking (1.22 + …), sleep (1.16, 0.74, small). The idol's
+four-beat choreography and finger heart; props: blaster, wand, cutlass.
+
+### 11.3 The outlaw
+
+Blasters at the hips at rest, spinning to the beat; a bolt **out of the
+barrel's mouth along the barrel** every fourth beat (same transform as the
+drawing: mirror, scale, rotate, place); recoil (0.14 s kick, muzzle up) and
+three impact sparks where a bolt ends; a 360° twirl every 8 beats; a moonwalk
+(±0.22 R) every 16; heat after ≥ 6 shots in 8 s (red barrels, steam); a new
+track → a roll and a fan of five bolts upward; pause → smoke and a wink;
+resume → both twirl; idle quick draw every 14–28 s; aims the blaster on the
+cursor's side when the cursor is near; rocket-boot flames on the pet's hops and
+throws; a tape player whose reels turn while playing. The pet's window is 120 pt
+with Mochi drawn 92 pt in the middle, so hands, props and bolts aren't clipped.
+
+### 11.4 The material
+
+A coloured body: a three-stop gradient (light → base → dark) top-right to
+bottom-left; light = hue toward warm (0.14) by 0.025, saturation ×0.78,
+brightness +0.16; dark = toward cool (0.72) by 0.035, ×1.12, ×0.7 — each the
+shorter way round the hue circle (orange darkens into red, not olive); inner
+glow, rim shadow (cool, ×0.35), bounce light at the bottom, sheen and a
+specular dot (minis: gradient, rim, sheen only); hands use the same palette.
+Cache it per colour. The pet's halo is the palette's dark tone (the white
+Mochi: its state colour × (0.5, 0.52, 0.6)), 0.8 → 0.5 → 0 radially.
+
+### 11.5 Answering an Orca agent's permission
+
+No Orca API exists: the answer is the key the user would press. On a click
+only, and only if, right before: Orca still reports that worktree as
+`permission` with the same pane, the agent is `claude`, and
+`terminal.read {screen: true, limit: 400}` shows Claude Code's dialog
+(`OrcaParse.showsPermissionDialog`: colour codes stripped, trailing empty
+rows dropped, "Do you want…/proceed?", "1. Yes", "No, and tell…/(esc)", and
+"2. Yes" for Always). Then `terminal.send` one key — `1`, `2`, or Escape — and
+re-check after 1.2 s. Otherwise nothing is sent and the card says why; the log
+records which parts of the dialog were seen, never the screen. Other agents get
+"Open in Orca" only. Poll `worktree.ps` every 1.5 s so the card appears within
+a couple of seconds. **Pitfall from macOS:** state observed through a
+change-before signal (Combine's `@Published`) must be read after the change.
 
 ## Don't change
 

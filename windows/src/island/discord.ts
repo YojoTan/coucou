@@ -40,17 +40,52 @@ const names = new Map<string, string>();
 let highFived = new Set<string>();
 let pausedSpotify = false;
 let missed = 0;
+let deferred: string | null = null; // the sound waiting for a pause
+let wasMuted = false;
 
 /** When the call began (ms), for Mochi's fatigue. */
 export function callStartedAt(): number | null {
   return startedAt;
 }
 
-/** Call mode: Sound asks before every sound. */
-export function callSilences(): boolean {
-  if (startedAt == null || !State.settings.discord?.quietCalls) return false;
-  missed += 1;
-  return true;
+/** Call mode: Sound asks before every sound (DiscordCall.shouldSilence). */
+export function callSilences(name: string): boolean {
+  if (startedAt == null) return false;
+  switch (State.settings.discord?.callSounds ?? "smart") {
+    case "always":
+      return false;
+    case "never":
+      missed += 1;
+      return true;
+    default:
+      if (!conversationGoing()) return false;
+      deferred = name; // the latest wins; one sound when the pause comes
+      return true;
+  }
+}
+
+/** Mochi's voice: not over a conversation, not when the user chose silence. */
+export function callWouldInterrupt(): boolean {
+  if (startedAt == null) return false;
+  const mode = State.settings.discord?.callSounds ?? "smart";
+  return mode === "never" || (mode === "smart" && conversationGoing());
+}
+
+/** Mic open and someone speaking: the only time a sound would get in the way. */
+function conversationGoing(): boolean {
+  const d = State.discord;
+  return (d?.voice?.speaking.length ?? 0) > 0 && !d!.selfMute && !d!.selfDeaf;
+}
+
+/** A pause (1.5 s with nobody speaking), a mute, or the end of the call: play what waited. */
+function releaseDeferred(delay = 1500) {
+  if (deferred == null) return;
+  window.setTimeout(() => {
+    const name = deferred;
+    if (name == null || conversationGoing()) return;
+    deferred = null;
+    Sound.play(name);
+  }, delay);
 }
 
 function spotifyPlaying(): boolean {
@@ -100,6 +135,7 @@ function callEnded() {
   let top: [string, number] | null = null;
   for (const [id, ms] of talked) if (id !== me && (!top || ms > top[1])) top = [id, ms];
   startedAt = null;
+  releaseDeferred(300);
   if (pausedSpotify) {
     pausedSpotify = false;
     if (!spotifyPlaying()) void Bridge.mediaControl("play");
@@ -152,6 +188,7 @@ function voiceChanged(v: DiscordVoice | null) {
   const is = new Set(v.speaking);
   for (const id of is) if (!was.has(id)) talkStart.set(id, now);
   for (const id of was) if (!is.has(id)) closeTalk(id, now);
+  if (v.speaking.length === 0) releaseDeferred();
 }
 
 // ── Presence (opt-in): Claude Code at work, or what Spotify plays ───────────
@@ -199,6 +236,9 @@ let micOn = false;
 /** The meter listens only while Discord has the user muted in a call, with the switch on. */
 function followMic() {
   const d = State.discord;
+  const muted = !!d?.voice && (d.selfMute || d.selfDeaf);
+  if (muted && !wasMuted) releaseDeferred(200);
+  wasMuted = muted;
   const want = !!d?.voice && (d.selfMute || d.selfDeaf) && !!State.settings.discord?.mutedAlert;
   if (want === micOn) return;
   micOn = want;

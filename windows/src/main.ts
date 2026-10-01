@@ -81,8 +81,8 @@ async function main() {
   });
 
   // Do Not Disturb and Sleep keep Coucou quiet; a toast shows the hidden island.
-  // A Discord call (call mode) too, counting what it silenced for the summary.
-  Sound.silenced = () => silences(State.settings.focusMode) || callSilences();
+  // A Discord call too: now, after the conversation's pause, or never (counted).
+  Sound.silenced = (name) => silences(State.settings.focusMode) || callSilences(name);
   State.onToast = () => island.reveal();
 
   registerHookHandlers(island);

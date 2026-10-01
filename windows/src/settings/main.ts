@@ -689,7 +689,7 @@ function githubStatus(): HTMLElement {
 
 function discordSection(present: Record<string, boolean>): HTMLElement {
   const prefs = settings.discord ?? {
-    postFinished: false, postPermission: false, pauseSpotify: true, quietCalls: true, lockMute: true, presence: false, mutedAlert: false,
+    postFinished: false, postPermission: false, pauseSpotify: true, callSounds: "smart", lockMute: true, presence: false, mutedAlert: false,
   };
   settings.discord = prefs;
   const persist = async () => {
@@ -778,8 +778,15 @@ function discordSection(present: Record<string, boolean>): HTMLElement {
     test.disabled = false;
   });
 
-  const sw = (label: string, key: keyof typeof prefs) =>
+  type Switch = { [K in keyof typeof prefs]: (typeof prefs)[K] extends boolean ? K : never }[keyof typeof prefs];
+  const sw = (label: string, key: Switch) =>
     h("div", { class: "row" }, h("label", { text: label }), toggle(prefs[key], (v) => { prefs[key] = v; void persist(); }));
+  const callSounds = h("select", {}) as HTMLSelectElement;
+  for (const [value, label] of [["always", t("Always")], ["smart", t("Smart: not while someone speaks and your mic is open")], ["never", t("Never (summed up after)")]]) {
+    callSounds.append(h("option", { value, text: label }));
+  }
+  callSounds.value = prefs.callSounds;
+  callSounds.addEventListener("change", () => { prefs.callSounds = callSounds.value as typeof prefs.callSounds; void persist(); });
 
   return h(
     "section",
@@ -792,7 +799,8 @@ function discordSection(present: Record<string, boolean>): HTMLElement {
     status,
     h("h3", { text: t("During calls") }),
     sw(t("Pause Spotify during calls"), "pauseSpotify"),
-    sw(t("Call mode: Coucou stays quiet, and sums up after"), "quietCalls"),
+    h("div", { class: "row" }, h("label", { text: t("Coucou's sounds in a call") }), callSounds),
+    h("div", { class: "hint", text: t("Smart: muted, or with nobody speaking, sounds play as usual; during a conversation a sound waits for the next pause instead of being lost.") }),
     sw(t("Mute me when the screen locks"), "lockMute"),
     sw(t("Warn me when I talk while muted"), "mutedAlert"),
     h("div", { class: "hint", text: t("Coucou listens to the microphone's level only — while you're muted in a call, never recorded, never sent. Windows shows its microphone icon meanwhile.") }),

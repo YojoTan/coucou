@@ -158,7 +158,8 @@ export interface DiscordPrefs {
   postFinished: boolean;
   postPermission: boolean;
   pauseSpotify: boolean;
-  quietCalls: boolean;
+  /** Coucou's sounds in a call: always, smart (not over a conversation), never. */
+  callSounds: "always" | "smart" | "never";
   lockMute: boolean;
   presence: boolean;
   mutedAlert: boolean;

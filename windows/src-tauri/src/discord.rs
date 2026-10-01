@@ -104,6 +104,16 @@ pub struct Snapshot {
     pub unread: u32,
 }
 
+/// Coucou's sounds during a call: always, not over a conversation, or never.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CallSounds {
+    Always,
+    #[default]
+    Smart,
+    Never,
+}
+
 /// Settings → Discord, beside the keys (all automatic actions have a switch).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -111,7 +121,7 @@ pub struct DiscordPrefs {
     pub post_finished: bool,
     pub post_permission: bool,
     pub pause_spotify: bool,
-    pub quiet_calls: bool,
+    pub call_sounds: CallSounds,
     pub lock_mute: bool,
     pub presence: bool,
     pub muted_alert: bool,
@@ -119,7 +129,7 @@ pub struct DiscordPrefs {
 
 impl Default for DiscordPrefs {
     fn default() -> Self {
-        Self { post_finished: false, post_permission: false, pause_spotify: true, quiet_calls: true, lock_mute: true, presence: false, muted_alert: false }
+        Self { post_finished: false, post_permission: false, pause_spotify: true, call_sounds: CallSounds::Smart, lock_mute: true, presence: false, muted_alert: false }
     }
 }
 
@@ -976,5 +986,13 @@ mod tests {
                                  "output": { "device_id": "b", "available_devices": [] } })).unwrap();
         assert_eq!(d.inputs[0].name, "Mic");
         assert_eq!(d.output, "b");
+    }
+    #[test]
+    fn call_sounds_default_to_smart() {
+        let p: DiscordPrefs = serde_json::from_str("{}").unwrap();
+        assert_eq!(p.call_sounds, CallSounds::Smart);
+        let p: DiscordPrefs = serde_json::from_str(r#"{"callSounds":"never"}"#).unwrap();
+        assert_eq!(p.call_sounds, CallSounds::Never);
+        assert_eq!(serde_json::to_value(DiscordPrefs::default()).unwrap()["callSounds"], "smart");
     }
 }

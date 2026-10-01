@@ -322,7 +322,6 @@ export const ES: Record<string, string> = {
   "{n} mentions": "{n} menciones",
   "All read": "Todo leído",
   "Approve Coucou in the Discord window.": "Aprueba Coucou en la ventana de Discord.",
-  "Call mode: Coucou stays quiet, and sums up after": "Modo llamada: Coucou se calla y resume al final",
   "Call · {n} min": "Llamada · {n} min",
   "Connect Discord in Settings for calls, mute and DMs.": "Conecta Discord en Ajustes para llamadas, silencio y mensajes directos.",
   "Connect to Discord": "Conectar con Discord",
@@ -381,4 +380,10 @@ export const ES: Record<string, string> = {
   "Warn me when I talk while muted": "Avisarme si hablo con el micrófono silenciado",
   "Coucou listens to the microphone's level only — while you're muted in a call, never recorded, never sent. Windows shows its microphone icon meanwhile.": "Coucou solo escucha el nivel del micrófono, mientras estás silenciado en una llamada; nunca graba ni envía nada. Windows muestra su icono de micrófono mientras tanto.",
   "Transcribing the call isn't on Windows: its dictation sends the audio to Microsoft, and Coucou keeps your voice on this PC.": "La transcripción de la llamada no está en Windows: su dictado envía el audio a Microsoft, y Coucou mantiene tu voz en este equipo.",
+  // ── Discord call sounds ─────────────────────────────────────────────────────
+  "Always": "Siempre",
+  "Coucou's sounds in a call": "Sonidos de Coucou en una llamada",
+  "Smart: not while someone speaks and your mic is open": "Inteligente: no mientras alguien habla y tu micrófono está abierto",
+  "Never (summed up after)": "Nunca (resumen al colgar)",
+  "Smart: muted, or with nobody speaking, sounds play as usual; during a conversation a sound waits for the next pause instead of being lost.": "Inteligente: silenciado, o sin nadie hablando, los sonidos suenan normal; durante una conversación, el sonido espera a la siguiente pausa en vez de perderse.",
 };

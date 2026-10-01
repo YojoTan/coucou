@@ -2,9 +2,12 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    # The fork's work branches too: macOS changes are written on Windows and
+    # this is where they get compiled.
+    branches: [main, 'mochi-*', 'security-*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Build checks only read the repository.
 permissions:
@@ -39,6 +42,17 @@ jobs:
           xcodebuild \
             -project NotchBuddy/NotchBuddy.xcodeproj \
             -scheme NotchBuddy \
+            -configuration Release \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      # The sandboxed target compiles the #if APPSTORE paths the one above skips.
+      - name: Build App Store target
+        run: |
+          xcodebuild \
+            -project NotchBuddy/NotchBuddy.xcodeproj \
+            -scheme CoucouAppStore \
             -configuration Release \
             build \
             CODE_SIGNING_ALLOWED=NO \

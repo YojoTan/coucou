@@ -107,6 +107,9 @@ export const Bridge = {
   lanSendFile: (id: string, path: string) => callOrThrow<void>("lan_send_file", { id, path }),
   lanSetStatus: (state: string, label: string) => call<void>("lan_set_status", { state, label }),
   lanReveal: (path: string) => call<boolean>("lan_reveal", { path }),
+  /** The Open dialog; [token, file name] — the path stays in Rust. */
+  lanPickFile: () => call<[string, string] | null>("lan_pick_file"),
+  lanSendPicked: (id: string, token: string) => callOrThrow<void>("lan_send_picked", { id, token }),
   /** Spotify pill buttons. */
   mediaControl: (action: "toggle" | "next" | "previous") => call<void>("media_control", { action }),
   /** "token" (pasted), "gh" (local gh login) or null — never the token itself. */

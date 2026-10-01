@@ -555,6 +555,19 @@ async fn lan_send_file(id: String, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || lan::send_file(&id, &file)).await.map_err(|e| e.to_string())?
 }
 
+/// Header → a paired Mochi → "Send a file…": the Open dialog. Returns a token
+/// and the file's name; the path stays in Rust.
+#[tauri::command]
+async fn lan_pick_file(app: AppHandle) -> Option<(String, String)> {
+    let owner = island::window(&app).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+    tauri::async_runtime::spawn_blocking(move || lan::pick_file(owner)).await.ok().flatten()
+}
+
+#[tauri::command]
+async fn lan_send_picked(id: String, token: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || lan::send_picked(&id, &token)).await.map_err(|e| e.to_string())?
+}
+
 /// What Mochi is doing, for the paired Mochis that ask.
 #[tauri::command]
 fn lan_set_status(state: String, label: String) {
@@ -888,6 +901,8 @@ pub fn run() {
             lan_ask,
             lan_send_file,
             lan_set_status,
+            lan_pick_file,
+            lan_send_picked,
             lan_reveal,
             opencode_status,
             opencode_plugin_text,

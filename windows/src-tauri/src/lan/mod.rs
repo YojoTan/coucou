@@ -732,6 +732,57 @@ pub fn send_file(id: &str, path: &Path) -> Result<(), String> {
     }
 }
 
+// ── "Send a file…" from the header: a picker, then the same trip as a drop ──
+
+/// Picked files, by token: the webview gets a token and a name, never the path.
+static PICKED: Mutex<Vec<(String, PathBuf)>> = Mutex::new(Vec::new());
+
+/// The standard Open dialog, owned by `owner`. Blocking; runs on its own STA thread.
+pub fn pick_file(owner: Option<isize>) -> Option<(String, String)> {
+    let path = std::thread::spawn(move || unsafe {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+        };
+        use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH};
+        let com = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let picked = (|| -> windows::core::Result<PathBuf> {
+            let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
+            dialog.SetOptions(dialog.GetOptions()? | FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM)?;
+            dialog.Show(owner.map(|h| HWND(h as *mut _)))?;
+            let name = dialog.GetResult()?.GetDisplayName(SIGDN_FILESYSPATH)?;
+            let path = name.to_string().map(PathBuf::from);
+            CoTaskMemFree(Some(name.0 as *const _));
+            path.map_err(|_| windows::core::Error::from_win32())
+        })();
+        if com {
+            CoUninitialize();
+        }
+        picked.ok()
+    })
+    .join()
+    .ok()
+    .flatten()?;
+    let name = safe_file_name(&path.file_name()?.to_string_lossy());
+    let token = wire::random_hex(8);
+    let mut picked = PICKED.lock().unwrap();
+    if picked.len() >= 8 {
+        picked.remove(0);
+    }
+    picked.push((token.clone(), path));
+    Some((token, name))
+}
+
+/// Sends the file picked under `token` (once).
+pub fn send_picked(id: &str, token: &str) -> Result<(), String> {
+    let path = {
+        let mut picked = PICKED.lock().unwrap();
+        let i = picked.iter().position(|(t, _)| t == token).ok_or("Pick the file again.")?;
+        picked.remove(i).1
+    };
+    send_file(id, &path)
+}
+
 fn poll_status(lan: &'static Lan, generation: u64) {
     let mut last = Instant::now() - STATUS_EVERY;
     while alive(lan, generation) {

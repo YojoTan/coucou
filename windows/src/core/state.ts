@@ -110,6 +110,20 @@ export interface IntegrationInfo {
   configured: boolean;
 }
 
+/** Mochi's mode (macOS FocusMode). Do Not Disturb and Sleep: no sounds, no toasts. */
+export type FocusMode = "normal" | "doNotDisturb" | "work" | "sleep";
+
+export function silences(mode: FocusMode | string | undefined): boolean {
+  return mode === "doNotDisturb" || mode === "sleep";
+}
+
+/** One line in the compact island for a few seconds ("Ana joined"). */
+export interface CompactToast {
+  id: number;
+  text: string;
+  color: string;
+}
+
 /** Mochis on the network (Rust lan/). */
 export interface LanPeer {
   id: string;
@@ -168,6 +182,7 @@ export interface Settings {
   /** Interface language: "auto" (system), "en", "es" or "pt-BR". */
   language: string;
   lan: LanPrefs;
+  focusMode: FocusMode;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -191,6 +206,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkey: "ctrl+alt+space",
   language: "auto",
   lan: { enabled: false, name: "", shareLabel: false, allowAsks: false },
+  focusMode: "normal",
 };
 
 type Listener = () => void;
@@ -211,6 +227,41 @@ class AppState {
 
   isPinned = false;
   paused = false;
+
+  /** What the compact island says right now, and what waits behind it (showToast). */
+  toast: CompactToast | null = null;
+  private toastQueue: CompactToast[] = [];
+  private toastSeq = 0;
+  /** Set by the island: a toast reveals a hidden island. */
+  onToast: (() => void) | null = null;
+
+  /**
+   * Shows a line in the compact island — revealing it if hidden — then clears it.
+   * Toasts queue (at most 4), each gets its time; Do Not Disturb drops them.
+   */
+  showToast(text: string, color: string, seconds = 3.5) {
+    if (silences(this.settings.focusMode)) return;
+    this.toastQueue.push({ id: ++this.toastSeq, text, color });
+    this.toastQueue = this.toastQueue.slice(-4);
+    if (!this.toast) this.nextToast(seconds);
+  }
+
+  clearToasts() {
+    this.toastQueue = [];
+    this.toast = null;
+    this.notify();
+  }
+
+  private nextToast(seconds: number) {
+    const t = this.toastQueue.shift() ?? null;
+    this.toast = t;
+    this.notify();
+    if (!t) return;
+    this.onToast?.();
+    window.setTimeout(() => {
+      if (this.toast?.id === t.id) this.nextToast(seconds);
+    }, seconds * 1000);
+  }
 
   /** Mochis on the network, what one of them asks, and who the chat writes to. */
   lan: LanView = { enabled: false, running: false, id: "", name: "", peers: [] };

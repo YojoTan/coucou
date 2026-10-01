@@ -828,6 +828,19 @@ function generalSection(): HTMLElement {
     h("option", { value: "pt-BR", text: "Português (Brasil)" }),
   );
   language.value = settings.language || "auto";
+
+  // Mochi's mode (macOS: a Focus automation in Shortcuts). Do Not Disturb and
+  // Sleep: a sleep mask, no sounds, no toasts; Work: glasses. Scripts and Power
+  // Automate can set it too, through the local URL (Settings → Mochis extras).
+  const mode = h("select", {}) as HTMLSelectElement;
+  for (const [value, label] of [["normal", t("Normal")], ["doNotDisturb", t("Do Not Disturb")], ["work", t("Work")], ["sleep", t("Sleep")]]) {
+    mode.append(h("option", { value, text: label }));
+  }
+  mode.value = settings.focusMode || "normal";
+  mode.addEventListener("change", async () => {
+    settings.focusMode = mode.value as typeof settings.focusMode;
+    await save();
+  });
   language.addEventListener("change", async () => {
     settings.language = language.value;
     await save();
@@ -841,6 +854,10 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: t("Language") }),
       language,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: t("Mochi's mode") }),
+      mode,
     ),
     h("div", { class: "row" },
       h("label", { text: t("Chat shortcut") }),

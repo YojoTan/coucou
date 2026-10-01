@@ -58,6 +58,8 @@ export const PANEL_H = 320;
 export const NOTCH_W = 184;
 export const NOTCH_H = 32;
 export const COMPACT_W = 288; // NOTCH_W + 104
+/** How much a compact toast widens the island (IslandConst.toastExtraWidth). */
+export const TOAST_EXTRA_W = 220;
 export const EXPANDED_W = 640;
 
 export const ROUNDED_CORNER = 14; // hidden / compact
@@ -103,6 +105,7 @@ export function islandSize(
   mode: IslandMode,
   view: IslandViewName,
   chatCount = 0,
+  toast = false,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
@@ -110,7 +113,8 @@ export function islandSize(
       // slides into the top edge of the screen instead of sitting there as a bar.
       return { w: NOTCH_W, h: 0 };
     case "compact":
-      return { w: COMPACT_W, h: NOTCH_H };
+      // A toast ("Ana joined") widens the island; the text sits right of Mochi.
+      return { w: COMPACT_W + (toast ? TOAST_EXTRA_W : 0), h: NOTCH_H };
     case "expanded": {
       const h = view === "prompt" ? chatPromptHeight(chatCount) : VIEW_LAYOUTS[view].height;
       return { w: EXPANDED_W, h };

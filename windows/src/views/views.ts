@@ -7,11 +7,11 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { agentForTask, agentOf, cycle as cycleSession, taskIdFor } from "../island/sessions";
 import { Ticker } from "./ticker";
-import { isAgentTask, SOURCE_LABELS, State, type AgentTask } from "../core/state";
-import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
+import { isAgentTask, SOURCE_LABELS, State, type AgentTask, type LanPeer } from "../core/state";
+import { colorForProject, washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
-import { buildLan, lanCard } from "./lan";
+import { buildLan, lanCard, peerStatusText } from "./lan";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 
@@ -34,6 +34,8 @@ export interface ViewActions {
   lanCompose(id: string, name: string, mode: "message" | "ask"): void;
   /** A `lan` prompt is answered: back to where the island was. */
   lanDone(): void;
+  /** Header → a paired Mochi → "Send a file…": the picker, then the trip. */
+  lanSendFile(id: string, name: string): void;
 }
 
 export interface ViewHost {
@@ -98,10 +100,59 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  // Paired Mochis on the network, always at hand (macOS NearbyMochisView): a tiny
+  // Mochi each in its owner's colour, asleep and dimmed offline; a click opens
+  // what can be done with it.
+  const nearby = h("div", { class: "nearby" });
+  const menu = h("div", { class: "nearby-menu" });
+  let nearbyKey = "";
+  const closeMenu = () => menu.classList.remove("open");
+  document.addEventListener("mousedown", (e) => {
+    if (!menu.contains(e.target as Node) && !nearby.contains(e.target as Node)) closeMenu();
+  });
+  function openMenu(p: LanPeer, anchor: HTMLElement) {
+    clear(menu);
+    menu.append(h("div", { class: "nearby-head", text: p.online ? `${p.name} · ${peerStatusText(p)}` : `${p.name} · ${t("offline")}` }));
+    if (p.online) {
+      const item = (label: string, run: () => void) =>
+        h("button", { text: label, onclick: () => { closeMenu(); run(); } });
+      menu.append(
+        item(t("Message"), () => actions.lanCompose(p.id, p.name, "message")),
+        item(t("Ask their Mochi"), () => actions.lanCompose(p.id, p.name, "ask")),
+        item(t("Send a file…"), () => actions.lanSendFile(p.id, p.name)),
+      );
+    }
+    menu.style.left = `${anchor.offsetLeft - 60}px`;
+    menu.classList.add("open");
+  }
+  function syncNearby() {
+    const peers = State.lan.enabled
+      ? State.lan.peers.filter((p) => p.paired).sort((a, b) => Number(b.online) - Number(a.online)).slice(0, 4)
+      : [];
+    const key = peers.map((p) => `${p.id}:${p.online}:${p.status?.state ?? ""}`).join("|");
+    if (key === nearbyKey) return;
+    nearbyKey = key;
+    clear(nearby);
+    for (const p of peers) {
+      const state = (p.online ? (p.status?.state || "idle") : "sleeping") as AgentTask["state"];
+      const bot = createMiniBot({
+        id: `peer_${p.id}`, name: p.name, color: colorForProject(p.name), state, stepIndex: 0, steps: [],
+        source: "n8n", isIntegration: true,
+      } as AgentTask, 13);
+      const btn = h("button", { class: "nearby-bot", title: p.name, onclick: () => openMenu(p, btn) }, bot);
+      btn.style.opacity = p.online ? "1" : "0.35";
+      nearby.append(btn);
+    }
+    pruneMiniBots();
+  }
+
   const el = h(
     "div",
     { id: "header" },
     h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
+    h("div", { class: "grow" }),
+    nearby,
+    menu,
     h("div", { class: "header-actions" }, gearBtn, soundBtn),
   );
 
@@ -118,6 +169,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
       clear(soundBtn);
       soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
       el.style.opacity = v === "confused" ? "0" : "1";
+      syncNearby();
     },
   };
 }

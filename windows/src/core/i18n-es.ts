@@ -306,4 +306,15 @@ export const ES: Record<string, string> = {
   "This Mochi doesn't take questions from other Mochis.": "Este Mochi no acepta preguntas de otros Mochis.",
   "Write to {name}…": "Escríbele a {name}…",
   "Ask {name}'s Mochi…": "Pregúntale al Mochi de {name}…",
+  // ── Mochi's mode, toasts ──────────────────────────────────────────────────
+  "Normal": "Normal",
+  "Do Not Disturb": "No molestar",
+  "Work": "Trabajo",
+  "Sleep": "Dormir",
+  "Mochi's mode": "Modo de Mochi",
+  "{name} is online": "{name} está en línea",
+  "{name} went offline": "{name} se desconectó",
+  "Ask their Mochi": "Preguntar a su Mochi",
+  "Send a file…": "Enviar un archivo…",
+  "Pick the file again.": "Vuelve a elegir el archivo.",
 };

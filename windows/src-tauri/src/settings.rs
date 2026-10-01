@@ -43,12 +43,20 @@ pub struct Settings {
     /// Global shortcut that opens the chat: "off" or one of hotkey::CHOICES.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    /// Mochi's mode (macOS FocusMode): "normal", "doNotDisturb", "work" or
+    /// "sleep". Do Not Disturb and Sleep silence sounds and toasts.
+    #[serde(default = "default_focus_mode")]
+    pub focus_mode: String,
     /// Mochis on the local network (lan/): off by default.
     #[serde(default)]
     pub lan: crate::lan::LanPrefs,
     /// Interface language: "auto" (follow Windows), "en", "es" or "pt-BR".
     #[serde(default = "default_language")]
     pub language: String,
+}
+
+fn default_focus_mode() -> String {
+    "normal".into()
 }
 
 fn default_language() -> String {
@@ -91,6 +99,7 @@ impl Default for Settings {
             anthropic_base_url: String::new(),
             anthropic_model: String::new(),
             lan: Default::default(),
+            focus_mode: default_focus_mode(),
             hotkey: default_hotkey(),
             language: default_language(),
         }

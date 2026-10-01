@@ -4,7 +4,7 @@ import { registerLanHandlers } from "./island/lan";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
-import { State, type Settings } from "./core/state";
+import { State, silences, type Settings } from "./core/state";
 import { setLanguage } from "./core/i18n";
 import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
@@ -73,10 +73,15 @@ async function main() {
       return;
     }
     State.settings = { ...State.settings, ...s };
+    if (silences(State.settings.focusMode)) State.clearToasts();
     island.applySettings();
     State.loadIntegrationTasks();
     void refreshConfigured();
   });
+
+  // Do Not Disturb and Sleep keep Coucou quiet; a toast shows the hidden island.
+  Sound.silenced = () => silences(State.settings.focusMode);
+  State.onToast = () => island.reveal();
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);

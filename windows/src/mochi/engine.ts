@@ -7,6 +7,10 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
+import { drawAccessory, updateMoods, type MochiAccessory } from "./accessories";
+
+/** DiscordParse.DiscordReaction: how Mochi answers a DM or a mention. */
+export type MochiReaction = "confetti" | "hearts" | "laugh" | "question" | "fire";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -53,7 +57,7 @@ interface BotStateCfg {
 }
 
 interface Particle {
-  type: "heart" | "star" | "spark" | "sweat" | "z";
+  type: "heart" | "star" | "spark" | "sweat" | "z" | "note" | "confetti";
   x: number; y: number; vx: number; vy: number;
   age: number; life: number; rot: number; size: number;
 }
@@ -216,6 +220,66 @@ export class BotEngine {
   private slapTimes: number[] = [];
   private miniLookTarget = { x: 0, y: 0 };
   private miniLookNextTime = 0;
+
+  // Music (Spotify pill): headphones on, and a dance on a steady beat while
+  // playing. Spotify gives no tempo or beat to other apps, so the beat is a
+  // fixed groove restarted on each track (musicStart), not the song's own.
+  musicHeadphones = false;
+  musicPlaying = false;
+  // Discord call: a headset with a mic, the mouth while you talk, waves while
+  // the others do.
+  voiceHeadset = false;
+  talking = false;
+  micMuted = false;
+  deafened = false;
+  othersSpeaking = false;
+  micBoom = 0;
+  talk = 0;
+  private nextVoiceWave = 0;
+  get wantsHeadphones(): boolean { return this.musicHeadphones || this.voiceHeadset; }
+  /** Where the person speaking sits on the card, in look units; null when nobody. */
+  glance: { x: number; y: number } | null = null;
+  private lastSleepZ = 0;
+  // Accessories and moods (accessories.ts), set by the extras.
+  accessory: MochiAccessory = "none";
+  accessoryColor: string | null = null;
+  sweating = false;
+  sleepy = false;
+  scruffy = false;
+  private _panicked = false;
+  get panicked(): boolean { return this._panicked; }
+  set panicked(on: boolean) {
+    this._panicked = on;
+    if (!on) this.ox = 0;
+  }
+  lastMoodSweat = 0;
+  /** The call's choir: a mouth and sleep without the headset. */
+  mouthAlways = false;
+  /** When the call began (ms since epoch): an hour in, yawns; two, sweat and tired eyes. */
+  callStartedAt: number | null = null;
+  private nextYawn = 0;
+  private lastSweat = 0;
+  /** Past 23:00 in a call: a nightcap. Checked twice a minute. */
+  nightcap = false;
+  private nightcapCheck = 0;
+  headphones = 0;      // 0→1, eases in and out
+  groove = 0;          // 0→1, how much Mochi dances
+  whistle = 0;         // 0→1, the puckered mouth: 8 beats of every 16
+  bpm = 112;
+  beatT0 = now();
+  private lastBeat = -1;
+  private waveStarts: number[] = [];   // now() of each sound wave
+  // The dance, applied on top of the pose in draw (never fed back into it).
+  danceOy = 0;
+  danceTilt = 0;
+  danceSx = 1;
+  danceSy = 1;
+
+  /** A new track (or play after a stop): the beat starts again from here. */
+  musicStart() {
+    this.beatT0 = now();
+    this.lastBeat = -1;
+  }
 
   /** Fired when three slaps land inside 1.7 s (→ dizzy + confused view). */
   onDizzy: (() => void) | null = null;
@@ -441,6 +505,39 @@ export class BotEngine {
     }
   }
 
+  /** A trip to a paired Mochi (LAN send): it hops off to the right and comes back in from the left. */
+  travel() {
+    this.anim("ox", [
+      [-0.25, 160, Ease.out],   // a little run-up
+      [24, 900, Ease.inOut],    // off it goes
+      [-10, 1, Ease.lin],       // round the back
+      [-10, 700, Ease.lin],     // away a moment
+      [0, 750, Ease.out],       // and back in
+    ]);
+    const hops: TweenKey[] = [];
+    for (let i = 0; i < 10; i++) hops.push([-0.12, 110, Ease.out], [0, 110, Ease.inOut]);
+    this.anim("oy", hops);
+    this.eyeOverride = "happy";
+    this.eyeOverrideUntil = now() + 2.6;
+  }
+
+  /** A Discord reaction: confetti, hearts, a laugh, a question, fire. */
+  react(r: MochiReaction) {
+    switch (r) {
+      case "confetti": this.emit("confetti", 16); break;
+      case "hearts": this.emit("heart", 6); break;
+      case "laugh": this.triggerEmote("happy"); this.squash(); break;
+      case "question":
+        this.setBadge({ kind: "question", color: [0.6, 0.66, 1] });
+        setTimeout(() => this.setBadge(this.cfg.badge), 2500);
+        break;
+      case "fire":
+        this.emit("spark", 8);
+        this.anim("blush", [[1, 200, Ease.out], [1, 900, Ease.lin], [0, 500, Ease.inOut]]);
+        break;
+    }
+  }
+
   animateMorph(target: number, durationMs?: number) {
     const dur = durationMs ?? (target > 0.5 ? 550 : 650);
     this.anim("morph", [[target, dur, Ease.inOut]]);
@@ -459,6 +556,7 @@ export class BotEngine {
       this.particles.length > 0 ||
       this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
       this.isMini ||
+      this.animatedExtras ||
       Math.abs(this.tgYaw - this.yaw) > 0.002 ||
       Math.abs(this.tgPitch - this.pitch) > 0.002 ||
       Math.abs(this.tgTilt - this.tilt) > 0.002 ||
@@ -469,6 +567,17 @@ export class BotEngine {
       Math.abs(this.col[0] - this.colT[0]) > 0.003 ||
       Math.abs(this.col[1] - this.colT[1]) > 0.003 ||
       Math.abs(this.col[2] - this.colT[2]) > 0.003
+    );
+  }
+
+  /** Music, a call, an accessory that moves, a mood: they keep the loop running. */
+  private get animatedExtras(): boolean {
+    return (
+      this.musicPlaying || this.voiceHeadset || this.mouthAlways || this.nightcap ||
+      this.groove > 0.005 || this.headphones > 0.01 || this.micBoom > 0.01 || this.talk > 0.02 ||
+      this.whistle > 0.02 || this.waveStarts.length > 0 ||
+      this.accessory === "antenna" || this.accessory === "umbrella" ||
+      this.sweating || this.sleepy || this._panicked || this.accessory === "sleepMask"
     );
   }
 
@@ -558,6 +667,9 @@ export class BotEngine {
 
     if (this.isMini && n > this.miniNextBehavior) this.doMiniBehaviorLoop();
 
+    this.updateDance(n, dt);
+    updateMoods(this, n);
+
     const kLook = 1 - Math.pow(0.0025, dt);
     if (!this.locks.has("yaw")) this.yaw += (this.tgYaw - this.yaw) * kLook;
     if (!this.locks.has("pitch")) this.pitch += (this.tgPitch - this.pitch) * kLook;
@@ -598,6 +710,286 @@ export class BotEngine {
     this.slotH = Math.max(0, this.slotH + this.slotHVel * dt);
 
     this.lastTime = n;
+  }
+
+  private updateDance(n: number, dt: number) {
+    const k = 1 - Math.pow(0.03, dt);
+    this.headphones += ((this.wantsHeadphones ? 1 : 0) - this.headphones) * k;
+    this.groove += ((this.musicPlaying ? 1 : 0) - this.groove) * k;
+    this.micBoom += ((this.voiceHeadset ? 1 : 0) - this.micBoom) * k;
+    this.talk += ((this.talking ? 1 : 0) - this.talk) * (1 - Math.pow(0.0005, dt));
+    this.waveStarts = this.waveStarts.filter((w) => n - w <= 1.1);
+    if (this.othersSpeaking && this.voiceHeadset && n > this.nextVoiceWave) {
+      this.waveStarts.push(n);
+      this.nextVoiceWave = n + 0.45;
+    }
+    // A long call wears Mochi out; a late one gets a nightcap.
+    if (this.voiceHeadset && !this.isMini && this.callStartedAt != null) {
+      const minutes = (Date.now() - this.callStartedAt) / 60000;
+      if (minutes > 60 && n > this.nextYawn) {
+        this.nextYawn = n + 240;
+        this.triggerEmote("yawn");
+      }
+      if (minutes > 120 && n - this.lastSweat > 2.4) {
+        this.lastSweat = n;
+        this.emit("sweat", 1);
+        if (this.eyeOverride == null || this.eyeOverride === this.permanentEye) {
+          this.eyeOverride = "tired";
+          this.eyeOverrideUntil = n + 1.2;
+        }
+      }
+    }
+    if (n > this.nightcapCheck) {
+      this.nightcapCheck = n + 30;
+      const hour = new Date().getHours();
+      this.nightcap = this.voiceHeadset && !this.isMini && (hour >= 23 || hour < 5);
+    }
+    // Deafened in a call: eyes shut, a z now and then.
+    if (this.deafened && (this.voiceHeadset || this.mouthAlways) && this.morph < 0.05) {
+      const o = this.eyeOverride;
+      if (o == null || o === this.permanentEye || o === "closed") {
+        this.eyeOverride = "closed";
+        this.eyeOverrideUntil = n + 0.2;
+      }
+      if (n - this.lastSleepZ > 1.6) {
+        this.lastSleepZ = n;
+        this.emit("z", 1);
+      }
+    }
+    const beats = Math.max(0, ((n - this.beatT0) * this.bpm) / 60);
+    // Bars of 16 beats: 8 dancing, then 8 whistling along.
+    const whistling = this.musicPlaying && Math.floor(beats) % 16 >= 8;
+    this.whistle += ((whistling ? 1 : 0) - this.whistle) * (1 - Math.pow(0.002, dt));
+    if (this.groove <= 0.005) {
+      this.danceOy = 0; this.danceTilt = 0; this.danceSx = 1; this.danceSy = 1;
+      return;
+    }
+    const phase = beats % 1;
+    const hit = Math.pow(1 - phase, 3);                          // sharp on the beat, then decays
+    this.danceOy = -Math.abs(Math.sin(Math.PI * beats)) * 0.075 * this.groove;   // a hop per beat
+    this.danceTilt = Math.sin((Math.PI * beats) / 2) * 0.085 * this.groove;      // sway, one side per beat
+    this.danceSy = 1 - hit * 0.07 * this.groove;                 // squash as it lands
+    this.danceSx = 1 + hit * 0.05 * this.groove;
+    this.tgPitch += (hit * 0.1 - 0.03) * this.groove;            // nod with the beat
+    this.tgYaw *= 1 - 0.6 * this.groove;                         // eyes mostly forward while vibing
+
+    const beat = Math.floor(beats);
+    if (beat === this.lastBeat || !this.musicPlaying) return;
+    this.lastBeat = beat;
+    this.waveStarts.push(n);
+    if (whistling) {
+      // Eyes shut in bliss, a note out of the mouth on every beat.
+      const o = this.eyeOverride;
+      if (o == null || o === this.permanentEye || o === "happy") {
+        this.eyeOverride = "happy";
+        this.eyeOverrideUntil = n + 60 / this.bpm + 0.05;
+      }
+      if (!this.isMini) this.emitNote(true);
+    } else {
+      // Dancing: two beats of blissed-out eyes every 8; a note from the side every 4.
+      if (beat % 8 === 4 && (this.eyeOverride == null || this.eyeOverride === this.permanentEye)) {
+        this.eyeOverride = "happy";
+        this.eyeOverrideUntil = n + (2 * 60) / this.bpm;
+      }
+      if (!this.isMini && beat % 4 === 2) this.emitNote(false);
+    }
+  }
+
+  private emitNote(fromMouth: boolean) {
+    const side = fromMouth ? 1 : Math.random() < 0.5 ? 1 : -1;
+    const rand = (a: number, b: number) => a + Math.random() * (b - a);
+    this.particles.push({
+      type: "note",
+      // Particle units are R·1.3 from the body centre; the mouth sits low and a bit right.
+      x: fromMouth ? 0.2 : side * rand(0.55, 0.75),
+      y: fromMouth ? 0.2 : -0.55,
+      vx: side * (fromMouth ? rand(0.35, 0.55) : rand(0.08, 0.2)),
+      vy: -rand(0.3, 0.5),
+      age: 0, life: 1.6, rot: side * 0.2, size: 0.15 + Math.random() * 0.06,
+    });
+  }
+
+  /**
+   * Where the mouth sits, projected on the head like the eyes (drawEyes): it
+   * follows yaw and pitch, narrows (f) as the head turns, and is null when it
+   * has turned out of sight. Below the eyes by a fixed angle on the sphere.
+   */
+  private mouthSpot(rx: number, ry: number): [number, number, number] | null {
+    const p = EYE_P - 0.36 + this.pitch + this.roll;
+    const cp = Math.cos(p);
+    if (Math.cos(this.yaw) * cp <= 0.1) return null;
+    return [Math.sin(this.yaw) * cp * rx, -Math.sin(p) * ry, Math.max(0.3, Math.cos(this.yaw))];
+  }
+
+  /** The whistling "o", low on the face and turned with the gaze. */
+  private drawWhistleMouth(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
+    const spot = this.mouthSpot(rx, ry);
+    if (!spot) return;
+    const [mx, y, f] = spot;
+    const beats = Math.max(0, ((now() - this.beatT0) * this.bpm) / 60);
+    const pulse = 1 + 0.18 * Math.pow(1 - (beats % 1), 2);
+    const w = R * 0.13 * this.whistle * pulse * f;
+    const h = R * 0.16 * this.whistle * pulse;
+    x.save();
+    x.clip(body);
+    x.fillStyle = this.isMini ? MINI_INK : INK;
+    x.beginPath();
+    x.ellipse(mx + R * 0.07 * f, y, w / 2, h / 2, 0, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+  }
+
+  /** Spotify green for music, Discord blurple for a call. */
+  private accent(alpha: number): string {
+    return this.voiceHeadset ? `rgba(154,168,255,${alpha})` : `rgba(29,185,84,${alpha})`;
+  }
+
+  /** Headband over the top of the head and a cup on each side, in body space. */
+  private drawHeadphones(x: CanvasRenderingContext2D, R: number, rx: number, ry: number) {
+    x.save();
+    x.globalAlpha *= Math.min(1, this.headphones);
+    x.translate(0, -(1 - this.headphones) * R * 0.35);   // they slide down onto the head
+    x.lineCap = "round";
+    const band = () => {
+      x.beginPath();
+      x.moveTo(-rx * 0.97, -ry * 0.18);
+      x.bezierCurveTo(-rx * 0.95, -ry * 1.45, rx * 0.95, -ry * 1.45, rx * 0.97, -ry * 0.18);
+    };
+    const bandW = Math.max(1.5, R * 0.11);
+    band();
+    x.strokeStyle = "#23262D";
+    x.lineWidth = bandW;
+    x.stroke();
+    band();
+    x.strokeStyle = "rgba(255,255,255,0.16)";
+    x.lineWidth = Math.max(0.6, bandW * 0.3);
+    x.stroke();
+    const cw = R * 0.3, ch = R * 0.56;
+    for (const sd of [-1, 1]) {
+      const cx = sd * rx * 0.97;
+      const y0 = -ry * 0.22;
+      const g = x.createLinearGradient(cx, y0, cx, y0 + ch);
+      g.addColorStop(0, "#3A3E47");
+      g.addColorStop(1, "#16181D");
+      x.beginPath();
+      x.roundRect(cx - cw / 2, y0, cw, ch, cw * 0.45);
+      x.fillStyle = g;
+      x.fill();
+      x.strokeStyle = "rgba(255,255,255,0.14)";
+      x.lineWidth = Math.max(0.5, R * 0.025);
+      x.stroke();
+      // A small light on the outer side of each cup.
+      const a = 0.55 + 0.45 * Math.max(this.groove, this.talk);
+      x.fillStyle = this.deafened && this.voiceHeadset ? `rgba(218,55,60,${a})` : this.accent(a);
+      x.beginPath();
+      x.ellipse(cx, y0 + ch / 2, cw * 0.14, cw * 0.14, 0, 0, Math.PI * 2);
+      x.fill();
+    }
+    if (this.micBoom > 0.01) this.drawMic(x, R, rx, ry);
+    x.restore();
+  }
+
+  /** The headset's boom, from the left cup to beside the mouth; a red tip when muted. */
+  private drawMic(x: CanvasRenderingContext2D, R: number, rx: number, ry: number) {
+    x.save();
+    x.globalAlpha *= this.micBoom;
+    const spot = this.mouthSpot(rx, ry);
+    // The tip sits just left of and below the mouth, wherever the gaze takes it.
+    const tip = spot
+      ? { x: Math.max(-rx * 0.7, spot[0] - R * 0.34), y: Math.min(ry * 0.78, spot[1] + ry * 0.14) }
+      : { x: -R * 0.38, y: ry * 0.62 };
+    x.strokeStyle = "#23262D";
+    x.lineWidth = Math.max(1.2, R * 0.07);
+    x.lineCap = "round";
+    x.beginPath();
+    x.moveTo(-rx * 0.97, ry * 0.3);
+    x.quadraticCurveTo(-rx * 0.9, ry * 0.7, tip.x, tip.y);
+    x.stroke();
+    const r = Math.max(1.5, R * 0.09);
+    x.fillStyle = this.micMuted ? "#DA373C" : "#3A3E47";
+    x.beginPath();
+    x.ellipse(tip.x, tip.y, r, r * 0.8, 0, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+  }
+
+  /** While talking in a call, a mouth that opens and closes; muted, a closed line. */
+  private drawTalkMouth(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
+    const spot = this.mouthSpot(rx, ry);
+    if (!spot) return;
+    const [mx, y, f] = spot;
+    const ink = this.isMini ? MINI_INK : INK;
+    x.save();
+    x.clip(body);
+    if (this.micMuted) {
+      x.globalAlpha *= this.mouthAlways ? 1 : this.micBoom;
+      x.strokeStyle = ink;
+      x.lineWidth = Math.max(1, R * 0.045);
+      x.lineCap = "round";
+      x.beginPath();
+      x.moveTo(mx - R * 0.11 * f, y);
+      x.lineTo(mx + R * 0.11 * f, y);
+      x.stroke();
+      x.restore();
+      return;
+    }
+    const t = now();
+    // Two sines out of step: it reads as syllables, not a metronome.
+    const open = (0.5 + 0.5 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.7))) * this.talk;
+    const w = R * 0.2 * f, h = R * (0.03 + 0.15 * open);
+    x.fillStyle = ink;
+    x.beginPath();
+    x.roundRect(mx - w / 2, y - h / 2, w, h, Math.min(w, h) / 2);
+    x.fill();
+    x.restore();
+  }
+
+  /** A floppy cap over the headband, its pompom hanging off to the right. */
+  private drawNightcap(x: CanvasRenderingContext2D, R: number, rx: number, ry: number) {
+    const sway = Math.sin(now() * 1.3) * R * 0.04;
+    x.save();
+    x.beginPath();
+    x.moveTo(-rx * 0.62, -ry * 0.78);
+    x.quadraticCurveTo(rx * 0.15, -ry * 1.75, rx * 0.95 + sway, -ry * 0.62);
+    x.quadraticCurveTo(rx * 0.55, -ry * 1.05, rx * 0.55, -ry * 0.84);
+    x.quadraticCurveTo(0, -ry * 0.98, -rx * 0.62, -ry * 0.78);
+    const g = x.createLinearGradient(0, -ry * 1.5, 0, -ry * 0.8);
+    g.addColorStop(0, "#3C45A5");
+    g.addColorStop(1, "#272D73");
+    x.fillStyle = g;
+    x.fill();
+    x.strokeStyle = "rgba(255,255,255,0.9)";
+    x.lineWidth = Math.max(1.2, R * 0.1);
+    x.lineCap = "round";
+    x.beginPath();
+    x.moveTo(-rx * 0.64, -ry * 0.8);
+    x.quadraticCurveTo(0, -ry * 1.02, rx * 0.56, -ry * 0.86);
+    x.stroke();
+    x.fillStyle = "#fff";
+    x.beginPath();
+    x.ellipse(rx * 0.95 + sway, -ry * 0.62, R * 0.11, R * 0.11, 0, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+  }
+
+  /** Arcs on both sides, one pair per beat, spreading out and fading. */
+  private drawSoundWaves(x: CanvasRenderingContext2D, R: number, rx: number, cx: number, cy: number) {
+    const n = now();
+    x.save();
+    x.lineCap = "round";
+    for (const start of this.waveStarts) {
+      const k = (n - start) / 1.1;
+      if (k < 0 || k >= 1) continue;
+      const radius = rx * (1.12 + 0.42 * k);
+      x.strokeStyle = this.accent((1 - k) * (1 - k) * 0.55 * Math.max(this.groove, this.micBoom));
+      x.lineWidth = Math.max(1, R * 0.05 * (1 - k * 0.5));
+      for (const mid of [0, Math.PI]) {
+        x.beginPath();
+        x.arc(cx, cy, radius, mid - (28 * Math.PI) / 180, mid + (28 * Math.PI) / 180);
+        x.stroke();
+      }
+    }
+    x.restore();
   }
 
   private doMiniBehaviorLoop() {
@@ -645,14 +1037,15 @@ export class BotEngine {
     const rx = R * 1.14;
     const ry = R * 0.88;
     const cx = W / 2 + this.ox * R;
-    const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
+    const cy = H / 2 + this.particleOverhang / 2 + (this.oy + this.danceOy) * R + R * 0.06;
 
     this.drawHandsBehind(x, R, rx, ry, cx, cy);
 
     x.save();
     x.translate(cx, cy);
-    if (this.tilt !== 0) x.rotate(this.tilt);
-    x.scale(this.sx, this.sy);
+    const tiltNow = this.tilt + this.danceTilt;
+    if (tiltNow !== 0) x.rotate(tiltNow);
+    x.scale(this.sx * this.danceSx, this.sy * this.danceSy);
 
     const body = this.bodyPath(rx, ry, R);
     this.drawBody(x, body, R, rx, ry);
@@ -672,9 +1065,22 @@ export class BotEngine {
     }
 
     this.drawEyes(x, body, R, rx, ry);
+
+    if (this.morph < 0.05 && this.whistle < 0.02 && (this.micBoom > 0.01 || this.mouthAlways) && (this.talk > 0.02 || this.micMuted)) {
+      this.drawTalkMouth(x, body, R, rx, ry);
+    }
+    if (this.whistle > 0.02 && this.morph < 0.05) this.drawWhistleMouth(x, body, R, rx, ry);
+    if (this.headphones > 0.01 && this.morph < 0.05) this.drawHeadphones(x, R, rx, ry);
+    if (this.nightcap && this.morph < 0.05) this.drawNightcap(x, R, rx, ry);
+    drawAccessory(this, x, body, R, rx, ry);
+
     if (this.morph > 0.05) this.drawMouth(x, body, R);
 
     x.restore();
+
+    if (this.waveStarts.length > 0 && (this.groove > 0.01 || this.micBoom > 0.01)) {
+      this.drawSoundWaves(x, R, rx, cx, cy);
+    }
 
     if (this.badge && this.badgeS > 0.01 && this.morph < 0.25) {
       this.drawBadge(x, this.badge, R, cx, cy);
@@ -1106,6 +1512,21 @@ export class BotEngine {
           x.quadraticCurveTo(sz * 0.8, sz * 0.2, 0, sz * 0.6);
           x.quadraticCurveTo(-sz * 0.8, sz * 0.2, 0, -sz);
           x.fill();
+          break;
+        case "confetti": {
+          const palette = ["#F87171", "#FBBF24", "#34D399", "#60A5FA", "#A78BFA", "#F472B6"];
+          x.rotate(p.rot + p.age * 7);
+          x.fillStyle = palette[Math.floor(Math.abs(p.rot) * 100) % palette.length];
+          x.fillRect(-sz * 0.45, -sz * 0.22, sz * 0.9, sz * 0.44);
+          break;
+        }
+        case "note":
+          x.rotate(p.rot + Math.sin(p.age * 5) * 0.25);
+          x.fillStyle = "#fff";
+          x.font = `700 ${sz * 2.2}px ${FONT}`;
+          x.textAlign = "center";
+          x.textBaseline = "middle";
+          x.fillText(p.size > 0.185 ? "♫" : "♪", 0, 0);
           break;
         case "z":
           x.fillStyle = "rgb(209,219,235)";

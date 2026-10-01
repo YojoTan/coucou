@@ -47,6 +47,8 @@ export class Island {
   private botGlow!: HTMLElement;
   private greetingCanvas!: HTMLCanvasElement;
   private miniGrid!: HTMLElement;
+  private toastEl!: HTMLElement;
+  private toastId: number | null = null;
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
 
@@ -138,6 +140,26 @@ export class Island {
         this.fsm.pinned = false;
         this.setView("prompt");
       },
+      lanSendFile: (id, name) => {
+        void (async () => {
+          const picked = await Bridge.lanPickFile();
+          if (!picked) return;
+          const [token, fileName] = picked;
+          State.noteMessage = t("Waiting for {name} to accept {file}…", { name, file: fileName });
+          this.setView("note");
+          this.engine.travel();
+          try {
+            await Bridge.lanSendPicked(id, token);
+            State.noteMessage = t("{file} sent to {name} ✓", { file: fileName, name });
+          } catch (err) {
+            State.noteMessage = t(String(err).replace(/^Error:\s*/, ""));
+          }
+          State.notify();
+          window.setTimeout(() => {
+            if (State.view === "note") this.setView(State.defaultView());
+          }, 3000);
+        })();
+      },
       lanDone: () => {
         State.isPinned = false;
         this.fsm.pinned = false;
@@ -206,6 +228,7 @@ export class Island {
     this.botCanvas = h("canvas", { id: "bot-canvas" });
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
+    this.toastEl = h("div", { id: "compact-toast" }, h("i"), h("span"));
     this.countdown = h("div", { id: "countdown" });
 
     this.header = buildHeader(actions);
@@ -240,6 +263,7 @@ export class Island {
       this.botGlow,
       this.botCanvas,
       this.miniGrid,
+      this.toastEl,
       this.countdown,
     );
 
@@ -591,7 +615,7 @@ export class Island {
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {
-    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length);
+    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, State.toast != null);
     const r = State.mode === "expanded" ? EXPANDED_CORNER : ROUNDED_CORNER;
     return { w, h, r };
   }
@@ -1011,8 +1035,20 @@ export class Island {
       }
     }
 
-    // Compact mini grid
-    const showGrid = State.mode === "compact";
+    // Compact toast: the island widens for it, then shrinks back.
+    const toast = State.mode === "compact" ? State.toast : null;
+    if ((State.toast?.id ?? null) !== this.toastId) {
+      this.toastId = State.toast?.id ?? null;
+      if (State.mode === "compact") this.animateGeometry(State.toast == null);
+    }
+    this.toastEl.classList.toggle("on", toast != null);
+    if (toast) {
+      (this.toastEl.firstChild as HTMLElement).style.background = toast.color;
+      (this.toastEl.lastChild as HTMLElement).textContent = toast.text;
+    }
+
+    // Compact mini grid (the toast takes its place while it shows)
+    const showGrid = State.mode === "compact" && !toast;
     this.miniGrid.style.opacity = showGrid ? "1" : "0";
     if (showGrid) {
       const others = State.otherTasks.slice(0, 4);

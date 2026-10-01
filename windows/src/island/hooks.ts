@@ -5,6 +5,7 @@
 // Difference from macOS: no terminal filter. On Windows the hook fires from any
 // terminal (Windows Terminal, VS Code, PowerShell…) and all of them are handled.
 
+import type { HostProc } from "../core/bridge";
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
@@ -33,6 +34,8 @@ interface HookPayload {
   last_assistant_message?: string;
   /** "codex" or "opencode"; absent for Claude Code. */
   coucou_agent?: string;
+  /** Set by Rust from the pipe's client process: the session's host chain. */
+  coucou_host?: HostProc[];
   /** SessionStart: "compact" when Codex compacts mid-turn. */
   source?: string;
 }
@@ -156,6 +159,7 @@ function handleHook(island: Island, payload: HookPayload) {
   const agent = Sessions.agentOf(payload.coucou_agent);
   const TASK = Sessions.ensureAgentTask(agent);
   const s = Sessions.touch(agent, payload.session_id ?? "", projectName, cwd);
+  if (Array.isArray(payload.coucou_host) && payload.coucou_host.length) s.host = payload.coucou_host;
   const focused = State.focusId === TASK;
   /** Is this event's session the one the pill is showing? */
   const isShown = () => Sessions.shown(agent)?.key === s.key;

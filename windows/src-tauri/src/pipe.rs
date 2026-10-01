@@ -202,6 +202,23 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
     // `request_id` is ours to assign. One arriving on the wire could otherwise
     // be used to answer or release somebody else's pending request.
     map.remove("request_id");
+    // So is `coucou_host`: the process chain behind the relay, for "jump to
+    // terminal". Read from the pipe's client while it is still connected.
+    map.remove("coucou_host");
+    let session_id = map.get("session_id").and_then(Value::as_str).unwrap_or_default().to_string();
+    let client = {
+        use std::os::windows::io::AsRawHandle;
+        crate::jump::client_pid(windows::Win32::Foundation::HANDLE(pipe.as_raw_handle()))
+    };
+    if let Some(pid) = client {
+        let chain = tauri::async_runtime::spawn_blocking(move || crate::jump::host_chain(pid, &session_id))
+            .await
+            .ok()
+            .flatten();
+        if let Some(chain) = chain {
+            payload["coucou_host"] = json!(chain);
+        }
+    }
 
     let event = payload
         .get("hook_event_name")

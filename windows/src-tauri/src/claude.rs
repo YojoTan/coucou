@@ -61,7 +61,13 @@ impl Chat {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ChatContext {
-    File { name: String, path: String },
+    /// `note`: what the file is, when Coucou made it (a window screenshot).
+    File {
+        name: String,
+        path: String,
+        #[serde(default)]
+        note: Option<String>,
+    },
     Window { app_name: String, title: String, url: Option<String> },
     /// Text the user chose to attach from the clipboard (never read silently).
     Clipboard { text: String },
@@ -101,7 +107,7 @@ pub async fn send(
     // like ClaudeService.chat().
     if chat.is_empty() {
         match &context {
-            Some(ChatContext::File { name, path }) => {
+            Some(ChatContext::File { name, path, note }) => {
                 // Only a copy Coucou made itself in the inbox is ever read: the
                 // path comes from the webview, and must not be able to name
                 // any other file on disk.
@@ -111,7 +117,8 @@ pub async fn send(
                 if let Some(block) = file_block(&inside) {
                     content.push(block);
                 }
-                content.push(json!({ "type": "text", "text": format!("File: {name}") }));
+                let label = note.clone().unwrap_or_else(|| format!("File: {name}"));
+                content.push(json!({ "type": "text", "text": label }));
             }
             Some(ChatContext::Window { app_name, title, url }) => {
                 let mut text = format!("Context — App: {app_name}, Window: {title}");

@@ -90,6 +90,12 @@ export const Bridge = {
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
   /** `orca open`: launches or focuses Orca. */
   openOrca: () => call<boolean>("open_orca"),
+  /** Drag-out of Mochi: captures the window under the cursor into the inbox. */
+  attachWindow: () => callOrThrow<AttachedWindow>("attach_window"),
+  /** Focuses the terminal window hosting a session; false → nothing found. */
+  focusSession: (host: HostProc[], cwd: string | null) => call<boolean>("focus_session", { host, cwd }),
+  /** Spotify pill buttons. */
+  mediaControl: (action: "toggle" | "next" | "previous") => call<void>("media_control", { action }),
   /** "token" (pasted), "gh" (local gh login) or null — never the token itself. */
   githubAuth: () => call<"token" | "gh" | null>("github_auth"),
   opencodeStatus: () => call<PluginStatus>("opencode_status"),
@@ -125,7 +131,7 @@ export interface IntegrationUpdate {
 }
 
 export type ChatContext =
-  | { kind: "file"; name: string; path: string }
+  | { kind: "file"; name: string; path: string; note?: string }
   | { kind: "clipboard"; text: string }
   | { kind: "window"; appName: string; title: string; url?: string };
 
@@ -154,6 +160,20 @@ export interface PluginStatus {
   opencodeFound: boolean;
 }
 
+export interface AttachedWindow {
+  name: string;
+  path: string;
+  size: number;
+  appName: string;
+  title: string;
+}
+
+/** A process behind a coding-agent session (set by Rust on each hook). */
+export interface HostProc {
+  pid: number;
+  exe: string;
+}
+
 export interface HookStatus {
   installed: boolean;
   settingsPath: string;
@@ -176,7 +196,7 @@ async function callOrThrow<T>(cmd: string, args?: Record<string, unknown>): Prom
 }
 
 export type BridgeEvent =
-  | { name: "cursor"; payload: { x: number; y: number } }
+  | { name: "cursor"; payload: { x: number; y: number; down?: boolean } }
   | { name: "tray"; payload: string }
   | { name: "hook"; payload: Record<string, unknown> }
   | { name: "screen-changed"; payload: null };

@@ -53,7 +53,7 @@ fn user_content(query: &str, context: Option<&ChatContext>) -> Result<Value, Str
     let mut text = String::new();
     let mut image: Option<String> = None;
     match context {
-        Some(ChatContext::File { name, path }) => {
+        Some(ChatContext::File { name, path, note }) => {
             let file = crate::claude::inbox_file(path)
                 .ok_or_else(|| "That file is not in Coucou's inbox yet — drop it again.".to_string())?;
             let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
@@ -66,7 +66,10 @@ fn user_content(query: &str, context: Option<&ChatContext>) -> Result<Value, Str
                     let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
                     let mime = if ext == "jpg" { "jpeg".to_string() } else { ext.clone() };
                     image = Some(format!("data:image/{mime};base64,{}", crate::claude::base64_for(&bytes)));
-                    text.push_str(&format!("The user attached an image: {name}\n\n"));
+                    match note {
+                        Some(note) => text.push_str(&format!("{note}\n\n")),
+                        None => text.push_str(&format!("The user attached an image: {name}\n\n")),
+                    }
                 }
                 "pdf" => {
                     return Err("PDFs need the Anthropic API or a CLI engine — this endpoint only takes text and images.".into());
@@ -276,7 +279,7 @@ mod tests {
 
     #[test]
     fn only_inbox_files_are_attached() {
-        let ctx = ChatContext::File { name: "win.ini".into(), path: r"C:\Windows\win.ini".into() };
+        let ctx = ChatContext::File { name: "win.ini".into(), path: r"C:\Windows\win.ini".into(), note: None };
         assert!(user_content("q", Some(&ctx)).is_err());
         assert_eq!(user_content("q", None).unwrap(), Value::String("q".into()));
     }

@@ -12,7 +12,8 @@ import {
 import { Sound } from "../core/sound";
 import { isAgentTask, State } from "../core/state";
 import { approvalResolved } from "./hooks";
-import { agentOf, taskIdFor } from "./sessions";
+import { agentOf, byKey, taskIdFor } from "./sessions";
+import { t } from "../core/i18n";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
@@ -82,6 +83,13 @@ export class Island {
   private lastLoveTime = 0;
   private botHoverStart = { x: 0, y: 0 };
 
+  // Mochi drag-out → window attach (macOS: drag Mochi onto any window). The
+  // slap waits for the release, so a press that turns into a drag (> 7 px)
+  // becomes a ghost instead.
+  private botPress: { x: number; y: number } | null = null;
+  private draggingGhost = false;
+  private ghostEl!: HTMLElement;
+
   private confusedRecovery: number | null = null;
   private prevViewBeforeConfused: IslandViewName = "overview";
   private lastSyncedView: IslandViewName | null = null;
@@ -113,10 +121,7 @@ export class Island {
         State.setFocus(id);
         Sound.play("blip");
       },
-      openTerminal: () => {
-        const cwd = State.focusTask?.sessionCwd ?? null;
-        void Bridge.openInVSCode(cwd);
-      },
+      openTerminal: () => void this.jumpToSession(),
       // The ↗ button — same targets as openAgentTarget() on macOS.
       openTarget: () => {
         const task = State.focusTask;
@@ -124,12 +129,14 @@ export class Island {
         const urls: Record<string, string> = {
           integration_resend: "https://resend.com/emails",
           integration_vercel: "https://vercel.com/dashboard",
-          integration_github: "https://github.com",
+          integration_github: "https://github.com/pulls",
           integration_stripe: "https://dashboard.stripe.com/payments",
           integration_notion: "https://notion.so",
           integration_calcom: "https://app.cal.com/bookings",
+          integration_spotify: "https://open.spotify.com",
         };
-        if (isAgentTask(task)) void Bridge.openInVSCode(task.sessionCwd ?? null);
+        if (isAgentTask(task)) void this.jumpToSession();
+        else if (task.id === "integration_orca") void Bridge.openOrca();
         else if (task.id === "integration_n8n") void Bridge.openN8n();
         else if (urls[task.id]) void Bridge.openUrl(urls[task.id]);
       },
@@ -221,8 +228,86 @@ export class Island {
     this.greetingCanvas.style.width = `${EXPANDED_W}px`;
     this.greetingCanvas.style.height = "150px";
 
-    this.root.append(this.wakeStrip, this.islandEl);
+    this.ghostEl = h("div", { id: "bot-ghost" }, h("i"), h("i"));
+    this.root.append(this.wakeStrip, this.islandEl, this.ghostEl);
     this.applyGeometry();
+  }
+
+  /**
+   * "Jump to terminal": the window that hosts the session (Windows Terminal,
+   * VS Code, Orca…, found from its process chain in Rust), else its folder.
+   */
+  private async jumpToSession() {
+    const task = State.focusTask;
+    if (!task) return;
+    const cwd = task.sessionCwd ?? null;
+    const host = task.sessionKey ? byKey(task.sessionKey)?.host : undefined;
+    if (host?.length && (await Bridge.focusSession(host, cwd))) return;
+    void Bridge.openInVSCode(cwd);
+  }
+
+  // ── Mochi drag-out → window attach ──────────────────────────────────────────
+
+  private startGhost(x: number, y: number) {
+    this.draggingGhost = true;
+    this.botPress = null;
+    this.cancelBotHover();
+    this.botHovering = false;
+    this.engine.triggerEmote("surprised");
+    Sound.play("pop");
+    this.moveGhost(x, y);
+    this.ghostEl.classList.add("on");
+    this.dirty = true;
+    this.ensureRunning();
+  }
+
+  private moveGhost(x: number, y: number) {
+    this.ghostEl.style.transform = `translate(${x - 27}px, ${y - 26}px)`;
+  }
+
+  /** The left button went up — over the island (DOM) or anywhere (Rust). */
+  onMouseUp(x: number, y: number) {
+    if (this.draggingGhost) {
+      this.draggingGhost = false;
+      this.ghostEl.classList.remove("on");
+      this.dirty = true;
+      this.ensureRunning();
+      const rect = this.islandRect();
+      const home =
+        x >= rect.x - HIT_MARGIN && x <= rect.x + rect.w + HIT_MARGIN &&
+        y >= rect.y - HIT_MARGIN && y <= rect.y + rect.h + HIT_MARGIN;
+      if (home) return; // dropped back on the island: nothing to attach
+      void Bridge.attachWindow()
+        .then((win) => {
+          const label = win.title ? `${win.appName} — ${win.title}` : win.appName;
+          State.droppedFile = {
+            name: win.name,
+            path: win.path,
+            label,
+            note: `The user dropped Mochi on a window and attached this screenshot of it — App: ${win.appName}` +
+              (win.title ? `, Window: ${win.title}` : ""),
+          };
+          State.promptContext = { kind: "window", appName: win.appName, title: win.title };
+          State.chatHistory = [];
+          void Bridge.chatReset();
+          Sound.play("approve");
+          this.engine.triggerEmote("happy");
+          this.setView("prompt");
+        })
+        .catch((err) => {
+          State.noteMessage = t(String(err).replace(/^Error:\s*/, ""));
+          this.setView("note");
+          Sound.play("error");
+          window.setTimeout(() => this.setView(State.defaultView()), 2400);
+        });
+      return;
+    }
+    if (this.botPress) {
+      // A plain click on Mochi: the slap, on release.
+      this.botPress = null;
+      this.cancelBotHover();
+      this.engine.slap();
+    }
   }
 
   // ── FSM ─────────────────────────────────────────────────────────────────────
@@ -548,10 +633,17 @@ export class Island {
         return;
       }
       if (this.isBotHit(e.clientX, e.clientY)) {
-        this.cancelBotHover();
-        this.engine.slap();
+        if (IS_TAURI) {
+          // Slap on release, unless this press turns into a drag-out.
+          this.botPress = { x: e.clientX, y: e.clientY };
+        } else {
+          this.cancelBotHover();
+          this.engine.slap();
+        }
       }
     });
+    // Over the window the DOM sees the release; elsewhere Rust's `mouse-up` does.
+    window.addEventListener("mouseup", (e) => this.onMouseUp(e.clientX, e.clientY));
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
@@ -570,11 +662,19 @@ export class Island {
     }
   }
 
-  /** Cursor in window-logical coordinates. */
-  onCursor(x: number, y: number) {
+  /** Cursor in window-logical coordinates; `down`: left button held (Rust poll). */
+  onCursor(x: number, y: number, down = false) {
     State.mouse = { x, y };
     const rect = this.islandRect();
     State.mouseInIsland = { x: x - rect.x, y: y - rect.y };
+
+    if (this.botPress && down && Math.hypot(x - this.botPress.x, y - this.botPress.y) > 7) {
+      this.startGhost(x, y);
+    }
+    if (this.draggingGhost) {
+      this.moveGhost(x, y);
+      return; // no enter/leave, hover or auto-close bookkeeping mid-drag
+    }
 
     // Windows sends no cursor position with an OLE drag, so the drop sequence is
     // fed from the Win32 cursor poll instead — it runs throughout the drag.
@@ -752,7 +852,8 @@ export class Island {
 
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
     // The drop canvas draws its own Mochi; two of them would overlap.
-    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive;
+    // The ghost stands in for Mochi while it is being dragged out.
+    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !this.draggingGhost;
     this.botCanvas.style.opacity = visible ? "1" : "0";
 
     if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive) {

@@ -209,4 +209,19 @@ export const ES: Record<string, string> = {
   "Orca isn't running on this PC.": "Orca no está abierto en este equipo.",
   "Orca is slow to answer.": "Orca tarda en responder.",
   "Orca's pipe isn't served by your account — Coucou won't send it the token.": "La tubería de Orca no es de tu cuenta: Coucou no le envía el token.",
+
+  // ── Window attach, Spotify ────────────────────────────────────────────────
+  "Drop Mochi on a window to ask about it.": "Suelta a Mochi sobre una ventana para preguntar sobre ella.",
+  "That window has no visible area to capture.": "Esa ventana no tiene una zona visible que capturar.",
+  "That window can't be captured.": "Esa ventana no se puede capturar.",
+  "Summarize what this window shows.": "Resume lo que muestra esta ventana.",
+  "Explain what is on this screen, simply.": "Explica de forma sencilla lo que hay en esta pantalla.",
+  "What next?": "¿Y ahora?",
+  "Looking at this, what should I do next?": "Viendo esto, ¿qué debería hacer ahora?",
+  "Now playing": "Sonando",
+  "Paused": "En pausa",
+  "Previous": "Anterior",
+  "Next": "Siguiente",
+  "Play": "Reproducir",
+  "Pause": "Pausa",
 };

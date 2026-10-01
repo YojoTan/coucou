@@ -93,11 +93,12 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_calcom", "Cal.com", "#C9956A", "n8n"),
   task("integration_stripe", "Stripe", "#0570DE", "n8n"),
   task("integration_orca", "Orca", "#8B5CF6", "n8n"),
+  task("integration_spotify", "Spotify", "#1DB954", "n8n"),
 ];
 
 export const TOGGLEABLE_INTEGRATION_IDS = [
   "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-  "integration_notion", "integration_calcom", "integration_stripe", "integration_orca",
+  "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify",
 ];
 
 /** What an integration poller last reported. */
@@ -176,7 +177,8 @@ class AppState {
   fileDragOver = false;
 
   promptContext: PromptContext | null = null;
-  droppedFile: { name: string; path: string } | null = null;
+  /** `label`/`note`: a window screenshot shows the window in its chip and tells the model what it is. */
+  droppedFile: { name: string; path: string; label?: string; note?: string } | null = null;
   noteMessage: string | null = null;
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];

@@ -52,6 +52,7 @@ const OPEN_URLS: Record<string, string> = {
   integration_stripe: "https://dashboard.stripe.com/payments",
   integration_notion: "https://notion.so",
   integration_calcom: "https://app.cal.com/bookings",
+  integration_spotify: "https://open.spotify.com",
 };
 
 function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
@@ -418,6 +419,8 @@ export function hasIntegrationData(id: string): boolean {
       return info.loaded;
     case "integration_orca":
       return info.loaded;
+    case "integration_spotify":
+      return get(id).nowPlaying != null;
     default:
       return false;
   }
@@ -448,9 +451,38 @@ export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHoo
       return calcomCard();
     case "integration_orca":
       return orcaCard();
+    case "integration_spotify":
+      return spotifyCard();
     default:
       return idleCard(task, hooks.openSettings);
   }
+}
+
+// ── Spotify (now playing) ─────────────────────────────────────────────────────
+// What Windows' media flyout shows, Spotify first (media.rs). Local only.
+
+function spotifyCard(): HTMLElement {
+  const now = (get("integration_spotify").nowPlaying ?? {}) as Record<string, unknown>;
+  const playing = now.playing === true;
+  const button = (label: string, icon: string, action: "toggle" | "next" | "previous") =>
+    h("button", { class: "media-btn", title: label, onclick: () => void Bridge.mediaControl(action) }, svg(icon, 9));
+  const extra = now.app && now.app !== "Spotify" ? h("span", { class: "int-total" }, h("span", { text: String(now.app) })) : undefined;
+  return h(
+    "div",
+    { class: "int-card" },
+    header("#1DB954", "Spotify", t(playing ? "Now playing" : "Paused"), extra),
+    h("div", { class: "int-rows" },
+      listRow("#1DB954", true,
+        h("span", { class: "int-name", text: String(now.title ?? "") }),
+      ),
+      now.artist ? h("div", { class: "int-sub", style: "padding:0 8px 0 18px", text: String(now.artist) }) : h("span"),
+    ),
+    h("div", { class: "int-actions media" },
+      button(t("Previous"), ICONS.previous, "previous"),
+      button(t(playing ? "Pause" : "Play"), playing ? ICONS.pause : ICONS.play, "toggle"),
+      button(t("Next"), ICONS.next, "next"),
+    ),
+  );
 }
 
 // ── Orca ──────────────────────────────────────────────────────────────────────

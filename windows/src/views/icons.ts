@@ -2,6 +2,11 @@
 // Drawn on a 24×24 grid so they read at the same optical size.
 
 export const ICONS = {
+  // play.fill / pause.fill / backward.end.fill / forward.end.fill (Spotify pill)
+  play: "M7 4.5v15l12.5-7.5L7 4.5z",
+  pause: "M6.5 4.5h4v15h-4zm7 0h4v15h-4z",
+  previous: "M5 5h2.4v14H5zm2.4 7L19 4.8v14.4L7.4 12z",
+  next: "M16.6 5H19v14h-2.4zM5 4.8 16.6 12 5 19.2V4.8z",
   // house.fill
   house: "M12 3.2 2.8 10.6V21h6.6v-5.4h5.2V21h6.6V10.6L12 3.2z",
   // bubble.left.fill

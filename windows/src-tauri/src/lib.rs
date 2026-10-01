@@ -1,5 +1,6 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
+mod capture;
 mod claude;
 mod clipboard;
 mod cli_chat;
@@ -9,7 +10,9 @@ mod hooks;
 mod hotkey;
 mod integrations;
 mod island;
+mod jump;
 mod log;
+mod media;
 mod openai_chat;
 mod opencode;
 mod orca;
@@ -449,6 +452,37 @@ fn open_orca() -> bool {
     orca::open_app()
 }
 
+/// Drag-out of Mochi: the window under the cursor, captured into the inbox.
+#[tauri::command]
+async fn attach_window() -> Result<capture::AttachedWindow, String> {
+    tauri::async_runtime::spawn_blocking(capture::attach)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// "Jump to terminal": focuses the window hosting a session (see jump.rs).
+/// False when there is none, so the island falls back to opening the folder.
+#[tauri::command]
+async fn focus_session(host: Vec<jump::HostProc>, cwd: Option<String>) -> bool {
+    if host.len() > 16 {
+        return false;
+    }
+    tauri::async_runtime::spawn_blocking(move || jump::focus(&host, cwd.as_deref()))
+        .await
+        .unwrap_or(false)
+}
+
+/// Spotify pill buttons: play/pause, next, previous.
+#[tauri::command]
+async fn media_control(app: AppHandle, action: String) -> Result<(), String> {
+    let result = tauri::async_runtime::spawn_blocking(move || media::control(&action))
+        .await
+        .map_err(|e| e.to_string())?;
+    // Show the new track right away rather than at the next poll.
+    integrations::poll_once(app, "integration_spotify").await;
+    result
+}
+
 /// Where the GitHub pill's token comes from: "token" (pasted), "gh" (the local
 /// gh login) or None. The token itself never leaves Rust.
 #[tauri::command]
@@ -696,6 +730,9 @@ pub fn run() {
             hotkey_set,
             open_orca,
             github_auth,
+            attach_window,
+            focus_session,
+            media_control,
             opencode_status,
             opencode_plugin_text,
             opencode_apply,

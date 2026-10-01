@@ -278,7 +278,9 @@ fn attachment(context: Option<&ChatContext>) -> Option<Attachment> {
 
 fn context_line(context: Option<&ChatContext>) -> Option<String> {
     match context? {
-        ChatContext::File { name, .. } => Some(format!("The user attached a file: {name}")),
+        ChatContext::File { name, note, .. } => {
+            Some(note.clone().unwrap_or_else(|| format!("The user attached a file: {name}")))
+        }
         ChatContext::Window { app_name, title, url } => {
             let mut s = format!("Context — App: {app_name}, Window: {title}");
             if let Some(url) = url {
@@ -791,7 +793,7 @@ mod tests {
 
     #[test]
     fn a_file_outside_the_inbox_is_refused() {
-        let ctx = ChatContext::File { name: "win.ini".into(), path: r"C:\Windows\win.ini".into() };
+        let ctx = ChatContext::File { name: "win.ini".into(), path: r"C:\Windows\win.ini".into(), note: None };
         assert!(build_plan(Engine::Claude, "", "q", Some(&ctx), None, &[]).is_err());
     }
 }

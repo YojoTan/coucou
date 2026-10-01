@@ -116,7 +116,8 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_github", 7, 180, poll_github);
     spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
     spawn(app.clone(), "integration_notion", 9, 300, poll_notion);
-    spawn(app, "integration_orca", 6, 5, poll_orca);
+    spawn(app.clone(), "integration_orca", 6, 5, poll_orca);
+    spawn(app, "integration_spotify", 4, 3, poll_spotify);
 }
 
 /// True when the user has this integration switched on in settings.
@@ -162,6 +163,7 @@ pub async fn poll_once(app: AppHandle, id: &str) {
         "integration_notion" => poll_notion(app).await,
         "integration_calcom" => poll_calcom(app).await,
         "integration_orca" => poll_orca(app).await,
+        "integration_spotify" => poll_spotify(app).await,
         _ => {}
     }
 }
@@ -686,6 +688,22 @@ async fn poll_orca(app: AppHandle) {
             });
         }
     }
+}
+
+// ── Spotify (now playing) ─────────────────────────────────────────────────────
+// Local only: Windows' media session, no network at all (media.rs).
+
+async fn poll_spotify(app: AppHandle) {
+    let now = tauri::async_runtime::spawn_blocking(crate::media::now_playing).await.ok().flatten();
+    emit(&app, IntegrationUpdate {
+        id: "integration_spotify",
+        data: match now {
+            Some(n) => json!({ "nowPlaying": n }),
+            None => json!({ "nowPlaying": null }),
+        },
+        error: None,
+        event: None,
+    });
 }
 
 // ── n8n ───────────────────────────────────────────────────────────────────────

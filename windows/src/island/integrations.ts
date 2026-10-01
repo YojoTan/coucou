@@ -44,6 +44,9 @@ export async function refreshConfigured() {
   // Orca needs no key: it is "configured" whenever its runtime answers.
   const orca = State.integrations.integration_orca ?? { data: {}, error: null, loaded: false, configured: true };
   State.integrations.integration_orca = { ...orca, configured: true };
+  // Spotify reads Windows' media session: nothing to configure.
+  const spotify = State.integrations.integration_spotify ?? { data: {}, error: null, loaded: false, configured: true };
+  State.integrations.integration_spotify = { ...spotify, configured: true };
   State.notify();
 }
 

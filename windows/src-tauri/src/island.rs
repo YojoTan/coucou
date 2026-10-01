@@ -40,6 +40,8 @@ const HIT_MARGIN: f64 = 14.0;
 pub struct CursorPayload {
     pub x: f64,
     pub y: f64,
+    /// Left button held: lets the island tell a drag of Mochi from a hover.
+    pub down: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -332,12 +334,15 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                     });
                     if !own_popup { let _ = win.emit("outside-click", ()); }
                 }
+                if was_down && !down {
+                    let _ = win.emit("mouse-up", CursorPayload { x, y, down });
+                }
                 was_down = down;
                 if pressed {
                     let handle = app.clone();
                     let _ = app.run_on_main_thread(move || unblock_webview_drops(&handle));
                 }
-                if (x - last.0).abs() < 1.0 && (y - last.1).abs() < 1.0 {
+                if (x - last.0).abs() < 1.0 && (y - last.1).abs() < 1.0 && !pressed {
                     continue;
                 }
                 last = (x, y);
@@ -372,7 +377,7 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                     let _ = win.set_ignore_cursor_events(!accept);
                 }
 
-                let _ = win.emit("cursor", CursorPayload { x, y });
+                let _ = win.emit("cursor", CursorPayload { x, y, down });
             }
             // Parking: the island just collapsed to its wake strip, and the strip
             // must take the mouse. The tick that ran as it collapsed may have

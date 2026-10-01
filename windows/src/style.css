@@ -88,6 +88,37 @@ body {
   pointer-events: none;
 }
 
+/* Mochi, dragged out of the island to attach a window. */
+#bot-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 54px;
+  height: 48px;
+  border-radius: 46% 46% 48% 48% / 58% 58% 42% 42%;
+  background: radial-gradient(circle at 68% 22%, #fffaf5 0%, #ead9cc 78%, #ddccbf 100%);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 60;
+  display: none;
+}
+
+#bot-ghost.on {
+  display: block;
+}
+
+#bot-ghost i {
+  position: absolute;
+  top: 19px;
+  width: 8px;
+  height: 11px;
+  border-radius: 50%;
+  background: #1a1412;
+}
+
+#bot-ghost i:first-child { left: 16px; }
+#bot-ghost i:last-child { left: 30px; }
+
 /* The drop sequence. Sits under the header and takes over the island body; it
    cross-fades in and out, so the last frame stays up while the views return. */
 #upload-layer {
@@ -1248,6 +1279,25 @@ input[type="range"]::-webkit-slider-thumb {
 /* A row that opens something (GitHub PRs). */
 .int-row.link:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+/* Spotify pill: play/pause and skip. */
+.media-btn {
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  color: #c5c8cd;
+  width: 26px;
+  height: 20px;
+  border-radius: 10px;
+  font: 400 10px var(--font);
+  display: grid;
+  place-items: center;
+  cursor: default;
+}
+
+.media-btn:hover {
+  background: rgba(29, 185, 84, 0.25);
+  color: #fff;
 }
 
 .int-ref {

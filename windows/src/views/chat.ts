@@ -46,6 +46,12 @@ const FILE_ACTIONS: [string, string][] = [
   [t("Explain"), t("Explain what this file is and what it does, simply.")],
   [t("Key points"), t("List the key points of this file, one per line.")],
 ];
+/** The same, for a window Mochi was dropped on. */
+const WINDOW_ACTIONS: [string, string][] = [
+  [t("Summarize"), t("Summarize what this window shows.")],
+  [t("Explain"), t("Explain what is on this screen, simply.")],
+  [t("What next?"), t("Looking at this, what should I do next?")],
+];
 const CODE_ACTION: [string, string] = [t("Review code"), t("Review this code: point out bugs, risks and clear improvements, most important first.")];
 const CODE_EXT = /\.(rs|ts|tsx|js|jsx|py|swift|go|java|kt|c|cc|cpp|h|cs|rb|php|sh|ps1|sql)$/i;
 
@@ -106,7 +112,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
 
     const first = State.chatHistory.length === 1;
     const file = State.droppedFile;
-    let context: ChatContext | null = first && file ? { kind: "file", name: file.name, path: file.path } : null;
+    let context: ChatContext | null = first && file ? { kind: "file", name: file.name, path: file.path, note: file.note } : null;
     // Context rides on the first turn only, so later clipboard text goes in the
     // question itself — the bubble still shows just what was typed.
     let sendQuery = query;
@@ -147,11 +153,12 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     sync() {
       const file = State.droppedFile;
       const clipLabel = clip ? t("Clipboard · {n} chars", { n: clip.length.toLocaleString() }) : "";
-      const wantChip = `${file?.name ?? ""}|${clipLabel}`;
+      const fileLabel = file?.label ?? file?.name ?? "";
+      const wantChip = `${fileLabel}|${clipLabel}`;
       if (chipRow.dataset.label !== wantChip) {
         chipRow.dataset.label = wantChip;
         clear(chipRow);
-        if (file?.name) chipRow.append(contextChip(file.name));
+        if (fileLabel) chipRow.append(contextChip(fileLabel));
         if (clipLabel) {
           chipRow.append(contextChip(clipLabel, () => {
             clip = null;
@@ -168,7 +175,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         suggestRow.dataset.file = wantSuggest;
         clear(suggestRow);
         if (wantSuggest) {
-          const actions = CODE_EXT.test(wantSuggest) ? [...FILE_ACTIONS, CODE_ACTION] : FILE_ACTIONS;
+          const actions = file?.note ? WINDOW_ACTIONS : CODE_EXT.test(wantSuggest) ? [...FILE_ACTIONS, CODE_ACTION] : FILE_ACTIONS;
           for (const [label, prompt] of actions) {
             suggestRow.append(h("button", {
               class: "suggest",

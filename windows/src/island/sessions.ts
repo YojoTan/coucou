@@ -6,6 +6,7 @@
 // that is actually asking.
 
 import { State, type AgentTask } from "../core/state";
+import type { HostProc } from "../core/bridge";
 import type { BotStateName } from "../core/layout";
 
 export type AgentKind = "claude" | "codex" | "opencode";
@@ -22,6 +23,8 @@ export interface AgentSession {
   lastSeen: number;
   /** Order of activity: events can share a millisecond, a counter can't. */
   seq: number;
+  /** Processes behind the session, nearest first: where "jump" looks for its window. */
+  host?: HostProc[];
 }
 
 /** A session with no event for this long is gone (crashed, closed without SessionEnd). */

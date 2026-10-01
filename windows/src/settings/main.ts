@@ -505,6 +505,8 @@ interface IntegrationDef {
 const INTEGRATIONS: IntegrationDef[] = [
   // No key: Coucou reads the Orca running on this PC through its local pipe.
   { id: "integration_orca", name: "Orca", color: "#8B5CF6", fields: [] },
+  // No key either: what Windows' media flyout shows, Spotify first.
+  { id: "integration_spotify", name: "Spotify", color: "#1DB954", fields: [] },
   { id: "integration_stripe", name: "Stripe", color: "#0570DE",
     fields: [{ key: "stripe-api-key", label: "Secret key", placeholder: t("sk_live_…"), secret: true }] },
   { id: "integration_github", name: "GitHub", color: "#F4505E",

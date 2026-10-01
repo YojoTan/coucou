@@ -1,22 +1,31 @@
 # Porting the 2026-10 macOS work to Windows
 
-Brief for whoever (human or agent) brings PRs #1, #2 and #3 to the Windows build
+Brief for whoever (human or agent) brings PRs #1, #2, #3 and #5 to the Windows build
 (`windows/`, Tauri: Rust in `src-tauri/`, TypeScript in `src/`). It says what each
 feature does, where the macOS code is, how to do it on Windows, and how to know
 it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
 
-## State on 2026-10-01
+## State
+
+Windows column updated from the commits on `main` (Windows 0.3.1, "Windows
+parity" 1/n and 2/n); "in progress" means a commit says it started, not that
+every point below is checked — tick them off as you go.
 
 | Feature | macOS | Windows |
 | --- | --- | --- |
-| LAN: answer every beacon (PR #3) | done | **written, never compiled** — `src-tauri/src/lan/mod.rs` |
-| LAN Mochis in the header + online/offline toasts (#3) | done | — |
-| Compact toasts (#2) | done | — |
-| Mochi engine: headphones, dance, whistle, headset, talking mouth, mouth that follows the gaze, nightcap, accessories, moods, confetti, travel, gaze at a speaker (#1–#3) | done | — |
-| Spotify Mochi (#1) | done | pill exists (`media.rs`), no personality |
+| LAN: answer every beacon (PR #3) | done | shipped in 0.3.1 — check Mac ↔ PC stay online |
+| LAN Mochis in the header + online/offline toasts (#3) | done | in progress (parity 1/n) |
+| Compact toasts (#2) | done | in progress (parity 1/n) |
+| Mochi engine: headphones, dance, whistle, headset, talking mouth, mouth that follows the gaze, nightcap, accessories, moods, confetti, travel, gaze at a speaker (#1–#3) | done | in progress (parity 1/n, 2/n) |
+| Mochi's mode (Focus) and what it puts on Mochi (#3) | done | in progress (parity 1/n, 2/n) |
+| Spotify Mochi (#1) | done | in progress (parity 2/n) |
 | Orca: terminal jump, no double alerts, asks/gates from the notch (#1) | done | basic pill only (`orca.rs`) |
 | Discord (#2) | done | — |
-| Extras: custom Mochis, pet, calendar, Mac, weather, voice, travel, Focus (#3) | done | — |
+| Extras: custom Mochis, pet, calendar, Mac, weather, voice, travel (#3) | done | — |
+| Desktop Mochi: a pet on the desktop that follows you across screens (#5) | done | — |
+| The island follows the cursor's screen (#5) | done | — |
+| A click outside closes the open island (#5) | done | — |
+| Coucou's sounds in a call: smart, never lost (#5) | done | — (with Discord) |
 
 ## Step 0 — build, and check the LAN fix (do this first)
 
@@ -67,9 +76,10 @@ poller works only while its pill is on.
 3. LAN header + toasts.
 4. Engine additions (accessories, moods, mouth, headphones…) — the visual base.
 5. Spotify Mochi — the data already exists.
-6. Discord.
+6. Discord (with the call sounds of section 8.4).
 7. Orca.
 8. Extras.
+9. Desktop Mochi and the island across screens (section 8).
 
 ---
 
@@ -247,6 +257,63 @@ hosts, emoji reactions) → Rust `#[test]`s.
 
 **Tests to port:** `tests/ExtrasParseTests.swift` (meeting links, weather
 outfit, command output) → Rust `#[test]`s.
+
+## 8. Desktop Mochi, screens, clicks, call sounds (#5)
+
+**macOS:** `DesktopMochi.swift`; `followCursorScreen` / `moveIsland` and the
+click monitor in `IslandWindowController.swift`; `shouldSilence` /
+`releaseDeferred` in `DiscordCall.swift`.
+
+### 8.1 Desktop Mochi
+
+**What:** Mochi out of the notch as a desktop companion (opt-in: Settings ›
+Extras, or drag Mochi out of the island and drop it where there's no window).
+92 px, always on top of normal windows, on every virtual desktop; drag it
+anywhere (position remembered per screen, relative to the work area; default
+bottom right); eyes on the cursor; same engine and syncs as the notch Mochi
+(accessories, Spotify, Discord, moods); the current toast in a speech bubble on
+the side with room. Click → the island opens on the pet's screen; double click
+→ back to the notch. A dark radial halo (black 62 % → 38 % → 0) and a soft
+shadow keep the idle, nearly white Mochi readable on white pages. While it's
+out, the compact island hides its own Mochi. 30 fps while visible.
+
+**Following:** when the cursor stays 1.2 s on another screen, the pet goes to
+its spot there: a hop in an arc (0.45–0.85 s, lift 40–150 px, ease in-out,
+squash on take-off and landing) when the distance is ≤ 1400 px, else a teleport
+(fade out 0.22 s with sparkles and closed eyes, move, fade in 0.28 s with
+sparkles). One trip at a time. **Pitfall from macOS:** window frames didn't
+animate through the platform animator — step the position yourself at 60 fps.
+
+**Windows:** a second Tauri window (transparent, undecorated, `always_on_top`,
+`skip_taskbar`, not focusable) rendering the engine; drag via
+`startDragging()` on mouse down, or manual moves for the click/double-click
+distinction; monitors from `availableMonitors()` / the cursor's monitor via
+`cursorPosition()`; move with `setPosition` stepped from a timer.
+
+### 8.2 The island follows the cursor's screen
+
+With several screens, the island moves to the screen the cursor settles on
+(0.5 s), **at once when the cursor is within 60 px of that screen's top edge**
+(the notch / menu bar, where you click — without that, a click on the notch
+of the other screen found nothing for half a second). Notch geometry on a
+notch screen, the menu-bar island elsewhere. Never while expanded or while
+Mochi is dragged. Setting on by default.
+
+### 8.3 A click outside closes the island
+
+A global left/right mouse-down outside Coucou collapses the expanded island
+(it used to close only with Escape or after the cursor left). Not while pinned
+on a decision (an approval, an Orca question/gate), not during an upload.
+Clicks on Coucou's own windows (island, pet, settings, menus) don't count.
+
+### 8.4 Coucou's sounds in a Discord call
+
+Three choices (Settings › Discord), **smart by default**: muted, or with nobody
+speaking, sounds play as usual; with the mic open and someone speaking, the
+latest sound waits for the next pause (1.5 s with nobody speaking), a mute, or
+the end of the call — never dropped. "Always", and "Never (summed up after)"
+which counts the silenced alerts for the end-of-call toast. Mochi's voice
+follows the same rule.
 
 ## Don't change
 

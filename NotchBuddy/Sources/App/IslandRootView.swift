@@ -101,8 +101,8 @@ struct IslandContainer: View {
                     Rectangle().frame(width: islandWidth,
                                       height: state.mode == .expanded ? 320 : islandHeight)
                 }
-                .opacity(uploadActive || greetingActive ? 0 : 1)
-                .animation(.easeInOut(duration: 0.25), value: uploadActive || greetingActive)
+                .opacity(uploadActive || greetingActive || (state.desktopMochiOn && state.mode != .expanded) ? 0 : 1)
+                .animation(.easeInOut(duration: 0.25), value: uploadActive || greetingActive || state.desktopMochiOn)
 
             CountdownBar(state: state, islandW: islandWidth)
 
@@ -155,6 +155,13 @@ struct IslandContainer: View {
                 islandWidth  = w
                 islandHeight = newView == .prompt ? chatPromptHeight : h
             }
+        }
+        .onChange(of: state.screenEpoch) { _, _ in
+            // Another screen: another notch (or none) — re-measure without animating.
+            let (w, h) = islandSize(mode: state.mode, view: state.view, progress: state.uploadProgress,
+                                    nw: state.notchWidth, nh: state.notchHeight, toast: state.compactToast != nil)
+            islandWidth = w
+            islandHeight = state.mode == .expanded && state.view == .prompt ? chatPromptHeight : h
         }
         .onChange(of: state.compactToast?.id) { _, _ in
             guard state.mode == .compact else { return }

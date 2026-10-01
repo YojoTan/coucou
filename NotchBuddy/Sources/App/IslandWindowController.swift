@@ -14,6 +14,7 @@ final class IslandWindowController: NSWindowController {
     private var wasInIsland = false
     private var frameTimer: Timer?
     private var keyMonitor: Any?
+    private var clickMonitor: Any?
     private var viewSubscription: AnyCancellable?
     private var autoCloseSubscription: AnyCancellable?
 
@@ -236,6 +237,8 @@ final class IslandWindowController: NSWindowController {
             }
         }
 
+        followCursorScreen(mouse: mouse, panel: panel)
+
         // Keep the cursor and panel in the same global coordinate space. The
         // active screen can change independently of the screen hosting Mochi.
         AppState.shared.islandPanelFrame = pf
@@ -371,10 +374,34 @@ final class IslandWindowController: NSWindowController {
             }
         }
 
+        // A click in another app closes the open island. Clicks on the island, the
+        // desktop pet, Settings or Coucou's menus are local events and never get
+        // here. Not while it's pinned (an approval or a question waiting for a
+        // decision) nor mid-upload.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state.mode == .expanded, !self.state.isPinned,
+                      ![.upload, .uploading, .choose].contains(self.state.view) else { return }
+                self.collapse()
+            }
+        }
+
         // Hook server expand requests (alerts only)
         NotificationCenter.default.addObserver(forName: .hookExpand, object: nil, queue: .main) { [weak self] note in
             guard let self, let view = note.object as? IslandView else { return }
             self.expand(to: view)
+        }
+
+        // The desktop pet was clicked: the island opens on the pet's screen.
+        NotificationCenter.default.addObserver(forName: .petOpenIsland, object: nil, queue: .main) { [weak self] note in
+            let screenId = note.object as? CGDirectDisplayID
+            MainActor.assumeIsolated {
+                guard let self, let id = screenId else { return }
+                if let screen = NSScreen.screens.first(where: { $0.displayID == id }), screen.displayID != self.islandScreen?.displayID {
+                    self.moveIsland(to: screen)
+                }
+                self.expand(to: .overview)
+            }
         }
 
         // Hook server compact reveal (non-alert work events: session start, tool use, etc.)
@@ -441,6 +468,9 @@ final class IslandWindowController: NSWindowController {
                     SoundEngine.shared.play("approve")
                     NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
                     self.expand(to: .prompt)
+                } else if !self.islandRectContains(mouse) {
+                    // Dropped where there's no window: Mochi stays out, as a desktop pet.
+                    DesktopMochi.shared.release(at: mouse)
                 }
                 #endif
             }
@@ -491,6 +521,66 @@ final class IslandWindowController: NSWindowController {
             }
         }
     }
+
+    // MARK: - Follow the cursor's screen
+    // With several screens, the island moves to the one the cursor settles on
+    // (half a second; at once near that screen's top edge, where it's clicked),
+    // as a notch island or a menu-bar island depending on that screen. Never
+    // while it's open or Mochi is being dragged. Settings › Extras.
+
+    static let followScreenKey = "island-follow-screen"
+    private var otherScreen: (id: CGDirectDisplayID, since: Date)? = nil
+
+    private func followCursorScreen(mouse: NSPoint, panel: IslandPanel) {
+        guard UserDefaults.standard.object(forKey: Self.followScreenKey) as? Bool ?? true,
+              NSScreen.screens.count > 1, state.mode != .expanded, !AppState.shared.isDraggingBot,
+              let target = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }),
+              let current = panel.screen, target.displayID != current.displayID
+        else { otherScreen = nil; return }
+        // Heading for the top of that screen — its notch or menu bar, where the
+        // island is clicked — it moves at once: a click must find it there.
+        if mouse.y > target.frame.maxY - 60 {
+            otherScreen = nil
+            moveIsland(to: target)
+            return
+        }
+        guard let o = otherScreen, o.id == target.displayID else {
+            otherScreen = (target.displayID, Date())
+            return
+        }
+        guard Date().timeIntervalSince(o.since) > 0.5 else { return }
+        otherScreen = nil
+        moveIsland(to: target)
+    }
+
+    /// Puts the island at the top centre of `screen`, with that screen's notch (or none).
+    func moveIsland(to screen: NSScreen) {
+        guard let panel = window as? IslandPanel else { return }
+        let g = Self.screenGeometry(for: screen)
+        notchW = g.width
+        notchH = g.height
+        hasNotch = g.hasNotch
+        panel.notchWidth = notchW
+        panel.notchHeight = notchH
+        let sf = screen.frame
+        panel.setFrameOrigin(NSPoint(x: sf.midX - panel.frame.width / 2, y: sf.maxY - panel.frame.height))
+        let s = AppState.shared
+        s.notchWidth = notchW
+        s.notchHeight = notchH
+        s.hasNotch = hasNotch
+        s.islandPanelFrame = panel.frame
+        s.screenEpoch += 1
+    }
+
+    /// Whether a global point is over the island itself (a drop back home).
+    private func islandRectContains(_ p: NSPoint) -> Bool {
+        guard let panel = window as? IslandPanel else { return false }
+        let r = panel.currentIslandFrame(nw: notchW, nh: notchH)
+        return r.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY).insetBy(dx: -20, dy: -20).contains(p)
+    }
+
+    /// The screen the island is on now (the pet uses it).
+    var islandScreen: NSScreen? { window?.screen }
 
     // MARK: - Drag ghost window (Mochi follows cursor during drag)
 

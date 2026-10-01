@@ -468,3 +468,16 @@
 "%@ went offline" = "%@ se desconectó";
 "%@ · offline" = "%@ · desconectado";
 "Send a file…" = "Enviar un archivo…";
+
+/* Call sounds */
+"Coucou's sounds in a call" = "Sonidos de Coucou en una llamada";
+"Smart: not while someone speaks and your mic is open" = "Inteligente: no mientras alguien habla y tu micrófono está abierto";
+"Never (summed up after)" = "Nunca (resumen al colgar)";
+"Smart: muted, or with nobody speaking, sounds play as usual; during a conversation a sound waits for the next pause instead of being lost." = "Inteligente: silenciado, o sin nadie hablando, los sonidos suenan normal; durante una conversación, el sonido espera a la siguiente pausa en vez de perderse.";
+
+/* Desktop Mochi */
+"Desktop Mochi" = "Mochi en el escritorio";
+"Mochi out of the notch, as a companion on your desktop: drag it anywhere, it follows you from screen to screen, says its news in a bubble. Click it to open the island there, double-click to send it home. You can also drag Mochi out of the island and drop it where there's no window." = "Mochi fuera del notch, como compañero en tu escritorio: arrástralo adonde quieras, te sigue de pantalla en pantalla y te cuenta las novedades en un globito. Un click abre la isla en esa pantalla; doble click lo manda de vuelta al notch. También puedes arrastrar a Mochi fuera de la isla y soltarlo donde no haya ventanas.";
+"Mochi on the desktop" = "Mochi en el escritorio";
+"It follows me to the screen I'm on" = "Me sigue a la pantalla donde estoy";
+"The island follows me to the screen I'm on" = "La isla me sigue a la pantalla donde estoy";

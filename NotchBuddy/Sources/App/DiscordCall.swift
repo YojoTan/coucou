@@ -10,8 +10,10 @@ import Combine
 // • who talks how long → a summary when the call ends ("52 min · you 61 %");
 // • a paired LAN Mochi whose name matches someone in the call → a high five;
 // • joining pauses Spotify, leaving resumes it (if Coucou paused it);
-// • call mode: Coucou's sounds hold their peace during the call, and the
-//   summary says how many alerts came in meanwhile;
+// • call mode: Coucou's sounds never talk over a conversation — muted, or with
+//   nobody speaking, they play as usual; while someone speaks with your mic
+//   open, the sound waits for a pause instead of being lost ("smart", the
+//   default; "always" and "never" are the other choices);
 // • locking the screen mutes, unlocking unmutes (only if the lock muted);
 // • the microphone helpers (DiscordMic) follow the call and the mute;
 // • Rich Presence: what Mochi is doing, on the user's Discord profile (opt-in).
@@ -41,7 +43,15 @@ final class DiscordCall {
     static let shared = DiscordCall()
 
     static let pauseSpotifyKey = "discord-pause-spotify"      // default on
-    static let quietKey = "discord-quiet-calls"                // default on
+    static let quietKey = "discord-quiet-calls"                // before "smart": off meant always
+    static let soundsKey = "discord-call-sounds"
+
+    enum CallSounds: String, CaseIterable { case always, smart, never }
+
+    static var callSounds: CallSounds {
+        if let raw = UserDefaults.standard.string(forKey: soundsKey), let v = CallSounds(rawValue: raw) { return v }
+        return UserDefaults.standard.object(forKey: quietKey) as? Bool == false ? .always : .smart
+    }
     static let lockMuteKey = "discord-lock-mute"                // default on
     static let presenceKey = "discord-presence"                 // default off
 
@@ -56,6 +66,7 @@ final class DiscordCall {
     private var pausedSpotify = false
     private var mutedByLock = false
     private(set) var missed = 0
+    private var deferred: String? = nil        // the sound waiting for a pause
 
     private init() {}
 
@@ -85,10 +96,45 @@ final class DiscordCall {
     }
 
     /// Call mode: SoundEngine asks before every sound.
-    func shouldSilence() -> Bool {
-        guard started != nil, Self.on(Self.quietKey) else { return false }
-        missed += 1
-        return true
+    func shouldSilence(_ name: String) -> Bool {
+        guard started != nil else { return false }
+        switch Self.callSounds {
+        case .always: return false
+        case .never:
+            missed += 1
+            return true
+        case .smart:
+            guard conversationGoing else { return false }
+            deferred = name          // the latest wins; one sound when the pause comes
+            return true
+        }
+    }
+
+    /// Mochi's voice: not over a conversation, not when the user chose silence.
+    var wouldInterrupt: Bool {
+        guard started != nil else { return false }
+        switch Self.callSounds {
+        case .always: return false
+        case .never: return true
+        case .smart: return conversationGoing
+        }
+    }
+
+    /// Mic open and someone speaking: the only time a sound would get in the way.
+    private var conversationGoing: Bool {
+        let s = AppState.shared
+        let speaking = !(s.discordVoice?.speaking.isEmpty ?? true)
+        return speaking && !s.discordSelfMute && !s.discordSelfDeaf
+    }
+
+    /// A pause (1.5 s with nobody speaking), a mute, or the end of the call: play what waited.
+    private func releaseDeferred(after delay: Double = 1.5) {
+        guard deferred != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, let name = self.deferred, !self.conversationGoing else { return }
+            self.deferred = nil
+            SoundEngine.shared.play(name)
+        }
     }
 
     // MARK: Voice
@@ -122,6 +168,7 @@ final class DiscordCall {
             let now = Date()
             for id in new.speaking.subtracting(o.speaking) { talkStart[id] = now }
             for id in o.speaking.subtracting(new.speaking) { closeTalk(id, now) }
+            if new.speaking.isEmpty { releaseDeferred() }
         default:
             break
         }
@@ -154,6 +201,7 @@ final class DiscordCall {
         let topEntry = talked.filter { $0.key != me }.max { $0.value < $1.value }
         let transcript = DiscordMic.shared.takeTranscript()
         started = nil
+        releaseDeferred(after: 0.3)
         micFollow(muted: true)
         if pausedSpotify {
             pausedSpotify = false
@@ -193,6 +241,7 @@ final class DiscordCall {
     private func micFollow(muted: Bool) {
         DiscordMic.shared.update(inCall: started != nil, muted: muted)
         if !muted { AppState.shared.discordTalkingMuted = false }
+        if muted { releaseDeferred(after: 0.2) }
     }
 
     /// Settings toggled a mic option: start or stop listening now.

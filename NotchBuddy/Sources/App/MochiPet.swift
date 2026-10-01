@@ -90,8 +90,8 @@ enum MochiVoice {
         let state = AppState.shared
         guard UserDefaults.standard.bool(forKey: key), state.soundEnabled, !state.focusMode.silences else { return }
         #if !APPSTORE
-        // Not over a Discord call.
-        guard state.discordVoice == nil else { return }
+        // Not over a Discord conversation (same rule as the sounds).
+        guard !DiscordCall.shared.wouldInterrupt else { return }
         #endif
         let u = AVSpeechUtterance(string: text)
         let lang = Bundle.main.preferredLocalizations.first ?? Locale.preferredLanguages.first ?? "en"

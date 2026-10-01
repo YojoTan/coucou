@@ -11,6 +11,7 @@ mod hotkey;
 mod integrations;
 mod island;
 mod jump;
+mod lan;
 mod log;
 mod media;
 mod openai_chat;
@@ -98,7 +99,7 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut settings: Settings) {
-    let (screen_changed, autostart_changed, engine_changed, hotkey_changed) = {
+    let (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed) = {
         let mut current = shared.settings.lock().unwrap();
         // The island saves its own preferences (sound, volume, auto-close), but
         // where the chat sends a conversation is the settings window's call
@@ -112,6 +113,9 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             settings.openai_model = current.openai_model.clone();
             settings.anthropic_base_url = current.anthropic_base_url.clone();
             settings.anthropic_model = current.anthropic_model.clone();
+            // Whether this PC talks to the network, and lets others ask its
+            // Mochi, is the settings window's call alone.
+            settings.lan = current.lan.clone();
             settings.hooks_installed = current.hooks_installed;
         }
         let screen_changed = current.screen != settings.screen;
@@ -124,9 +128,14 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             || current.anthropic_base_url != settings.anthropic_base_url
             || current.anthropic_model != settings.anthropic_model;
         let hotkey_changed = current.hotkey != settings.hotkey;
+        let lan_changed = current.lan != settings.lan;
         *current = settings.clone();
-        (screen_changed, autostart_changed, engine_changed, hotkey_changed)
+        (screen_changed, autostart_changed, engine_changed, hotkey_changed, lan_changed)
     };
+    if lan_changed {
+        let prefs = settings.lan.clone();
+        std::thread::spawn(move || lan::apply(&prefs));
+    }
     if hotkey_changed {
         let _ = hotkey::apply(&app, &settings.hotkey);
     }
@@ -482,6 +491,87 @@ fn open_orca() -> bool {
     orca::open_app()
 }
 
+// ── Mochis on the network (lan/) ─────────────────────────────────────────────
+
+/// A paired Mochi asks this one: answered by an engine that can't read this
+/// PC's files — the API engines, or Claude Code with web tools only.
+pub(crate) async fn answer_for_peer(app: &AppHandle, from: &str, text: &str) -> Result<String, String> {
+    let s = app.state::<Shared>().settings.lock().unwrap().clone();
+    let query = format!("{from}'s Mochi, on the same local network, asks you this — answer them directly:\n\n{text}");
+    let reply = match resolve_engine(&s) {
+        Backend::Api => claude::send(&Chat::default(), &claude::Target::Official, &s.model, query, None, None).await,
+        Backend::AnthropicCompat => {
+            let target = claude::Target::Custom(claude::custom_endpoint(&s.anthropic_base_url)?);
+            claude::send(&Chat::default(), &target, &s.anthropic_model, query, None, None).await
+        }
+        Backend::OpenAi => openai_chat::send(&OpenAiChat::default(), &s.openai_base_url, &s.openai_model, query, None, None).await,
+        Backend::Cli(Engine::Claude) => return cli_chat::ask_web_only(&s.cli_model, query).await,
+        Backend::Cli(_) => return Err("This Mochi's chat engine can't take questions from other Mochis.".into()),
+        Backend::None => return Err("This Mochi has no chat engine set up.".into()),
+    };
+    reply.map(|r| r.text)
+}
+
+#[tauri::command]
+fn lan_state() -> lan::LanView {
+    lan::view()
+}
+
+#[tauri::command]
+async fn lan_pair(webview: Webview, id: String) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "lan_pair")?;
+    tauri::async_runtime::spawn_blocking(move || lan::pair(&id)).await.map_err(|e| e.to_string())?
+}
+
+/// A pairing code or a file offer, answered with a click in the island.
+#[tauri::command]
+fn lan_decide(webview: Webview, token: String, ok: bool) -> Result<(), String> {
+    only(&webview, island::WINDOW_LABEL, "lan_decide")?;
+    lan::decide(&token, ok);
+    Ok(())
+}
+
+#[tauri::command]
+fn lan_forget(webview: Webview, id: String) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "lan_forget")?;
+    lan::forget(&id);
+    Ok(())
+}
+
+#[tauri::command]
+async fn lan_message(id: String, text: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || lan::send_message(&id, &text)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn lan_ask(id: String, text: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || lan::ask(&id, &text)).await.map_err(|e| e.to_string())?
+}
+
+/// Sends a dropped file — only Coucou's own inbox copy, never another path.
+#[tauri::command]
+async fn lan_send_file(id: String, path: String) -> Result<(), String> {
+    let file = claude::inbox_file(&path).ok_or("That file is not in Coucou's inbox — drop it again.")?;
+    tauri::async_runtime::spawn_blocking(move || lan::send_file(&id, &file)).await.map_err(|e| e.to_string())?
+}
+
+/// What Mochi is doing, for the paired Mochis that ask.
+#[tauri::command]
+fn lan_set_status(state: String, label: String) {
+    lan::set_local_status(&state, &label);
+}
+
+/// Shows a received file in Explorer — only inside Downloads\Coucou.
+#[tauri::command]
+fn lan_reveal(path: String) -> bool {
+    let dir = lan::downloads_dir();
+    let (Ok(file), Ok(dir)) = (std::fs::canonicalize(&path), std::fs::canonicalize(&dir)) else { return false };
+    if !file.starts_with(&dir) || !file.is_file() {
+        return false;
+    }
+    Command::new("explorer").arg(format!("/select,{}", file.display())).spawn().is_ok()
+}
+
 /// Drag-out of Mochi: the window under the cursor, captured into the inbox.
 #[tauri::command]
 async fn attach_window() -> Result<capture::AttachedWindow, String> {
@@ -790,6 +880,15 @@ pub fn run() {
             focus_session,
             media_control,
             chat_choices,
+            lan_state,
+            lan_pair,
+            lan_decide,
+            lan_forget,
+            lan_message,
+            lan_ask,
+            lan_send_file,
+            lan_set_status,
+            lan_reveal,
             opencode_status,
             opencode_plugin_text,
             opencode_apply,
@@ -824,6 +923,7 @@ pub fn run() {
             }
             pipe::start(handle.clone());
             integrations::start(handle.clone());
+            lan::init(&handle, &loaded.lan);
             Ok(())
         })
         .run(tauri::generate_context!())

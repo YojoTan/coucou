@@ -1,5 +1,6 @@
 // Entry point: boot the bridge, wire the island, start the greeting.
 
+import { registerLanHandlers } from "./island/lan";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
@@ -79,6 +80,7 @@ async function main() {
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);
+  registerLanHandlers(island);
 
   island.launch();
 

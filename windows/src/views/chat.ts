@@ -251,6 +251,20 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     chipRow.dataset.label = "";
 
     try {
+      const peer = State.peerChat;
+      if (peer) {
+        // To a paired Mochi: a message for its user, or a question for it.
+        if (peer.mode === "message") {
+          await Bridge.lanMessage(peer.id, query);
+          State.chatHistory.push({ id: nextId++, role: "assistant", content: t("Sent to {name} ✓", { name: peer.name }) });
+        } else {
+          const answer = await Bridge.lanAsk(peer.id, query);
+          State.chatHistory.push({ id: nextId++, role: "assistant", content: answer });
+        }
+        State.stateOverride = null;
+        Sound.play("finish");
+        return;
+      }
       if (!engine) await refreshEngine();
       const picked = tuning.model || tuning.effort ? tuning : null;
       const reply = await Bridge.chatSend(sendQuery, context, picked);
@@ -285,11 +299,32 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       const file = State.droppedFile;
       const clipLabel = clip ? t("Clipboard · {n} chars", { n: clip.length.toLocaleString() }) : "";
       const fileLabel = file?.label ?? file?.name ?? "";
-      const wantChip = `${fileLabel}|${clipLabel}`;
+      const peer = State.peerChat;
+      const peerLabel = peer
+        ? peer.mode === "message" ? t("Message to {name}", { name: peer.name }) : t("Ask {name}'s Mochi", { name: peer.name })
+        : "";
+      const wantChip = `${fileLabel}|${clipLabel}|${peerLabel}`;
       if (chipRow.dataset.label !== wantChip) {
         chipRow.dataset.label = wantChip;
         clear(chipRow);
         if (fileLabel) chipRow.append(contextChip(fileLabel));
+        if (peer) {
+          const chip = contextChip(peerLabel, () => {
+            State.peerChat = null;
+            State.chatHistory = [];
+            chipRow.dataset.label = "";
+            State.notify();
+          });
+          // A click on the chip switches between a message and a question.
+          chip.title = t("Click to switch between a message and a question");
+          chip.addEventListener("click", (e) => {
+            if ((e.target as HTMLElement).closest(".chip-x")) return;
+            peer.mode = peer.mode === "message" ? "ask" : "message";
+            chipRow.dataset.label = "";
+            State.notify();
+          });
+          chipRow.append(chip);
+        }
         if (clipLabel) {
           chipRow.append(contextChip(clipLabel, () => {
             clip = null;
@@ -299,6 +334,9 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         }
       }
       clipBtn.classList.toggle("on", !!clip);
+      // Toward a peer, Settings' engine isn't involved: no model to pick.
+      tuneBtn.style.display = State.peerChat ? "none" : "";
+      clipBtn.style.display = State.peerChat ? "none" : "";
 
       // Quick actions only while a dropped file waits for its first question.
       const wantSuggest = file && State.chatHistory.length === 0 && !sending ? file.name : "";
@@ -329,7 +367,11 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         log.scrollTop = log.scrollHeight;
       }
 
-      input.placeholder = t(State.chatHistory.length === 0 ? "Ask me anything…" : "Continue…");
+      input.placeholder = State.peerChat
+        ? State.peerChat.mode === "message"
+          ? t("Write to {name}…", { name: State.peerChat.name })
+          : t("Ask {name}'s Mochi…", { name: State.peerChat.name })
+        : t(State.chatHistory.length === 0 ? "Ask me anything…" : "Continue…");
       input.disabled = sending;
     },
     focus() {

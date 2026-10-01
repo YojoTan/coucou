@@ -4,6 +4,7 @@
 // Sending a file by email is not in the Windows v1, so `choose` offers the one
 // action the spec asks for: ask a question about it.
 
+import { Bridge } from "../core/bridge";
 import { t } from "../core/i18n";
 import { h, clear } from "./dom";
 import { State } from "../core/state";
@@ -87,20 +88,49 @@ export function buildUploading(): ViewHost {
 export function buildChoose(actions: ViewActions): ViewHost {
   const title = h("div", { class: "title" });
   const sub = h("div", { class: "sub", text: t("What do you want to do with it?") });
-  const row = h(
-    "div",
-    { class: "actions" },
-    h("button", {
-      class: "btn primary",
-      text: t("Ask a question"),
-      onclick: () => actions.setView("prompt"),
-    }),
-    h("button", {
-      class: "btn secondary",
-      text: t("Cancel"),
-      onclick: () => actions.setView(State.defaultView()),
-    }),
-  );
+  const ask = h("button", {
+    class: "btn primary",
+    text: t("Ask a question"),
+    onclick: () => actions.setView("prompt"),
+  });
+  const cancel = h("button", {
+    class: "btn secondary",
+    text: t("Cancel"),
+    onclick: () => actions.setView(State.defaultView()),
+  });
+  const row = h("div", { class: "actions" }, ask, cancel);
+  let peerKey = "";
+
+  /** Paired Mochis online: the file can go to one of them. */
+  function peerButtons() {
+    const peers = State.lan.peers.filter((p) => p.paired && p.online).slice(0, 2);
+    const key = peers.map((p) => p.id).join(",");
+    if (key === peerKey) return;
+    peerKey = key;
+    row.querySelectorAll(".to-peer").forEach((b) => b.remove());
+    for (const p of peers) {
+      row.insertBefore(h("button", {
+        class: "btn secondary to-peer",
+        text: t("Send to {name}", { name: p.name }),
+        onclick: async () => {
+          const file = State.droppedFile;
+          if (!file) return;
+          State.noteMessage = t("Waiting for {name} to accept {file}…", { name: p.name, file: file.name });
+          actions.setView("note");
+          try {
+            await Bridge.lanSendFile(p.id, file.path);
+            State.noteMessage = t("{file} sent to {name} ✓", { file: file.name, name: p.name });
+          } catch (err) {
+            State.noteMessage = t(String(err).replace(/^Error:\s*/, ""));
+          }
+          State.notify();
+          window.setTimeout(() => {
+            if (State.view === "note") actions.setView(State.defaultView());
+          }, 3000);
+        },
+      }), cancel);
+    }
+  }
   const el = h(
     "div",
     { class: "view" },
@@ -119,6 +149,7 @@ export function buildChoose(actions: ViewActions): ViewHost {
         h("b", { text: State.droppedFile?.name ?? "file" }),
         document.createTextNode(" is ready."),
       );
+      peerButtons();
     },
   };
 }

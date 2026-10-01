@@ -2,6 +2,7 @@
 // Stage 2 covers the Claude Code hooks and the general preferences; API keys and
 // integrations land here too in a later stage.
 
+import type { LanView } from "../core/state";
 import { setLanguage, t } from "../core/i18n";
 import "./settings.css";
 import { Bridge, onEvent, type EngineInfo, type HookStatus, type HookTarget } from "../core/bridge";
@@ -684,6 +685,86 @@ function githubStatus(): HTMLElement {
   return line;
 }
 
+// ── Mochis on the network ─────────────────────────────────────────────────────
+
+function lanSection(): HTMLElement {
+  const prefs = settings.lan ?? { enabled: false, name: "", shareLabel: false, allowAsks: false };
+  settings.lan = prefs;
+  const name = h("input", { type: "text", placeholder: t("This PC's name"), spellcheck: "false", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  name.value = prefs.name;
+  const status = h("div", { class: "hint" });
+  const list = h("div", { style: "display:flex;flex-direction:column;gap:6px;margin-top:6px" });
+  const note = h("div", { class: "hint" });
+
+  const persist = async () => {
+    settings.lan = { ...prefs };
+    await save();
+  };
+  name.addEventListener("change", () => {
+    prefs.name = name.value.trim().slice(0, 40);
+    void persist();
+  });
+
+  function draw(view: LanView) {
+    status.textContent = !view.enabled
+      ? t("Off: nothing is sent or listened for on the network.")
+      : view.running
+        ? t("On as {name}. Other Mochis on this network can see it.", { name: view.name })
+        : t("Starting…");
+    clear(list);
+    if (!view.enabled) return;
+    const paired = view.peers.filter((p) => p.paired);
+    const nearby = view.peers.filter((p) => !p.paired);
+    if (!paired.length && !nearby.length) list.append(h("div", { class: "hint", text: t("No other Mochi found yet. Turn this on, on the other computer too.") }));
+    for (const p of paired) {
+      list.append(h("div", { class: "row", style: "gap:8px" },
+        statusDot(p.online),
+        h("span", { style: "flex:1 1 auto", text: `${p.name} · ${t(p.online ? "paired" : "paired, offline")}` }),
+        h("button", { text: t("Forget"), onclick: async () => { await Bridge.lanForget(p.id); } }),
+      ));
+    }
+    for (const p of nearby) {
+      const pair = h("button", { text: t("Pair…") }) as HTMLButtonElement;
+      pair.addEventListener("click", async () => {
+        pair.disabled = true;
+        note.textContent = t("Compare the code in the island with the one on {name}'s screen.", { name: p.name });
+        try {
+          await Bridge.lanPair(p.id);
+        } catch (err) {
+          note.textContent = String(err).replace(/^Error:\s*/, "");
+        }
+        pair.disabled = false;
+      });
+      list.append(h("div", { class: "row", style: "gap:8px" },
+        h("i", { class: "dot", style: "background:#8E939C" }),
+        h("span", { style: "flex:1 1 auto", text: `${p.name} · ${t("nearby")}` }),
+        pair,
+      ));
+    }
+  }
+
+  void Bridge.lanState().then((v) => v && draw(v));
+  void onEvent<LanView>("lan-state", draw);
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: t("Mochis on this network") })),
+    h("div", {
+      class: "hint",
+      text: t("See the Mochis of the people around you, send them messages and files, and ask their Mochi. Off by default; a Mochi is trusted only after you both compared the same code, and everything between paired Mochis is encrypted end to end."),
+    }),
+    h("div", { class: "row" }, h("label", { text: t("Mochis on the network") }), toggle(prefs.enabled, (v) => { prefs.enabled = v; void persist(); })),
+    h("div", { class: "row" }, h("label", { text: t("Name") }), name),
+    h("div", { class: "row" }, h("label", { text: t("Share what Mochi is doing") }), toggle(prefs.shareLabel, (v) => { prefs.shareLabel = v; void persist(); })),
+    h("div", { class: "row" }, h("label", { text: t("Paired Mochis may ask mine") }), toggle(prefs.allowAsks, (v) => { prefs.allowAsks = v; void persist(); })),
+    h("div", { class: "hint", text: t("Their questions use your chat engine, with web search only: it never reads your files. Codex, Gemini and opencode can't answer them.") }),
+    status,
+    list,
+    note,
+  );
+}
+
 // ── General section ───────────────────────────────────────────────────────────
 
 function generalSection(): HTMLElement {
@@ -822,6 +903,7 @@ async function main() {
     ["chat", t("Chat"), [chatSection(), apiSection(hasKey)]],
     ["agents", t("Agents"), [claudeSection(status), hooksSection("codex", codexStatus), opencodeSection()]],
     ["integrations", t("Integrations"), [integrationsSection(present)]],
+    ["lan", t("Mochis"), [lanSection()]],
   ];
   const bar = h("div", { class: "tabs", role: "tablist" });
   const panes = h("div", { class: "tab-panes" });

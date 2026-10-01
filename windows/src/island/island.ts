@@ -122,6 +122,20 @@ export class Island {
         Sound.play("blip");
       },
       openTerminal: () => void this.jumpToSession(),
+      lanCompose: (id, name, mode) => {
+        State.peerChat = { id, name, mode };
+        State.droppedFile = null;
+        State.promptContext = null;
+        State.chatHistory = [];
+        State.isPinned = false;
+        this.fsm.pinned = false;
+        this.setView("prompt");
+      },
+      lanDone: () => {
+        State.isPinned = false;
+        this.fsm.pinned = false;
+        this.setView(State.defaultView());
+      },
       // The ↗ button — same targets as openAgentTarget() on macOS.
       openTarget: () => {
         const task = State.focusTask;
@@ -388,6 +402,7 @@ export class Island {
   }
 
   setView(view: IslandViewName) {
+    if (view !== "prompt") State.peerChat = null;
     this.stopSequenceIfLeaving(view);
     if (State.mode !== "expanded") {
       this.fsm.forceHome();

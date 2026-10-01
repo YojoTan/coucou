@@ -719,6 +719,38 @@ pub fn run(exe: &Path, args: &[String], cwd: &Path, stdin: Option<&str>, timeout
     })
 }
 
+/// A question from a paired Mochi, through Claude Code with web tools only: no
+/// Read, so nothing on this PC can be read on someone else's behalf. One turn,
+/// no history, in Coucou's own folder.
+pub async fn ask_web_only(model: &str, query: String) -> Result<String, String> {
+    let exe = locate(Engine::Claude).ok_or("Claude Code isn't installed.")?;
+    let mut args: Vec<String> = [
+        "-p", "--output-format", "json", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
+        "--append-system-prompt", PERSONA,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    if crate::tuning::valid_model(model) {
+        args.push("--model".into());
+        args.push(model.trim().into());
+    }
+    let out = tokio::task::spawn_blocking(move || {
+        let dir = work_dir()?;
+        run(&exe, &args, &dir, Some(&query), RUN_TIMEOUT)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if out.timed_out {
+        return Err("Claude Code took too long to answer.".into());
+    }
+    let parsed = parse(Engine::Claude, &out.stdout);
+    match parsed.text.filter(|t| !t.trim().is_empty()) {
+        Some(text) if !parsed.is_error => Ok(text.trim().to_string()),
+        other => Err(other.unwrap_or_else(|| "Claude Code didn't answer.".into())),
+    }
+}
+
 /// Engines the user can pick, keyed by id, for `resolve`.
 pub fn installed() -> HashMap<Engine, PathBuf> {
     Engine::ALL.into_iter().filter_map(|e| locate(e).map(|p| (e, p))).collect()

@@ -94,11 +94,12 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_stripe", "Stripe", "#0570DE", "n8n"),
   task("integration_orca", "Orca", "#8B5CF6", "n8n"),
   task("integration_spotify", "Spotify", "#1DB954", "n8n"),
+  task("integration_lan", "Mochis", "#F472B6", "n8n"),
 ];
 
 export const TOGGLEABLE_INTEGRATION_IDS = [
   "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-  "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify",
+  "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan",
 ];
 
 /** What an integration poller last reported. */
@@ -108,6 +109,39 @@ export interface IntegrationInfo {
   loaded: boolean;
   configured: boolean;
 }
+
+/** Mochis on the network (Rust lan/). */
+export interface LanPeer {
+  id: string;
+  name: string;
+  paired: boolean;
+  online: boolean;
+  status: { state: string; label: string } | null;
+}
+
+export interface LanView {
+  enabled: boolean;
+  running: boolean;
+  id: string;
+  name: string;
+  peers: LanPeer[];
+}
+
+export interface LanPrefs {
+  enabled: boolean;
+  name: string;
+  shareLabel: boolean;
+  allowAsks: boolean;
+}
+
+/** What a peer asks of this Mochi, shown in the `lan` view. */
+export type LanPrompt =
+  | { kind: "pair"; token: string; peer: string; code: string; initiator: boolean }
+  | { kind: "file"; token: string; peer: string; name: string; size: number }
+  | { kind: "message"; peer: string; peerId: string; text: string }
+  | { kind: "received"; peer: string; name: string; path: string }
+  | { kind: "paired"; peer: string; ok: boolean }
+  | { kind: "asked"; peer: string };
 
 export interface Settings {
   soundEnabled: boolean;
@@ -133,6 +167,7 @@ export interface Settings {
   hotkey: string;
   /** Interface language: "auto" (system), "en", "es" or "pt-BR". */
   language: string;
+  lan: LanPrefs;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -155,6 +190,7 @@ export const DEFAULT_SETTINGS: Settings = {
   anthropicModel: "",
   hotkey: "ctrl+alt+space",
   language: "auto",
+  lan: { enabled: false, name: "", shareLabel: false, allowAsks: false },
 };
 
 type Listener = () => void;
@@ -175,6 +211,11 @@ class AppState {
 
   isPinned = false;
   paused = false;
+
+  /** Mochis on the network, what one of them asks, and who the chat writes to. */
+  lan: LanView = { enabled: false, running: false, id: "", name: "", peers: [] };
+  lanPrompt: LanPrompt | null = null;
+  peerChat: { id: string; name: string; mode: "message" | "ask" } | null = null;
 
   uploadProgress = 0;
   uploadDuration = 2.4;

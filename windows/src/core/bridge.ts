@@ -2,6 +2,7 @@
 // page is opened in a plain browser, so the island can be iterated on with
 // `npm run dev` alone.
 
+import type { LanView } from "./state";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -96,6 +97,16 @@ export const Bridge = {
   attachWindow: () => callOrThrow<AttachedWindow>("attach_window"),
   /** Focuses the terminal window hosting a session; false → nothing found. */
   focusSession: (host: HostProc[], cwd: string | null) => call<boolean>("focus_session", { host, cwd }),
+  // ── Mochis on the network ─────────────────────────────────────────────────
+  lanState: () => call<LanView>("lan_state"),
+  lanPair: (id: string) => callOrThrow<void>("lan_pair", { id }),
+  lanDecide: (token: string, ok: boolean) => call<void>("lan_decide", { token, ok }),
+  lanForget: (id: string) => call<void>("lan_forget", { id }),
+  lanMessage: (id: string, text: string) => callOrThrow<void>("lan_message", { id, text }),
+  lanAsk: (id: string, text: string) => callOrThrow<string>("lan_ask", { id, text }),
+  lanSendFile: (id: string, path: string) => callOrThrow<void>("lan_send_file", { id, path }),
+  lanSetStatus: (state: string, label: string) => call<void>("lan_set_status", { state, label }),
+  lanReveal: (path: string) => call<boolean>("lan_reveal", { path }),
   /** Spotify pill buttons. */
   mediaControl: (action: "toggle" | "next" | "previous") => call<void>("media_control", { action }),
   /** "token" (pasted), "gh" (local gh login) or null — never the token itself. */

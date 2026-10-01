@@ -27,6 +27,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Already in the tree through tauri and reqwest; used to validate URLs before
 # they reach the shell or carry an API key.
 url = "2"
+# LAN Mochis (lan/): Ed25519, X25519, HKDF, AES-GCM. Already in the tree
+# through rustls; named here to use it directly.
+ring = "0.17"
 keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.61", features = [
   # Now playing (media.rs): the System Media Transport Controls.

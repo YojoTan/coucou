@@ -11,6 +11,7 @@ import { isAgentTask, SOURCE_LABELS, State, type AgentTask } from "../core/state
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
+import { buildLan, lanCard } from "./lan";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 
@@ -29,6 +30,10 @@ export interface ViewActions {
   setAutoClose(seconds: number): void;
   openSettingsWindow(): void;
   blip(): void;
+  /** Opens the chat toward a paired Mochi: a message to its user, or a question to it. */
+  lanCompose(id: string, name: string, mode: "message" | "ask"): void;
+  /** A `lan` prompt is answered: back to where the island was. */
+  lanDone(): void;
 }
 
 export interface ViewHost {
@@ -230,7 +235,9 @@ function buildOverview(actions: ViewActions): ViewHost {
           cardKey = key;
           mode = "card";
           clear(leftBody);
-          leftBody.append(renderIntegrationCard(task, hooks));
+          leftBody.append(task.id === "integration_lan"
+            ? lanCard(() => actions.openSettingsWindow(), (id, name, m) => actions.lanCompose(id, name, m))
+            : renderIntegrationCard(task, hooks));
         }
       }
 
@@ -558,6 +565,7 @@ export function buildViews(
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());
   map.set("note", buildNote());
+  map.set("lan", buildLan(actions));
   map.set("settings", buildSettings(actions));
   map.set("prompt", buildPrompt(onChatHeightChange));
   map.set("upload", buildUpload());

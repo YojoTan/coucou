@@ -43,6 +43,9 @@ pub struct Settings {
     /// Global shortcut that opens the chat: "off" or one of hotkey::CHOICES.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    /// Mochis on the local network (lan/): off by default.
+    #[serde(default)]
+    pub lan: crate::lan::LanPrefs,
     /// Interface language: "auto" (follow Windows), "en", "es" or "pt-BR".
     #[serde(default = "default_language")]
     pub language: String,
@@ -87,6 +90,7 @@ impl Default for Settings {
             openai_model: String::new(),
             anthropic_base_url: String::new(),
             anthropic_model: String::new(),
+            lan: Default::default(),
             hotkey: default_hotkey(),
             language: default_language(),
         }

@@ -90,16 +90,46 @@ pub struct ChatReply {
     pub text: String,
 }
 
+/// Where a Messages request goes: Anthropic itself, or an endpoint that speaks
+/// the same dialect (upstream #26) — a gateway or another provider.
+pub enum Target {
+    Official,
+    /// The full `…/v1/messages` URL, already checked by `custom_endpoint`.
+    Custom(String),
+}
+
+/// `https://host/anthropic`, `…/v1` or `…/v1/messages` → the messages URL.
+/// https only, except a server on this PC (same rule as every other base URL).
+pub fn custom_endpoint(base: &str) -> Result<String, String> {
+    let base = crate::integrations::secure_base_url(base)?;
+    Ok(if base.ends_with("/v1/messages") {
+        base
+    } else if base.ends_with("/v1") {
+        format!("{base}/messages")
+    } else {
+        format!("{base}/v1/messages")
+    })
+}
+
 /// One chat turn. Returns the assistant's text, or a message the island shows
 /// in the note view.
 pub async fn send(
     chat: &Chat,
+    target: &Target,
     model: &str,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    let key = secrets::get("anthropic-api-key")
-        .ok_or_else(|| "API key missing. Open settings.".to_string())?;
+    // Each target has its own key; a custom endpoint may need none at all.
+    let key = match target {
+        Target::Official => Some(
+            secrets::get("anthropic-api-key").ok_or_else(|| "API key missing. Open settings.".to_string())?,
+        ),
+        Target::Custom(_) => secrets::get("anthropic-compat-key"),
+    };
+    if model.trim().is_empty() {
+        return Err("Set a model for the endpoint in Settings → Chat.".into());
+    }
 
     let mut content: Vec<Value> = Vec::new();
 
@@ -137,16 +167,19 @@ pub async fn send(
 
     chat.push(json!({ "role": "user", "content": content }));
 
-    let body = json!({
+    let mut body = json!({
         "model": model,
         "max_tokens": MAX_TOKENS,
         "system": SYSTEM_PROMPT,
-        "tools": [{ "type": "web_search_20260209", "name": "web_search", "max_uses": 5 }],
-        "fallbacks": "default",
         "messages": chat.snapshot(),
     });
+    // Web search and server-side fallbacks are Anthropic's own features.
+    if matches!(target, Target::Official) {
+        body["tools"] = json!([{ "type": "web_search_20260209", "name": "web_search", "max_uses": 5 }]);
+        body["fallbacks"] = json!("default");
+    }
 
-    let response = match call(&key, &body).await {
+    let response = match call(target, key.as_deref(), &body).await {
         Ok(v) => v,
         Err(err) => {
             chat.pop(); // keep the history consistent with what the model saw
@@ -189,7 +222,7 @@ pub async fn send(
     Ok(ChatReply { text })
 }
 
-async fn call(key: &str, body: &Value) -> Result<Value, String> {
+async fn call(target: &Target, key: Option<&str>, body: &Value) -> Result<Value, String> {
     // No redirects: reqwest strips `Authorization` on a cross-host redirect but
     // not a custom header like `x-api-key`, which would follow it anywhere.
     let client = reqwest::Client::builder()
@@ -198,16 +231,25 @@ async fn call(key: &str, body: &Value) -> Result<Value, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let response = client
-        .post(ENDPOINT)
-        .header("x-api-key", key)
+    let (url, who) = match target {
+        Target::Official => (ENDPOINT, "Claude API"),
+        Target::Custom(url) => (url.as_str(), "Endpoint"),
+    };
+    let mut request = client
+        .post(url)
         .header("anthropic-version", ANTHROPIC_VERSION)
-        .header("anthropic-beta", FALLBACK_BETA)
-        .header("content-type", "application/json")
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?;
+        .header("content-type", "application/json");
+    if let Some(key) = key {
+        request = request.header("x-api-key", key);
+        // Gateways differ on where they read the key; both go to the same host.
+        if matches!(target, Target::Custom(_)) {
+            request = request.header("authorization", format!("Bearer {key}"));
+        }
+    }
+    if matches!(target, Target::Official) {
+        request = request.header("anthropic-beta", FALLBACK_BETA);
+    }
+    let response = request.json(body).send().await.map_err(|e| format!("Network error: {e}"))?;
 
     let status = response.status();
     let text = response.text().await.map_err(|e| e.to_string())?;
@@ -222,7 +264,7 @@ async fn call(key: &str, body: &Value) -> Result<Value, String> {
                     .map(str::to_string)
             })
             .unwrap_or_else(|| text.chars().take(200).collect());
-        return Err(format!("Claude API {status}: {detail}"));
+        return Err(format!("{who} {status}: {detail}"));
     }
     serde_json::from_str(&text).map_err(|e| format!("Bad API response: {e}"))
 }
@@ -295,7 +337,7 @@ fn base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{base64, inbox_file};
+    use super::{base64, custom_endpoint, inbox_file};
 
     #[test]
     fn only_files_inside_the_inbox_can_be_read_for_the_chat() {
@@ -316,6 +358,56 @@ mod tests {
 
         let _ = std::fs::remove_file(&inside);
         let _ = std::fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn a_custom_endpoint_gets_the_messages_dialect_without_anthropic_only_features() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let (mut request_line, mut line, mut len, mut version) = (String::new(), String::new(), 0usize, false);
+            reader.read_line(&mut request_line).unwrap();
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line.trim().is_empty() { break; }
+                let lower = line.to_ascii_lowercase();
+                if let Some(v) = lower.strip_prefix("content-length:") { len = v.trim().parse().unwrap(); }
+                if lower.starts_with("anthropic-version:") { version = true; }
+            }
+            let mut body = vec![0u8; len];
+            reader.read_exact(&mut body).unwrap();
+            let json = r#"{"content":[{"type":"text","text":"hola desde el gateway"}],"stop_reason":"end_turn"}"#;
+            let mut out = stream;
+            write!(out, "HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: {}
+Connection: close
+
+{}", json.len(), json).unwrap();
+            (request_line, version, String::from_utf8(body).unwrap())
+        });
+        let chat = super::Chat::default();
+        let target = super::Target::Custom(custom_endpoint(&format!("http://127.0.0.1:{port}")).unwrap());
+        let reply = tauri::async_runtime::block_on(super::send(&chat, &target, "glm-4.6", "hi".into(), None)).unwrap();
+        assert_eq!(reply.text, "hola desde el gateway");
+        let (request_line, version, body) = server.join().unwrap();
+        assert!(request_line.starts_with("POST /v1/messages"));
+        assert!(version, "anthropic-version is sent");
+        let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["model"], "glm-4.6");
+        assert!(body.get("tools").is_none() && body.get("fallbacks").is_none(), "web search and fallbacks are Anthropic's own");
+    }
+
+    #[test]
+    fn a_custom_endpoint_is_built_from_any_usual_base() {
+        assert_eq!(custom_endpoint("https://api.deepseek.com/anthropic").unwrap(), "https://api.deepseek.com/anthropic/v1/messages");
+        assert_eq!(custom_endpoint("http://localhost:4000/v1").unwrap(), "http://localhost:4000/v1/messages");
+        assert_eq!(custom_endpoint("https://gw.example/v1/messages/").unwrap(), "https://gw.example/v1/messages");
+        assert!(custom_endpoint("http://gw.example").is_err(), "the key must not travel in clear");
     }
 
     #[test]

@@ -259,7 +259,69 @@ const ENGINE_LABELS: Record<string, string> = {
   gemini: "Gemini CLI",
   opencode: "opencode",
   openai: "OpenAI-compatible endpoint",
+  anthropic: "Anthropic-compatible endpoint",
 };
+
+/** Servers that speak Anthropic's Messages API (upstream #26): [label, base URL, example model]. */
+const ANTHROPIC_PRESETS: [string, string, string][] = [
+  [t("LiteLLM (this PC)"), "http://localhost:4000", "claude-sonnet-5"],
+  ["DeepSeek", "https://api.deepseek.com/anthropic", "deepseek-chat"],
+  ["Moonshot (Kimi)", "https://api.moonshot.ai/anthropic", "kimi-k2-turbo-preview"],
+  ["Z.ai (GLM)", "https://api.z.ai/api/anthropic", "glm-4.6"],
+];
+
+/** Base URL, model and optional key for the Anthropic-compatible engine. */
+function anthropicPanel(): HTMLElement {
+  const preset = h("select", {}) as HTMLSelectElement;
+  preset.append(h("option", { value: "", text: t("Preset…") }));
+  for (const [label, url] of ANTHROPIC_PRESETS) preset.append(h("option", { value: url, text: label }));
+  const base = h("input", { type: "text", placeholder: "https://gateway.example.com", spellcheck: "false", autocomplete: "off", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const model = h("input", { type: "text", placeholder: t("model name"), spellcheck: "false", autocomplete: "off", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const key = h("input", { type: "password", placeholder: t("optional — local servers need none"), autocomplete: "off", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const saveKey = h("button", { text: t("Save key") });
+  const note = h("div", { class: "hint" });
+  base.value = settings.anthropicBaseUrl;
+  model.value = settings.anthropicModel;
+
+  async function refreshKey() {
+    const present = (await Bridge.secretPresent("anthropic-compat-key")) ?? false;
+    key.placeholder = present ? "••••••••  (stored)" : t("optional — local servers need none");
+  }
+  preset.addEventListener("change", async () => {
+    const p = ANTHROPIC_PRESETS.find(([, url]) => url === preset.value);
+    if (!p) return;
+    base.value = p[1];
+    if (!model.value) model.value = p[2];
+    settings.anthropicBaseUrl = base.value;
+    settings.anthropicModel = model.value;
+    await save();
+  });
+  for (const [input, field] of [[base, "anthropicBaseUrl"], [model, "anthropicModel"]] as const) {
+    input.addEventListener("change", async () => {
+      settings[field] = input.value.trim();
+      await save();
+    });
+  }
+  saveKey.addEventListener("click", async () => {
+    try {
+      await Bridge.secretSet("anthropic-compat-key", key.value.trim());
+      key.value = "";
+      note.textContent = t("Key saved in the Windows Credential Manager.");
+    } catch (err) {
+      note.textContent = t("Could not save: {error}", { error: String(err) });
+    }
+    await refreshKey();
+  });
+  void refreshKey();
+  note.textContent = t("Anthropic's Messages API on another server: a gateway like LiteLLM, or a provider that offers it. Its own key — your Anthropic key never goes there. https only, except servers on this PC. No web search.");
+  return h("div", { style: "display:flex;flex-direction:column;gap:6px" },
+    h("div", { class: "row" }, h("label", { text: t("Server") }), preset),
+    h("div", { class: "row" }, h("label", { text: t("Base URL") }), base),
+    h("div", { class: "row" }, h("label", { text: t("Model") }), model),
+    h("div", { class: "row" }, h("label", { text: t("API key") }), key, saveKey),
+    note,
+  );
+}
 
 /** Common OpenAI-compatible servers: [label, base URL, example model]. */
 const OPENAI_PRESETS: [string, string, string][] = [
@@ -343,6 +405,7 @@ function chatSection(): HTMLElement {
 
   let engines: EngineInfo[] = [];
   const openai = openaiPanel();
+  const anthropic = anthropicPanel();
 
   function fillSelect() {
     clear(select);
@@ -353,9 +416,11 @@ function chatSection(): HTMLElement {
       select.append(h("option", { value: e.id, text: `${e.label} (${state})${tag}`, disabled: !e.installed && settings.chatEngine !== e.id }));
     }
     select.append(h("option", { value: "openai", text: t("OpenAI-compatible (Ollama, LM Studio, OpenRouter…)") }));
+    select.append(h("option", { value: "anthropic", text: t("Anthropic-compatible (LiteLLM, DeepSeek, Kimi, GLM…)") }));
     select.append(h("option", { value: "api", text: t("Anthropic API (key below)") }));
     select.value = settings.chatEngine || "auto";
     openai.style.display = select.value === "openai" ? "" : "none";
+    anthropic.style.display = select.value === "anthropic" ? "" : "none";
   }
 
   function fillList() {
@@ -391,6 +456,7 @@ function chatSection(): HTMLElement {
   select.addEventListener("change", async () => {
     settings.chatEngine = select.value;
     openai.style.display = select.value === "openai" ? "" : "none";
+    anthropic.style.display = select.value === "anthropic" ? "" : "none";
     await save();
     await refreshActive();
   });
@@ -413,6 +479,7 @@ function chatSection(): HTMLElement {
     list,
     h("div", { class: "row" }, h("label", { text: t("CLI model") }), cliModel, detect),
     openai,
+    anthropic,
     active,
   );
 }

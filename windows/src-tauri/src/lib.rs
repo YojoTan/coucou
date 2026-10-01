@@ -109,6 +109,8 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             settings.model = current.model.clone();
             settings.openai_base_url = current.openai_base_url.clone();
             settings.openai_model = current.openai_model.clone();
+            settings.anthropic_base_url = current.anthropic_base_url.clone();
+            settings.anthropic_model = current.anthropic_model.clone();
             settings.hooks_installed = current.hooks_installed;
         }
         let screen_changed = current.screen != settings.screen;
@@ -117,7 +119,9 @@ fn save_settings(app: AppHandle, webview: Webview, shared: State<Shared>, mut se
             || current.cli_model != settings.cli_model
             || current.model != settings.model
             || current.openai_base_url != settings.openai_base_url
-            || current.openai_model != settings.openai_model;
+            || current.openai_model != settings.openai_model
+            || current.anthropic_base_url != settings.anthropic_base_url
+            || current.anthropic_model != settings.anthropic_model;
         let hotkey_changed = current.hotkey != settings.hotkey;
         *current = settings.clone();
         (screen_changed, autostart_changed, engine_changed, hotkey_changed)
@@ -367,7 +371,11 @@ async fn chat_send(
     only(&webview, island::WINDOW_LABEL, "chat_send")?;
     let s = shared.settings.lock().unwrap().clone();
     match resolve_engine(&s) {
-        Backend::Api => claude::send(&chat, &s.model, query, context).await,
+        Backend::Api => claude::send(&chat, &claude::Target::Official, &s.model, query, context).await,
+        Backend::AnthropicCompat => {
+            let target = claude::Target::Custom(claude::custom_endpoint(&s.anthropic_base_url)?);
+            claude::send(&chat, &target, &s.anthropic_model, query, context).await
+        }
         Backend::Cli(engine) => cli_chat::send(&cli, engine, &s.cli_model, query, context).await,
         Backend::OpenAi => openai_chat::send(&openai, &s.openai_base_url, &s.openai_model, query, context).await,
         Backend::None => Err(
@@ -381,6 +389,8 @@ enum Backend {
     Api,
     Cli(Engine),
     OpenAi,
+    /// An endpoint speaking Anthropic's Messages dialect (upstream #26).
+    AnthropicCompat,
     None,
 }
 
@@ -391,6 +401,7 @@ fn resolve_engine(s: &Settings) -> Backend {
     match s.chat_engine.as_str() {
         "api" => Backend::Api,
         "openai" => Backend::OpenAi,
+        "anthropic" => Backend::AnthropicCompat,
         "auto" | "" => {
             if secrets::present("anthropic-api-key") {
                 return Backend::Api;
@@ -401,6 +412,9 @@ fn resolve_engine(s: &Settings) -> Backend {
             }
             if !s.openai_base_url.trim().is_empty() {
                 return Backend::OpenAi;
+            }
+            if !s.anthropic_base_url.trim().is_empty() {
+                return Backend::AnthropicCompat;
             }
             Backend::None
         }
@@ -527,6 +541,7 @@ fn chat_engine_active(shared: State<Shared>) -> String {
         Backend::Api => "api".into(),
         Backend::Cli(e) => e.id().into(),
         Backend::OpenAi => "openai".into(),
+        Backend::AnthropicCompat => "anthropic".into(),
         Backend::None => String::new(),
     }
 }

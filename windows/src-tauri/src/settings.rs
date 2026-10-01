@@ -34,6 +34,12 @@ pub struct Settings {
     pub openai_base_url: String,
     #[serde(default)]
     pub openai_model: String,
+    /// Anthropic-compatible endpoint (LiteLLM, DeepSeek, Kimi, GLM…), upstream
+    /// #26. Not a secret; its optional key is `anthropic-compat-key`.
+    #[serde(default)]
+    pub anthropic_base_url: String,
+    #[serde(default)]
+    pub anthropic_model: String,
     /// Global shortcut that opens the chat: "off" or one of hotkey::CHOICES.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
@@ -79,6 +85,8 @@ impl Default for Settings {
             cli_model: String::new(),
             openai_base_url: String::new(),
             openai_model: String::new(),
+            anthropic_base_url: String::new(),
+            anthropic_model: String::new(),
             hotkey: default_hotkey(),
             language: default_language(),
         }

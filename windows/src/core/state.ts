@@ -127,6 +127,8 @@ export interface Settings {
   /** OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 (Ollama). */
   openaiBaseUrl: string;
   openaiModel: string;
+  anthropicBaseUrl: string;
+  anthropicModel: string;
   /** Global shortcut that opens the chat: "off", "ctrl+alt+space", … */
   hotkey: string;
   /** Interface language: "auto" (system), "en", "es" or "pt-BR". */
@@ -149,6 +151,8 @@ export const DEFAULT_SETTINGS: Settings = {
   cliModel: "",
   openaiBaseUrl: "",
   openaiModel: "",
+  anthropicBaseUrl: "",
+  anthropicModel: "",
   hotkey: "ctrl+alt+space",
   language: "auto",
 };

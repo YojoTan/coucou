@@ -224,4 +224,11 @@ export const PT: Record<string, string> = {
   "Next": "Próxima",
   "Play": "Tocar",
   "Pause": "Pausar",
+
+  // ── Anthropic-compatible endpoint ─────────────────────────────────────────
+  "Anthropic-compatible endpoint": "Endpoint compatível com Anthropic",
+  "Anthropic-compatible (LiteLLM, DeepSeek, Kimi, GLM…)": "Compatível com Anthropic (LiteLLM, DeepSeek, Kimi, GLM…)",
+  "LiteLLM (this PC)": "LiteLLM (este PC)",
+  "Anthropic's Messages API on another server: a gateway like LiteLLM, or a provider that offers it. Its own key — your Anthropic key never goes there. https only, except servers on this PC. No web search.": "A API Messages da Anthropic em outro servidor: um gateway como o LiteLLM ou um provedor que a ofereça. Usa a própria chave: a sua chave da Anthropic nunca vai para lá. Só https, exceto servidores neste PC. Sem pesquisa na web.",
+  "Set a model for the endpoint in Settings → Chat.": "Defina um modelo para o endpoint em Ajustes → Chat.",
 };

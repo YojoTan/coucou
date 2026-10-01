@@ -9,6 +9,9 @@ const SERVICE: &str = "fr.louisraille.coucou";
 pub const KNOWN_KEYS: &[&str] = &[
     "anthropic-api-key",
     "openai-api-key",
+    // Anthropic-compatible endpoint (upstream #26): its own key, so the official
+    // one never goes anywhere but api.anthropic.com.
+    "anthropic-compat-key",
     "n8n-url",
     "n8n-api-key",
     "vercel-token",

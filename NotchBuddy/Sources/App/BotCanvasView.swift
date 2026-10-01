@@ -356,6 +356,24 @@ struct MochiExtrasSync: View {
         }
     }
 
+    static let seasonalKey = "mochi-seasonal"       // on by default
+    static let birthdayKey = "mochi-birthday"       // "MM-dd"
+
+    /// Pumpkin, Santa hat, party hat on the birthday (confetti once that day).
+    static func seasonal() -> MochiAccessory? {
+        guard UserDefaults.standard.object(forKey: seasonalKey) as? Bool ?? true else { return nil }
+        let c = Calendar.current.dateComponents([.month, .day, .year], from: Date())
+        let outfit = ExtrasParse.season(month: c.month ?? 1, day: c.day ?? 1, birthday: UserDefaults.standard.string(forKey: birthdayKey))
+        if outfit == .partyHat, UserDefaults.standard.integer(forKey: "mochi-birthday-party") != c.year {
+            UserDefaults.standard.set(c.year, forKey: "mochi-birthday-party")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                AppState.shared.petEvent = UUID()
+                AppState.shared.showToast(String(localized: "🎂 Happy birthday!"), color: "#A78BFA", icon: nil, seconds: 6)
+            }
+        }
+        return outfit
+    }
+
     private func apply() {
         var accessory = MochiAccessory.none
         var color: Color? = nil
@@ -389,8 +407,10 @@ struct MochiExtrasSync: View {
             case .doNotDisturb, .sleep: accessory = .sleepMask
             case .work: accessory = .glasses
             case .normal:
-                // The trophy, unless the focused pill already dresses Mochi.
-                if accessory == .none && !(taskId ?? "").hasPrefix("custom_") { accessory = state.pet.worn }
+                // The season's outfit, else the trophy — unless the focused pill already dresses Mochi.
+                if accessory == .none && !(taskId ?? "").hasPrefix("custom_") {
+                    accessory = Self.seasonal() ?? state.pet.worn
+                }
             }
         }
         engine.accessory = accessory

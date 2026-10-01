@@ -40,6 +40,7 @@ final class PetMenu {
         p.contentView = host
         p.alphaValue = 0
         p.orderFrontRegardless()
+        p.makeKey()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.16
             p.animator().alphaValue = 1
@@ -75,9 +76,9 @@ final class PetMenu {
     }
 }
 
-/// Clicks without stealing focus from the app you're in.
+/// Takes the keyboard only for the question field; never becomes the main window.
 private final class MenuPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
@@ -91,15 +92,21 @@ private let orange = Color(hex: "#F97316")
 private struct PetMenuView: View {
     @EnvironmentObject var state: AppState
     @State private var openRow: String? = nil
+    @State private var question = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            ask
             shortcuts
             #if !APPSTORE
             ForEach(Worktrees.repos) { repo in worktrees(repo) }
             #endif
             HStack {
+                Button { PetMenu.shared.close(); PetBrain.shared.hide(for: 15 * 60) } label: {
+                    Label("Hide 15 min", systemImage: "eye.slash").font(.system(size: 10.5))
+                }
+                .buttonStyle(.plain).foregroundColor(dim)
                 Spacer()
                 Button { PetMenu.shared.close(); DesktopMochi.shared.dock() } label: {
                     Label("Back to the notch", systemImage: "arrow.up.to.line").font(.system(size: 10.5))
@@ -123,6 +130,24 @@ private struct PetMenuView: View {
             }
             Spacer()
         }
+    }
+
+    /// A quick question; the answer shows in the pet's bubble.
+    private var ask: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles").font(.system(size: 11)).foregroundColor(Color(hex: "#A5B4FC"))
+            TextField("Ask Mochi…", text: $question)
+                .textFieldStyle(.plain).font(.system(size: 12)).foregroundColor(.white)
+                .onSubmit {
+                    let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !q.isEmpty else { return }
+                    question = ""
+                    PetMenu.shared.close()
+                    DesktopMochi.shared.ask(q)
+                }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.07)))
     }
 
     private var status: String {

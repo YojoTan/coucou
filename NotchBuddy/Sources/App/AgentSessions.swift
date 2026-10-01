@@ -140,6 +140,12 @@ final class AgentSessions {
 
     func session(forKey key: String) -> Session? { sessions[key] }
 
+    /// Every live session, newest first (the desktop pet's squad).
+    func liveSessions() -> [Session] {
+        let now = Date()
+        return sessions.values.filter { now.timeIntervalSince($0.lastSeen) < staleAfter }.sorted { $0.seq > $1.seq }
+    }
+
     /// Whether a live session runs in this directory or below it (Orca dedup).
     func covers(path: String) -> Bool {
         guard !path.isEmpty else { return false }

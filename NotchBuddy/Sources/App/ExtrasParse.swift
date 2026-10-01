@@ -5,6 +5,7 @@ import Foundation
 /// Things a Mochi can wear (drawn in MochiAccessories.swift).
 enum MochiAccessory: String, CaseIterable, Codable, Sendable {
     case none, cap, hardhat, crown, bow, antenna, glasses, sunglasses, sleepMask, umbrella, scarf
+    case pumpkin, santaHat, partyHat      // seasonal (ExtrasParse.season)
 
     /// Shown in Settings pickers.
     var label: String {
@@ -20,6 +21,9 @@ enum MochiAccessory: String, CaseIterable, Codable, Sendable {
         case .sleepMask: return String(localized: "Sleep mask")
         case .umbrella: return String(localized: "Umbrella")
         case .scarf: return String(localized: "Scarf")
+        case .pumpkin: return String(localized: "Pumpkin")
+        case .santaHat: return String(localized: "Santa hat")
+        case .partyHat: return String(localized: "Party hat")
         }
     }
 
@@ -29,6 +33,15 @@ enum MochiAccessory: String, CaseIterable, Codable, Sendable {
 
 
 enum ExtrasParse {
+    /// The seasonal outfit for a day: a party hat on the birthday ("MM-dd"), a
+    /// pumpkin the last two weeks of October, a Santa hat in December, else nil.
+    static func season(month: Int, day: Int, birthday: String?) -> MochiAccessory? {
+        if let b = birthday, b == String(format: "%02d-%02d", month, day) { return .partyHat }
+        if month == 10 && day >= 15 { return .pumpkin }
+        if month == 12 { return .santaHat }
+        return nil
+    }
+
     /// The video-call link in an event's URL, location or notes: Meet, Zoom, Teams, Webex, Around.
     static func meetingLink(in texts: [String?]) -> URL? {
         let pattern = #"https://(?:meet\.google\.com/[a-z0-9\-]+|[a-z0-9\-]*\.?zoom\.us/(?:j|my|w)/[^\s<>"]+|teams\.microsoft\.com/l/meetup-join/[^\s<>"]+|teams\.live\.com/meet/[^\s<>"]+|[a-z0-9\-]+\.webex\.com/[^\s<>"]+|around\.co/[^\s<>"]+)"#

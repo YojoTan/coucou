@@ -161,6 +161,70 @@ extension BotEngine {
                 ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: R * 0.05, height: R * 0.12)),
                          with: .color(Color(hex: "#7CC7FF").opacity(Double(1 - k))))
             }
+        case .pumpkin:
+            // A carved pumpkin worn as a helmet: ribbed orange shell, a stalk, a grin.
+            let top = -ry * 1.32, base = -ry * 0.6
+            let shell = Path { p in
+                p.move(to: CGPoint(x: -rx * 0.86, y: base))
+                p.addCurve(to: CGPoint(x: rx * 0.86, y: base),
+                           control1: CGPoint(x: -rx * 0.95, y: top), control2: CGPoint(x: rx * 0.95, y: top))
+                p.closeSubpath()
+            }
+            ctx.fill(shell, with: .linearGradient(Gradient(colors: [Color(hex: "#FFA23A"), Color(hex: "#E8650C")]),
+                                                  startPoint: CGPoint(x: 0, y: top), endPoint: CGPoint(x: 0, y: base)))
+            for x in [-0.45, 0.0, 0.45] as [CGFloat] {
+                var rib = Path()
+                rib.move(to: CGPoint(x: rx * x * 0.6, y: top + ry * 0.12))
+                rib.addQuadCurve(to: CGPoint(x: rx * x, y: base), control: CGPoint(x: rx * x * 1.25, y: (top + base) / 2))
+                ctx.stroke(rib, with: .color(Color(hex: "#B84A06").opacity(0.55)), lineWidth: line * 0.8)
+            }
+            ctx.fill(Path(roundedRect: CGRect(x: -R * 0.05, y: top - R * 0.02, width: R * 0.1, height: R * 0.22), cornerRadius: R * 0.03),
+                     with: .color(Color(hex: "#4D7C2A")))
+            var grin = Path()
+            grin.move(to: CGPoint(x: -rx * 0.32, y: base - ry * 0.18))
+            grin.addQuadCurve(to: CGPoint(x: rx * 0.32, y: base - ry * 0.18), control: CGPoint(x: 0, y: base - ry * 0.02))
+            ctx.stroke(grin, with: .color(Color(hex: "#3A1A00")), style: StrokeStyle(lineWidth: line * 1.2, lineCap: .round))
+            for sd in [-1.0, 1.0] as [CGFloat] {
+                let eye = Path { p in
+                    p.move(to: CGPoint(x: sd * rx * 0.3, y: base - ry * 0.48))
+                    p.addLine(to: CGPoint(x: sd * rx * 0.18, y: base - ry * 0.32))
+                    p.addLine(to: CGPoint(x: sd * rx * 0.42, y: base - ry * 0.32))
+                    p.closeSubpath()
+                }
+                ctx.fill(eye, with: .color(Color(hex: "#3A1A00")))
+            }
+        case .santaHat:
+            let t = CGFloat(CACurrentMediaTime())
+            // A tall cone that flops over to the right, its pompom swinging.
+            let tip = CGPoint(x: rx * 1.05 + sin(t * 1.4) * R * 0.05, y: -ry * 1.22)
+            let hat = Path { p in
+                p.move(to: CGPoint(x: -rx * 0.7, y: -ry * 0.76))
+                p.addCurve(to: tip, control1: CGPoint(x: -rx * 0.45, y: -ry * 1.75), control2: CGPoint(x: rx * 0.55, y: -ry * 2.05))
+                p.addCurve(to: CGPoint(x: rx * 0.66, y: -ry * 0.78), control1: CGPoint(x: rx * 0.7, y: -ry * 1.5), control2: CGPoint(x: rx * 0.45, y: -ry * 1.15))
+                p.closeSubpath()
+            }
+            ctx.fill(hat, with: .linearGradient(Gradient(colors: [Color(hex: "#F04848"), Color(hex: "#B91C1C")]),
+                                                startPoint: CGPoint(x: 0, y: -ry * 1.6), endPoint: CGPoint(x: 0, y: -ry * 0.76)))
+            ctx.fill(Path(roundedRect: CGRect(x: -rx * 0.8, y: -ry * 0.86, width: rx * 1.6, height: ry * 0.2), cornerRadius: ry * 0.1),
+                     with: .color(.white))
+            let r = R * 0.12
+            ctx.fill(Path(ellipseIn: CGRect(x: tip.x - r, y: tip.y - r, width: r * 2, height: r * 2)), with: .color(.white))
+        case .partyHat:
+            let cone = Path { p in
+                p.move(to: CGPoint(x: -rx * 0.38, y: -ry * 0.84))
+                p.addLine(to: CGPoint(x: rx * 0.08, y: -ry * 1.7))
+                p.addLine(to: CGPoint(x: rx * 0.46, y: -ry * 0.8))
+                p.closeSubpath()
+            }
+            ctx.fill(cone, with: .linearGradient(Gradient(colors: [Color(hex: "#A78BFA"), Color(hex: "#7C3AED")]),
+                                                 startPoint: CGPoint(x: 0, y: -ry * 1.7), endPoint: CGPoint(x: 0, y: -ry * 0.8)))
+            for (i, c) in ["#FBBF24", "#34D399", "#F472B6"].enumerated() {
+                let y = -ry * (0.98 + CGFloat(i) * 0.22)
+                ctx.fill(Path(ellipseIn: CGRect(x: rx * (0.02 - CGFloat(i) * 0.04), y: y, width: R * 0.09, height: R * 0.09)),
+                         with: .color(Color(hex: c)))
+            }
+            let r = R * 0.1
+            ctx.fill(Path(ellipseIn: CGRect(x: rx * 0.08 - r, y: -ry * 1.7 - r, width: r * 2, height: r * 2)), with: .color(Color(hex: "#FBBF24")))
         case .scarf:
             var c = ctx
             c.clip(to: bodyPath)

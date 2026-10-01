@@ -192,6 +192,11 @@ struct ExtrasSettingsSection: View {
     @AppStorage(DesktopMochi.enabledKey) private var desktopMochi = false
     @AppStorage(DesktopMochi.followKey) private var petFollows = true
     @AppStorage(IslandWindowController.followScreenKey) private var islandFollows = true
+    @AppStorage(PetBrain.walkerKey) private var petWalker = false
+    @AppStorage(PetBrain.shakeKey) private var petShake = true
+    @AppStorage(PetBrain.hideKey) private var petHides = true
+    @AppStorage(MochiExtrasSync.seasonalKey) private var seasonal = true
+    @AppStorage(MochiExtrasSync.birthdayKey) private var birthday = ""
 
     var body: some View {
         GroupBox("Desktop Mochi") {
@@ -201,6 +206,11 @@ struct ExtrasSettingsSection: View {
                 Toggle("Mochi on the desktop", isOn: $desktopMochi)
                     .onChange(of: desktopMochi) { _, _ in DesktopMochi.shared.apply() }
                 Toggle("It follows me to the screen I'm on", isOn: $petFollows)
+                Toggle("It walks on top of my windows", isOn: $petWalker)
+                Toggle("Shake the mouse to call it", isOn: $petShake)
+                Toggle("It hides while I present or share my screen", isOn: $petHides)
+                Text("Throw it: let go of a drag with speed. Leave it against a side edge and it peeks. Wiggle the cursor over it to pet it. Drop a file on it. Right-click or click it for its menu.")
+                    .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                 Toggle("The island follows me to the screen I'm on", isOn: $islandFollows)
             }
             .padding(6)
@@ -281,6 +291,12 @@ struct ExtrasSettingsSection: View {
                 }
                 .disabled(p.unlocked.isEmpty)
                 Toggle("Mochi speaks (finished sessions, meetings, DMs)", isOn: $voice)
+                Toggle("Seasonal outfits (pumpkin in late October, Santa hat in December)", isOn: $seasonal)
+                HStack {
+                    Text("Your birthday (party hat and confetti)")
+                    Spacer()
+                    TextField("MM-dd", text: $birthday).textFieldStyle(.roundedBorder).frame(width: 70)
+                }
             }
             .padding(6)
         }

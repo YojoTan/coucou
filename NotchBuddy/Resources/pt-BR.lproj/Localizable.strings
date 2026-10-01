@@ -524,3 +524,21 @@
 "Chat" = "Chat";
 "Settings" = "Ajustes";
 "Back to the notch" = "Voltar ao notch";
+
+/* Pet extras */
+"Pumpkin" = "Abóbora";
+"Santa hat" = "Gorro de Papai Noel";
+"Party hat" = "Chapéu de festa";
+"Ouch!" = "Ai!";
+"%@ brought you %@ 📦" = "%@ te trouxe %@ 📦";
+"%@ left you a message ✉️" = "%@ te deixou uma mensagem ✉️";
+"Thinking…" = "Pensando…";
+"Hide 15 min" = "Esconder 15 min";
+"Ask Mochi…" = "Pergunte ao Mochi…";
+"🎂 Happy birthday!" = "🎂 Feliz aniversário!";
+"It walks on top of my windows" = "Anda em cima das minhas janelas";
+"Shake the mouse to call it" = "Sacudir o mouse para chamá-lo";
+"It hides while I present or share my screen" = "Se esconde enquanto apresento ou compartilho a tela";
+"Throw it: let go of a drag with speed. Leave it against a side edge and it peeks. Wiggle the cursor over it to pet it. Drop a file on it. Right-click or click it for its menu." = "Jogue-o: solte-o com impulso ao arrastar. Deixe-o contra uma borda lateral e ele espia. Mexa o cursor de um lado para o outro sobre ele para fazer carinho. Solte um arquivo nele. Clique ou clique direito para o menu.";
+"Seasonal outfits (pumpkin in late October, Santa hat in December)" = "Fantasias de temporada (abóbora no fim de outubro, gorro de Papai Noel em dezembro)";
+"Your birthday (party hat and confetti)" = "Seu aniversário (chapéu de festa e confete)";

@@ -50,6 +50,11 @@ extension AgentTask {
 
 }
 
+struct PetSay: Equatable {
+    let id = UUID()
+    let text: String
+}
+
 /// One line shown in the compact island's right ear for a few seconds.
 struct CompactToast: Equatable {
     let id = UUID()
@@ -111,6 +116,16 @@ final class AppState: ObservableObject {
     @Published var screenEpoch = 0
     /// Mochi is out on the desktop (DesktopMochi): the island's compact Mochi steps aside.
     @Published var desktopMochiOn = false
+    /// What the desktop pet says in its bubble (a chat answer, "Ouch!"), for a while.
+    @Published var petSays: PetSay? = nil
+
+    func petSay(_ text: String, seconds: Double) {
+        let say = PetSay(text: text)
+        petSays = say
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            if self?.petSays?.id == say.id { self?.petSays = nil }
+        }
+    }
     var notchWidth:  CGFloat = IslandConst.notchWidth
     var notchHeight: CGFloat = IslandConst.notchHeight
     var hasNotch = true

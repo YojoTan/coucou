@@ -7,27 +7,27 @@ it works. Read the project rules in `CLAUDE.md` first; they apply unchanged.
 
 ## State
 
-Windows column updated from the commits on `main` (Windows 0.3.1, "Windows
-parity" 1/n to 4/n); "in progress" means a commit says it started, not that
-every point below is checked — tick them off as you go.
+Windows column updated from the commits on `main` (Windows 0.4.0, "Windows
+parity" 1/n to 8/n). "Done" means built and unit-tested on Windows; what still
+wants a live check on a real setup is said in the row.
 
 | Feature | macOS | Windows |
 | --- | --- | --- |
 | LAN: answer every beacon (PR #3) | done | shipped in 0.3.1 — check Mac ↔ PC stay online |
-| LAN Mochis in the header + online/offline toasts (#3) | done | in progress (parity 1/n) |
-| Compact toasts (#2) | done | in progress (parity 1/n) |
-| Mochi engine: headphones, dance, whistle, headset, talking mouth, mouth that follows the gaze, nightcap, accessories, moods, confetti, travel, gaze at a speaker (#1–#3) | done | in progress (parity 1/n, 2/n) |
-| Mochi's mode (Focus) and what it puts on Mochi (#3) | done | in progress (parity 1/n, 2/n) |
-| Spotify Mochi (#1) | done | in progress (parity 2/n) |
-| Orca: terminal jump, no double alerts, asks/gates from the notch (#1) | done | in progress (parity 4/n) |
-| Discord (#2) | done | in progress (parity 3/n) |
-| Extras: custom Mochis, pet, calendar, Mac, weather, voice, travel (#3) | done | — |
-| Desktop Mochi: a pet on the desktop that follows you across screens (#5) | done | — |
-| The island follows the cursor's screen (#5) | done | — |
-| A click outside closes the open island (#5) | done | — |
-| Coucou's sounds in a call: smart, never lost (#5) | done | in progress (parity 3/n) |
-| Worktrees from Mochi: the provider protocol, island view, pill, header shortcut (#6) | done | — |
-| The desktop pet's own menu (#6) | done | — (with the desktop pet) |
+| LAN Mochis in the header + online/offline toasts (#3) | done | done (parity 1/n) |
+| Compact toasts (#2) | done | done (parity 1/n) |
+| Mochi engine: headphones, dance, whistle, headset, talking mouth, mouth that follows the gaze, nightcap, accessories, moods, confetti, travel, gaze at a speaker (#1–#3) | done | done (parity 1/n, 2/n) |
+| Mochi's mode (Focus) and what it puts on Mochi (#3) | done | done (parity 1/n, 2/n; scripts set it through the local URL's /mode) |
+| Spotify Mochi (#1) | done | done (parity 2/n) |
+| Orca: terminal jump, no double alerts, asks/gates from the notch (#1) | done | done (parity 4/n) — answer a real gate once to confirm |
+| Discord (#2) | done | done (parity 3/n; no transcription on Windows) — needs a live call to confirm |
+| Extras: custom Mochis, pet, calendar, Mac, weather, voice, travel (#3) | done | done (parity 5/n; calendar from an iCal address; local URL off by default) |
+| Desktop Mochi: a pet on the desktop that follows you across screens (#5) | done | done (parity 8/n) — not on every virtual desktop yet |
+| The island follows the cursor's screen (#5) | done | done (parity 6/n) |
+| A click outside closes the open island (#5) | done | done (parity 6/n) |
+| Coucou's sounds in a call: smart, never lost (#5) | done | done (parity 3/n) |
+| Worktrees from Mochi: the provider protocol, island view, pill, header shortcut (#6) | done | done (parity 7/n; providers run in cmd) |
+| The desktop pet's own menu (#6) | done | done (parity 8/n) |
 
 ## Step 0 — build, and check the LAN fix (do this first)
 

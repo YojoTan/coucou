@@ -2647,7 +2647,7 @@ struct AgentWho: View {
                 Circle().fill(Color(hex: task.color)).frame(width: 8, height: 8)
                 Text(task.name).font(.system(size: 12, weight: .semibold)).foregroundColor(Color(hex: "#F5F6F8"))
             }
-            Text(label).font(.system(size: 12)).foregroundColor(Color(hex: "#8E939C"))
+            Text(LocalizedStringKey(label)).font(.system(size: 12)).foregroundColor(Color(hex: "#8E939C"))
         }
     }
 }
@@ -2780,7 +2780,7 @@ struct PrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                Text(title).font(.system(size: 12.5, weight: .medium))
+                Text(LocalizedStringKey(title)).font(.system(size: 12.5, weight: .medium))
                 if let k = kbd {
                     Text(k).font(.system(size: 10.5))
                         .padding(.horizontal, 4)
@@ -2809,7 +2809,7 @@ struct SecondaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                Text(title).font(.system(size: 12.5, weight: .medium))
+                Text(LocalizedStringKey(title)).font(.system(size: 12.5, weight: .medium))
                 if let k = kbd {
                     Text(k).font(.system(size: 10.5))
                         .padding(.horizontal, 4)

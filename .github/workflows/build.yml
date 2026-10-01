@@ -37,6 +37,10 @@ jobs:
       - name: Test screen geometry
         run: bash scripts/test-screen-geometry.sh
 
+      # Same keys and frames as the Windows build (docs/LAN.md).
+      - name: Test LAN wire format
+        run: bash scripts/test-lan-wire.sh
+
       - name: Build
         run: |
           xcodebuild \

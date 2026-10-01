@@ -107,7 +107,14 @@ struct IslandContainer: View {
             CountdownBar(state: state, islandW: islandWidth)
 
             Group {
-                if state.mode == .compact {
+                if state.mode == .compact, let toast = state.compactToast {
+                    // The right ear, from the notch's edge to the island's: the toast's text.
+                    let ear = (islandWidth - state.notchWidth) / 2
+                    CompactToastView(toast: toast)
+                        .frame(width: max(0, ear - 14), height: islandHeight, alignment: .leading)
+                        .position(x: islandWidth - ear / 2 - 3, y: islandHeight / 2)
+                        .transition(.opacity)
+                } else if state.mode == .compact {
                     CompactMiniGrid(state: state)
                         .scaleEffect(IslandRestingLayout(width: islandWidth, height: islandHeight).miniGridScale)
                         .position(x: islandWidth - 40, y: islandHeight / 2)
@@ -115,6 +122,7 @@ struct IslandContainer: View {
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: state.mode == .compact)
+            .animation(.easeInOut(duration: 0.2), value: state.compactToast?.id)
         }
         .frame(width: islandWidth, height: islandHeight, alignment: .topLeading)
         .onChange(of: state.mode) { oldMode, newMode in
@@ -122,7 +130,8 @@ struct IslandContainer: View {
             let anim = shrinking ? closeEase : openSpring
             let (w, h) = islandSize(mode: newMode, view: state.view,
                                     progress: state.uploadProgress,
-                                    nw: state.notchWidth, nh: state.notchHeight)
+                                    nw: state.notchWidth, nh: state.notchHeight,
+                                    toast: state.compactToast != nil)
             let cr  = newMode == .expanded ? IslandConst.expandedCorner : IslandConst.roundedCorner
             let tr: CGFloat = 0
             withAnimation(anim) {
@@ -146,6 +155,12 @@ struct IslandContainer: View {
                 islandWidth  = w
                 islandHeight = newView == .prompt ? chatPromptHeight : h
             }
+        }
+        .onChange(of: state.compactToast?.id) { _, _ in
+            guard state.mode == .compact else { return }
+            let (w, _) = islandSize(mode: .compact, view: state.view, nw: state.notchWidth, nh: state.notchHeight,
+                                    toast: state.compactToast != nil)
+            withAnimation(state.compactToast != nil ? openSpring : closeEase) { islandWidth = w }
         }
         .onChange(of: state.chatHistory.count) { _, _ in
             guard state.mode == .expanded, state.view == .prompt else { return }
@@ -541,6 +556,26 @@ struct TabButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Compact toast — one line in the right ear ("Ana joined"), a few seconds
+
+struct CompactToastView: View {
+    let toast: CompactToast
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon = toast.icon {
+                Image(systemName: icon).font(.system(size: 9.5, weight: .bold)).foregroundColor(Color(hex: toast.color))
+            } else {
+                Circle().fill(Color(hex: toast.color)).frame(width: 5, height: 5)
+            }
+            Text(verbatim: toast.text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color(hex: "#E8E9EC"))
+                .lineLimit(1).truncationMode(.tail)
+        }
     }
 }
 

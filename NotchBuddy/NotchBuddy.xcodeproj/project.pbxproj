@@ -14,6 +14,7 @@
 		091EC3B2F1060D7EE1317E4E /* IslandWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710BD7834228045869D0184 /* IslandWindowController.swift */; };
 		0A267EE2955C7AD8E02A296C /* N8nPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = B89DA1A0C21AE3535A1760BB /* N8nPoller.swift */; };
 		0B1928D27A2F8028D5FB28B7 /* coucou.js in Resources */ = {isa = PBXBuildFile; fileRef = 23A916155E30448B438A0C1B /* coucou.js */; };
+		0C1B9A6094A52E72D1F4AC0C /* DiscordCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3972F2087300B2227803BB /* DiscordCall.swift */; };
 		0D68A4C4E3422487DB7B2262 /* IslandScreenGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BC1357785CA1B099A33969 /* IslandScreenGeometry.swift */; };
 		0DC2682FAFF17F0A45E4A1A5 /* LanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0CCB26D1079838E92C7986 /* LanViews.swift */; };
 		0E83C1DD4D20E7FB7A904450 /* VercelPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71718D1B87A39A4879DD2A9D /* VercelPoller.swift */; };
@@ -26,6 +27,7 @@
 		1C2596352DA39F4C08B066CB /* OrcaPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDEE538EE8CA2630BD8988C8 /* OrcaPoller.swift */; };
 		1F11EC4E6F604C612A1ADAD1 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E4F18AA940EFF7E047B9F7 /* AppState.swift */; };
 		2132477000FD77F7EB234DAA /* FileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3232F258523DD8D09B670363 /* FileDropView.swift */; };
+		242192B4DDF6E6E90C149BDC /* DiscordService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31720A18CA6F97E7F65D2540 /* DiscordService.swift */; };
 		2875610F701376BD65573386 /* WindowContextCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91B733ADC638E14E9BB6EFA /* WindowContextCapture.swift */; };
 		2C798C3837A63B9BB561A1A0 /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D8DD79C3DD9BBC584B3CB2 /* HookServer.swift */; };
 		2CC2E3B688B15BBEB3AE3BCE /* WindowContextCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91B733ADC638E14E9BB6EFA /* WindowContextCapture.swift */; };
@@ -34,12 +36,14 @@
 		3756B7E1A55D9CEC8C4D34A4 /* IslandStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8212018F09EA1E96FBD63CD /* IslandStateMachine.swift */; };
 		39A366573243E03FE6C65EA5 /* IslandGazeGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F96776934593058669DC5D /* IslandGazeGeometry.swift */; };
 		3B0B1073607E541451697790 /* LocalCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD817BE09ACCD6A3DBAE2CA1 /* LocalCLI.swift */; };
+		3F0C9FFE63FEAC39DD9C2212 /* DiscordService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31720A18CA6F97E7F65D2540 /* DiscordService.swift */; };
 		3F19756A396F125EC711247F /* IslandTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3CE3617E9D336DDBA10F7A /* IslandTypes.swift */; };
 		4117E7C8AA231AAE36E7509D /* UploadCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B241B043223AFBBFB7418A5E /* UploadCanvasView.swift */; };
 		487F4EB89AB20ADE3427FDD9 /* AnthropicCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA98933BAC5338104CE6167 /* AnthropicCompat.swift */; };
 		4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */; };
 		505D0E4327BC83E421A82958 /* AgentSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34612E56AA72FABD62FE9A2C /* AgentSessions.swift */; };
 		56BE8C733F10A030A638FB60 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A7D5CBE2AC084A10C5FF3 /* SettingsView.swift */; };
+		577D090B96F54EBCB73DFB07 /* DiscordParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781CB349FCBA17459E9771FD /* DiscordParse.swift */; };
 		586C17993ABECBE7B57557D3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6EDBB848C4C29FB5206C5E33 /* Localizable.strings */; };
 		5B9A00AFB0837731FA678E4E /* IslandStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8212018F09EA1E96FBD63CD /* IslandStateMachine.swift */; };
 		60A3448532E7EC90AC72E62A /* SessionJump.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20332682E827B037009FC39 /* SessionJump.swift */; };
@@ -59,15 +63,20 @@
 		8066FDB6567CAF58CC5AA32C /* SessionJump.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20332682E827B037009FC39 /* SessionJump.swift */; };
 		878924960FC0F2B3524D48AC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 192844E7299DEED5C2372067 /* AppDelegate.swift */; };
 		8817AE6B3615A35BE4ECA68A /* LanWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0ADA7B10867E971DAD5D608 /* LanWire.swift */; };
+		89BCC4B0BCDA7CD8DBAC601D /* DiscordParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781CB349FCBA17459E9771FD /* DiscordParse.swift */; };
 		8C32A0C3EAF536D3836F61D5 /* GreetingCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C581F7B1A9F14B281B60063E /* GreetingCanvasView.swift */; };
 		8D1C01F283FA7806119A1C85 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A7D5CBE2AC084A10C5FF3 /* SettingsView.swift */; };
 		9084186EAAF8E4C6708FA508 /* IslandGazeGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F96776934593058669DC5D /* IslandGazeGeometry.swift */; };
 		920D71B67E1B4AF50F14A9E1 /* OpenAICompatChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05D7609E8B2522F3FB882E60 /* OpenAICompatChat.swift */; };
+		94AE3B670698D8482770B167 /* DiscordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8140E8FA49BA58EDBC405C77 /* DiscordViews.swift */; };
 		95CFAA3CC03100A405D1F02F /* OrcaPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDEE538EE8CA2630BD8988C8 /* OrcaPoller.swift */; };
 		967B525F7D3837F31D740D18 /* ResendPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61B5FDDE03F5F711146937E2 /* ResendPoller.swift */; };
+		96AA1E61600811537EE326C9 /* DiscordMic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB9C73CC83A1F9B4438670B0 /* DiscordMic.swift */; };
 		9A486B8B1B1F254813ACB457 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6EDBB848C4C29FB5206C5E33 /* Localizable.strings */; };
+		9B65F5CA8CF5523F6FBA57E9 /* DiscordMic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB9C73CC83A1F9B4438670B0 /* DiscordMic.swift */; };
 		9BE1CE9D67E97A5299AF82B3 /* SpotifyWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43B52BECC54600C57072EE5 /* SpotifyWatcher.swift */; };
 		9DD56C95ECABDDCE23652D50 /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D8DD79C3DD9BBC584B3CB2 /* HookServer.swift */; };
+		9E5FB4F5F21D6ACCC36145A0 /* DiscordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8140E8FA49BA58EDBC405C77 /* DiscordViews.swift */; };
 		9FD8B5D986B868D6053326D3 /* LanWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0ADA7B10867E971DAD5D608 /* LanWire.swift */; };
 		A492E5A30420864F1E4A6758 /* LanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4DE6B291D473363896BD26 /* LanService.swift */; };
 		A74B560053C45BC2514E4153 /* IdleMicroAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CF58C0FC4572C43B02F1395 /* IdleMicroAnimation.swift */; };
@@ -96,6 +105,7 @@
 		EB23ED9F1C12EA8B54A76A91 /* ResendPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61B5FDDE03F5F711146937E2 /* ResendPoller.swift */; };
 		ECECA2F225E82B7C951658D7 /* UploadSequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */; };
 		F06EE0A97CB77096A337AA8B /* sounds in Resources */ = {isa = PBXBuildFile; fileRef = C066E2B991AA4F56B2724263 /* sounds */; };
+		F31FEF653AE0DC893EF8729E /* DiscordCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3972F2087300B2227803BB /* DiscordCall.swift */; };
 		F710279CF23CA3CFED9E6A2A /* LanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4DE6B291D473363896BD26 /* LanService.swift */; };
 		FA1D79CA40AE911719E71D7F /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E86C0F4781F9FEE122C4B92 /* AppLanguage.swift */; };
 		FAD78D74C6906D4EC8AA4101 /* UploadSequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */; };
@@ -107,12 +117,14 @@
 /* Begin PBXFileReference section */
 		0484C100D18394D81E54535D /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
 		05D7609E8B2522F3FB882E60 /* OpenAICompatChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAICompatChat.swift; sourceTree = "<group>"; };
+		0A3972F2087300B2227803BB /* DiscordCall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordCall.swift; sourceTree = "<group>"; };
 		15A1A8206F73376F4CAF2057 /* IslandRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandRootView.swift; sourceTree = "<group>"; };
 		192844E7299DEED5C2372067 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		1BE21C2B315D37AA70ED45E9 /* SoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundEngine.swift; sourceTree = "<group>"; };
 		23A916155E30448B438A0C1B /* coucou.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = coucou.js; sourceTree = "<group>"; };
 		2EF78999D68D56ADE4CEFBE2 /* StripePoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StripePoller.swift; sourceTree = "<group>"; };
 		3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalcomPoller.swift; sourceTree = "<group>"; };
+		31720A18CA6F97E7F65D2540 /* DiscordService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordService.swift; sourceTree = "<group>"; };
 		3232F258523DD8D09B670363 /* FileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDropView.swift; sourceTree = "<group>"; };
 		34612E56AA72FABD62FE9A2C /* AgentSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessions.swift; sourceTree = "<group>"; };
 		3706FE519606B07252B9437C /* OpencodePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpencodePlugin.swift; sourceTree = "<group>"; };
@@ -126,9 +138,11 @@
 		6EDBB848C4C29FB5206C5E33 /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
 		6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSequenceEngine.swift; sourceTree = "<group>"; };
 		71718D1B87A39A4879DD2A9D /* VercelPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VercelPoller.swift; sourceTree = "<group>"; };
+		781CB349FCBA17459E9771FD /* DiscordParse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordParse.swift; sourceTree = "<group>"; };
 		78BC1357785CA1B099A33969 /* IslandScreenGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandScreenGeometry.swift; sourceTree = "<group>"; };
 		79D8DD79C3DD9BBC584B3CB2 /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookServer.swift; sourceTree = "<group>"; };
 		7C1A7D5CBE2AC084A10C5FF3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		8140E8FA49BA58EDBC405C77 /* DiscordViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordViews.swift; sourceTree = "<group>"; };
 		8CB8B6E5E9DA6164F979E88F /* GithubPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GithubPoller.swift; sourceTree = "<group>"; };
 		8CF58C0FC4572C43B02F1395 /* IdleMicroAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleMicroAnimation.swift; sourceTree = "<group>"; };
 		8D3CE3617E9D336DDBA10F7A /* IslandTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandTypes.swift; sourceTree = "<group>"; };
@@ -155,6 +169,7 @@
 		EDEE538EE8CA2630BD8988C8 /* OrcaPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrcaPoller.swift; sourceTree = "<group>"; };
 		F1BD8F3CAA60CF37640759E1 /* NotchBuddyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchBuddyApp.swift; sourceTree = "<group>"; };
 		FA02B08886939FF6FE0475DD /* IslandViewContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandViewContent.swift; sourceTree = "<group>"; };
+		FB9C73CC83A1F9B4438670B0 /* DiscordMic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordMic.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -187,6 +202,11 @@
 				3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */,
 				AFAB8CC7BBB92F4BCE9AD8B6 /* ChatTuning.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
+				0A3972F2087300B2227803BB /* DiscordCall.swift */,
+				FB9C73CC83A1F9B4438670B0 /* DiscordMic.swift */,
+				781CB349FCBA17459E9771FD /* DiscordParse.swift */,
+				31720A18CA6F97E7F65D2540 /* DiscordService.swift */,
+				8140E8FA49BA58EDBC405C77 /* DiscordViews.swift */,
 				3232F258523DD8D09B670363 /* FileDropView.swift */,
 				8CB8B6E5E9DA6164F979E88F /* GithubPoller.swift */,
 				C581F7B1A9F14B281B60063E /* GreetingCanvasView.swift */,
@@ -405,6 +425,11 @@
 				4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */,
 				FD502BFF25D82433545DD8DC /* ChatTuning.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
+				F31FEF653AE0DC893EF8729E /* DiscordCall.swift in Sources */,
+				9B65F5CA8CF5523F6FBA57E9 /* DiscordMic.swift in Sources */,
+				89BCC4B0BCDA7CD8DBAC601D /* DiscordParse.swift in Sources */,
+				3F0C9FFE63FEAC39DD9C2212 /* DiscordService.swift in Sources */,
+				9E5FB4F5F21D6ACCC36145A0 /* DiscordViews.swift in Sources */,
 				E776C7D1DE5C62EA8D4BA3E3 /* FileDropView.swift in Sources */,
 				C808B654C84D9F71DBF8493A /* GithubPoller.swift in Sources */,
 				8C32A0C3EAF536D3836F61D5 /* GreetingCanvasView.swift in Sources */,
@@ -455,6 +480,11 @@
 				1969590AFEE6CB21404346F1 /* CalcomPoller.swift in Sources */,
 				7CAF374C79CE131A828E84D0 /* ChatTuning.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
+				0C1B9A6094A52E72D1F4AC0C /* DiscordCall.swift in Sources */,
+				96AA1E61600811537EE326C9 /* DiscordMic.swift in Sources */,
+				577D090B96F54EBCB73DFB07 /* DiscordParse.swift in Sources */,
+				242192B4DDF6E6E90C149BDC /* DiscordService.swift in Sources */,
+				94AE3B670698D8482770B167 /* DiscordViews.swift in Sources */,
 				2132477000FD77F7EB234DAA /* FileDropView.swift in Sources */,
 				C18227D148D99FE6EE3CC51A /* GithubPoller.swift in Sources */,
 				C0E18D0F6F5F6D131E6066B8 /* GreetingCanvasView.swift in Sources */,

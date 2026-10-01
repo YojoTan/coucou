@@ -40,6 +40,10 @@ final class SoundEngine {
 
     func play(_ name: String) {
         guard enabled && AppState.shared.soundEnabled else { return }
+        #if !APPSTORE
+        // Call mode: nothing over the user's Discord call (counted for the summary).
+        if DiscordCall.shared.shouldSilence() { return }
+        #endif
         guard let pool = players[name] else { return }
         // Find a player that is not currently playing
         let player = pool.first { !$0.isPlaying } ?? pool[0]

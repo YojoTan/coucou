@@ -33,6 +33,15 @@ enum CodingAgent: String, CaseIterable, Sendable {
         }
     }
 
+    /// The agent's own name, for messages (Discord webhook).
+    var displayName: String {
+        switch self {
+        case .claude: return "Claude Code"
+        case .codex: return "Codex"
+        case .opencode: return "opencode"
+        }
+    }
+
     static func forTask(_ id: String) -> CodingAgent? {
         allCases.first { $0.taskId == id }
     }

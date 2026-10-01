@@ -19,7 +19,11 @@ struct BotCanvasView: View {
                 let now = timeline.date.timeIntervalSinceReferenceDate
                 let dtRaw = min(0.05, now - engine.lastTime)
                 let dt = dtRaw
-                if let burst = idleBurst, Date().timeIntervalSince(state.lastMouseMove) > 1 {
+                if let glance = engine.glance, Date().timeIntervalSince(state.lastMouseMove) > 1 {
+                    // Someone is talking in the Discord call: look at them.
+                    engine.lookX = glance.x
+                    engine.lookY = glance.y
+                } else if let burst = idleBurst, Date().timeIntervalSince(state.lastMouseMove) > 1 {
                     let look = burst.look(at: now)
                     engine.lookX = look.x
                     engine.lookY = look.y
@@ -107,6 +111,7 @@ struct BotCanvasView: View {
         }
         #if !APPSTORE
         .background(MusicSync(engine: engine, active: state.focusTask?.id == "integration_spotify"))
+        .background(DiscordSync(engine: engine, active: state.focusTask?.id == DiscordService.taskId))
         #endif
     }
 
@@ -162,7 +167,8 @@ struct BotCanvasView: View {
     private func lookDirection(state: AppState) -> CGPoint {
         let (islandW, islandH) = islandSize(mode: state.mode, view: state.view,
                                              progress: state.uploadProgress,
-                                             nw: state.notchWidth, nh: state.notchHeight)
+                                             nw: state.notchWidth, nh: state.notchHeight,
+                                             toast: state.compactToast != nil)
         let actualH: CGFloat = (state.mode == .expanded && state.view == .prompt)
             ? min(300, 240 + CGFloat(state.chatHistory.count) * 40)
             : islandH
@@ -218,6 +224,7 @@ struct MiniBotCanvasView: View {
         #if !APPSTORE
         .background {
             if task.id == "integration_spotify" { MusicSync(engine: engine, active: true) }
+            if task.id == DiscordService.taskId { DiscordSync(engine: engine, active: true) }
         }
         #endif
     }
@@ -243,13 +250,73 @@ struct MusicSync: View {
 
     private func apply(previous: SpotifyTrack?) {
         let track = state.spotifyNow
-        engine.wantsHeadphones = active && track != nil
+        engine.musicHeadphones = active && track != nil
         let playing = active && track?.playing == true && !reduceMotion
         // The beat starts over on play and on a new track.
         if playing && (!engine.musicPlaying || (previous != nil && previous?.title != track?.title)) {
             engine.musicStart()
         }
         engine.musicPlaying = playing
+    }
+}
+
+/// Discord's call into a Mochi: the headset while in a voice channel, the
+/// mouth while you talk, a closed mouth and a red mic when muted, waves while
+/// the others talk, and a surprised face on a new DM or mention.
+struct DiscordSync: View {
+    @ObservedObject private var state = AppState.shared
+    let engine: BotEngine
+    let active: Bool
+
+    var body: some View {
+        Color.clear
+            .onAppear(perform: apply)
+            .onChange(of: state.discordVoice) { _, _ in apply() }
+            .onChange(of: state.discordSelfMute) { _, _ in apply() }
+            .onChange(of: state.discordSelfDeaf) { _, _ in apply() }
+            .onChange(of: active) { _, _ in apply() }
+            .onChange(of: state.discordNotes.first?.id) { _, new in
+                guard active, new != nil, let note = state.discordNotes.first else { return }
+                // 🎉 confetti, ❤️ hearts, 😂 a laugh, ? a question mark, 🔥 fire; else surprise.
+                if let r = DiscordParse.reaction(note.text) {
+                    engine.react(r)
+                } else {
+                    engine.triggerEmote(.surprised, silent: true)
+                    engine.squash()
+                }
+            }
+            .onChange(of: state.discordEvent) { _, e in
+                guard active, let e else { return }
+                switch e.kind {
+                case .joined: engine.greet()
+                case .left:
+                    engine.eyeOverride = .tired
+                    engine.eyeOverrideUntil = CACurrentMediaTime() + 1.6
+                case .highFive:
+                    engine.greet()
+                    engine.emit(.star, count: 6)
+                case .talkingMuted:
+                    engine.greet()
+                    engine.triggerEmote(.surprised, silent: true)
+                }
+            }
+    }
+
+    private func apply() {
+        let voice = active ? state.discordVoice : nil
+        let me = state.discordMe ?? ""
+        engine.voiceHeadset = voice != nil
+        engine.callStartedAt = voice != nil ? DiscordCall.shared.startedAt : nil
+        engine.micMuted = voice != nil && (state.discordSelfMute || state.discordSelfDeaf)
+        engine.deafened = state.discordSelfDeaf
+        engine.talking = voice?.speaking.contains(me) == true && !engine.micMuted
+        engine.othersSpeaking = !(voice?.speaking.subtracting([me]).isEmpty ?? true)
+        // The card lists the call's first 7 people left to right, right of Mochi.
+        if let voice, let i = voice.members.prefix(7).firstIndex(where: { $0.id != me && voice.speaking.contains($0.id) }) {
+            engine.glance = CGPoint(x: min(0.95, 0.5 + 0.075 * CGFloat(i)), y: 0.05)
+        } else {
+            engine.glance = nil
+        }
     }
 }
 #endif

@@ -238,6 +238,10 @@ final class HookServer: @unchecked Sendable {
                 session.summary = String(last.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(220))
             }
             session.state = .finished
+            #if !APPSTORE
+            DiscordWebhook.notify("discord-post-finished",
+                                  "✅ **\(projectName)** — \(agent.displayName) finished" + (session.summary.map { "\n> \($0)" } ?? ""))
+            #endif
             if let message = payload["message"] as? String, !message.isEmpty {
                 sessions.addStep(session, String(message.prefix(60)))
             }
@@ -334,6 +338,10 @@ final class HookServer: @unchecked Sendable {
         let tool = payload["tool_name"] as? String ?? "Tool"
         let command = Self.approvalSummary(tool: tool, input: payload["tool_input"] as? [String: Any] ?? [:])
         nbLog("PermissionRequest [\(agent.rawValue)] \(tool)")
+        #if !APPSTORE
+        // The tool name only: commands can carry tokens.
+        DiscordWebhook.notify("discord-post-permission", "⏳ **\(projectName)** — \(agent.displayName) asks to use \(tool)")
+        #endif
 
         if pendingApprovalFD >= 0 {
             let old = pendingApprovalFD

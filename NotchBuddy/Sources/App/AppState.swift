@@ -19,19 +19,52 @@ extension AgentTask {
         AgentTask(id: "integration_orca",    name: "Orca",      color: "#8B5CF6", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_spotify", name: "Spotify",   color: "#1DB954", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_lan",     name: "Mochis",    color: "#F472B6", state: .idle, steps: [], source: .n8n, isIntegration: true),
+        AgentTask(id: "integration_discord", name: "Discord",   color: "#5865F2", state: .idle, steps: [], source: .n8n, isIntegration: true),
     ]
 
     /// IDs that can be toggled (VS Code is always on and excluded from this list)
     static let toggleableIntegrationIds: [String] = [
         "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-        "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan",
+        "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan", "integration_discord",
     ]
 
+}
+
+/// One line shown in the compact island's right ear for a few seconds.
+struct CompactToast: Equatable {
+    let id = UUID()
+    let text: String
+    let color: String       // hex
+    let icon: String?       // SF Symbol, else a dot
 }
 
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
+
+    /// What the compact island says right now (showToast).
+    @Published var compactToast: CompactToast? = nil
+
+    /// Shows a line in the compact island — revealing it if hidden — then clears it.
+    /// Toasts queue: each gets its time on screen.
+    func showToast(_ text: String, color: String, icon: String? = nil, seconds: Double = 3.5) {
+        toastQueue.append(CompactToast(text: text, color: color, icon: icon))
+        toastQueue = Array(toastQueue.suffix(4))
+        if compactToast == nil { nextToast(seconds) }
+    }
+
+    private var toastQueue: [CompactToast] = []
+
+    private func nextToast(_ seconds: Double) {
+        guard !toastQueue.isEmpty else { compactToast = nil; return }
+        let t = toastQueue.removeFirst()
+        compactToast = t
+        NotificationCenter.default.post(name: .hookReveal, object: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, self.compactToast?.id == t.id else { return }
+            self.nextToast(seconds)
+        }
+    }
 
     // Island state
     @Published var mode: IslandMode = .hidden
@@ -172,6 +205,21 @@ final class AppState: ObservableObject {
     @Published var orcaAsks: [OrcaAsk] = []
     /// What Spotify last said it is playing (SpotifyWatcher).
     @Published var spotifyNow: SpotifyTrack? = nil
+    /// Discord (DiscordService): the Dock badge, the voice channel, DMs and mentions.
+    @Published var discordRunning = false
+    @Published var discordUnread = 0
+    @Published var discordUnreadDot = false
+    @Published var discordLink: DiscordLink = .notSetUp
+    @Published var discordMe: String? = nil
+    @Published var discordVoice: DiscordVoice? = nil
+    @Published var discordSelfMute = false
+    @Published var discordSelfDeaf = false
+    @Published var discordDevices = DiscordDevices()
+    @Published var discordLastCall: DiscordCallSummary? = nil
+    @Published var discordTranscript: String? = nil
+    @Published var discordTalkingMuted = false
+    @Published var discordEvent: DiscordEvent? = nil
+    @Published var discordNotes: [DiscordNote] = []
     /// Mochis on the network (LanService): the peers, what one of them asks,
     /// and who the chat is writing to.
     @Published var lanSnapshot = LanSnapshot()

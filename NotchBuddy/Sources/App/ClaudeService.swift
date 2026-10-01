@@ -73,6 +73,9 @@ final class KeychainStore: @unchecked Sendable {
         "stripe-api-key",
         "calcom-api-key",
         "notion-api-key",
+        "discord-client-id", "discord-client-secret",
+        "discord-access-token", "discord-refresh-token",
+        "discord-webhook",
     ]
 
     private init() {

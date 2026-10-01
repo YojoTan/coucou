@@ -743,7 +743,8 @@ final class IslandWindowController: NSWindowController {
         let panelH = window?.frame.height ?? 320
         let panelW = window?.frame.width  ?? 720
         let (islandW, fixedH) = islandSize(mode: s.mode, view: s.view,
-                                            progress: s.uploadProgress, nw: notchW, nh: notchH)
+                                            progress: s.uploadProgress, nw: notchW, nh: notchH,
+                                            toast: s.compactToast != nil)
         // Chat view resizes dynamically — must match IslandContainer.chatPromptHeight
         let islandH: CGFloat
         if s.mode == .expanded && s.view == .prompt {
@@ -809,7 +810,8 @@ final class IslandPanel: NSPanel {
     func currentIslandFrame(nw: CGFloat, nh: CGFloat) -> CGRect {
         let s = AppState.shared
         let (w, fixedH) = islandSize(mode: s.mode, view: s.view,
-                                      progress: s.uploadProgress, nw: nw, nh: nh)
+                                      progress: s.uploadProgress, nw: nw, nh: nh,
+                                      toast: s.compactToast != nil)
         let h: CGFloat
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
@@ -866,10 +868,12 @@ extension Notification.Name {
 func islandSize(mode: IslandMode, view: IslandView,
                 progress: Double = 0,
                 nw: CGFloat = IslandConst.notchWidth,
-                nh: CGFloat = IslandConst.notchHeight) -> (CGFloat, CGFloat) {
+                nh: CGFloat = IslandConst.notchHeight,
+                toast: Bool = false) -> (CGFloat, CGFloat) {
     switch mode {
     case .hidden:   return (nw, nh)
-    case .compact:  return (nw + 160, nh)
+    // A compact toast ("Ana joined") widens both ears; the right one holds the text.
+    case .compact:  return (nw + 160 + (toast ? IslandConst.toastExtraWidth : 0), nh)
     case .expanded:
         let layout = IslandConst.viewLayouts[view]!
         return (IslandConst.expandedWidth, layout.height)

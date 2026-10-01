@@ -15,7 +15,8 @@ import { approvalResolved } from "./hooks";
 import { agentOf, byKey, taskIdFor } from "./sessions";
 import { t } from "../core/i18n";
 import { BotEngine, hexToRGB } from "../mochi/engine";
-import { applyExtras, applyMusic } from "../mochi/sync";
+import { applyDiscord, applyExtras, applyMusic } from "../mochi/sync";
+import { callStartedAt, DISCORD_ID, onDiscordEffect } from "./discord";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -99,6 +100,8 @@ export class Island {
    * can't take the drop. Esc and a real click outside still close it.
    */
   private dropPinned = false;
+  /** When the cursor last moved (performance.now), for the Discord glance. */
+  private lastCursorAt = 0;
 
   private confusedRecovery: number | null = null;
   private prevViewBeforeConfused: IslandViewName = "overview";
@@ -114,6 +117,22 @@ export class Island {
     this.wireFsm();
     this.wireInput();
     this.engine.onDizzy = () => this.handleDizzy();
+    // Discord news, when its pill is the focused one (DiscordSync).
+    onDiscordEffect((fx) => {
+      if (State.focusId !== DISCORD_ID) return;
+      const e = this.engine;
+      switch (fx.kind) {
+        case "note":
+          if (fx.note.reaction) e.react(fx.note.reaction);
+          else { e.triggerEmote("surprised"); e.squash(); }
+          break;
+        case "joined": e.greet(); break;
+        case "left": e.eyeOverride = "tired"; e.eyeOverrideUntil = performance.now() / 1000 + 1.6; break;
+        case "highFive": e.greet(); e.emit("star", 6); break;
+        case "talkingMuted": e.greet(); e.triggerEmote("surprised"); break;
+      }
+      this.ensureRunning();
+    });
     this.greeting.onComplete = () => this.fsm.greetComplete();
     State.subscribe(() => {
       this.dirty = true;
@@ -739,6 +758,7 @@ export class Island {
   /** Cursor in window-logical coordinates; `down`: left button held (Rust poll). */
   onCursor(x: number, y: number, down = false) {
     State.mouse = { x, y };
+    this.lastCursorAt = performance.now();
     const rect = this.islandRect();
     State.mouseInIsland = { x: x - rect.x, y: y - rect.y };
 
@@ -966,8 +986,15 @@ export class Island {
     const focus = State.focusTask;
     this.engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
     this.engine.particleOverhang = BOT_OVERHANG;
-    this.engine.lookX = this.lookX();
-    this.engine.lookY = this.lookY();
+    // Someone talking in the Discord call: look at them, unless the mouse just moved.
+    const glance = this.engine.glance;
+    if (glance && performance.now() - this.lastCursorAt > 1000) {
+      this.engine.lookX = glance.x;
+      this.engine.lookY = glance.y;
+    } else {
+      this.engine.lookX = this.lookX();
+      this.engine.lookY = this.lookY();
+    }
     if (this.engine.morph > 0.3) {
       this.engine.slotHTarget = State.fileDragOver ? 0.2 : 0;
     } else {
@@ -1068,6 +1095,7 @@ export class Island {
     this.engine.setState(State.effectiveState);
     // What the focused pill puts on Mochi: Spotify's headphones, the mode's mask…
     applyMusic(this.engine, State.focusId === "integration_spotify");
+    applyDiscord(this.engine, State.focusId === DISCORD_ID, callStartedAt());
     applyExtras(this.engine, State.focusId, true);
   }
 

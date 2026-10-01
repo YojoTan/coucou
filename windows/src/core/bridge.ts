@@ -2,7 +2,7 @@
 // page is opened in a plain browser, so the island can be iterated on with
 // `npm run dev` alone.
 
-import type { LanView } from "./state";
+import type { DiscordSnapshot, LanView } from "./state";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -110,8 +110,18 @@ export const Bridge = {
   /** The Open dialog; [token, file name] — the path stays in Rust. */
   lanPickFile: () => call<[string, string] | null>("lan_pick_file"),
   lanSendPicked: (id: string, token: string) => callOrThrow<void>("lan_send_picked", { id, token }),
+  // ── Discord ───────────────────────────────────────────────────────────────
+  discordState: () => call<DiscordSnapshot | null>("discord_state"),
+  discordConnect: () => callOrThrow<void>("discord_connect"),
+  discordSignOut: () => call<void>("discord_sign_out"),
+  discordSet: (what: "mute" | "deaf" | "input" | "output", on?: boolean, id?: string) => call<void>("discord_set", { what, on, id }),
+  discordOpen: (channel: string | null) => call<void>("discord_open", { channel }),
+  discordPresence: (details: string | null, state: string | null) => call<void>("discord_presence", { details, state }),
+  discordWebhook: (text: string, path: string | null) => callOrThrow<void>("discord_webhook", { text, path }),
+  /** The "talking while muted" meter (opt-in; Rust checks the setting too). */
+  discordMic: (on: boolean) => call<void>("discord_mic", { on }),
   /** Spotify pill buttons. */
-  mediaControl: (action: "toggle" | "next" | "previous") => call<void>("media_control", { action }),
+  mediaControl: (action: "toggle" | "next" | "previous" | "play" | "pause") => call<void>("media_control", { action }),
   /** "token" (pasted), "gh" (local gh login) or null — never the token itself. */
   githubAuth: () => call<"token" | "gh" | null>("github_auth"),
   opencodeStatus: () => call<PluginStatus>("opencode_status"),

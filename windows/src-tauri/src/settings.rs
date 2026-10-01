@@ -47,6 +47,9 @@ pub struct Settings {
     /// "sleep". Do Not Disturb and Sleep silence sounds and toasts.
     #[serde(default = "default_focus_mode")]
     pub focus_mode: String,
+    /// Discord's switches (discord.rs); keys are in the Credential Manager.
+    #[serde(default)]
+    pub discord: crate::discord::DiscordPrefs,
     /// Mochis on the local network (lan/): off by default.
     #[serde(default)]
     pub lan: crate::lan::LanPrefs,
@@ -100,6 +103,7 @@ impl Default for Settings {
             anthropic_model: String::new(),
             lan: Default::default(),
             focus_mode: default_focus_mode(),
+            discord: Default::default(),
             hotkey: default_hotkey(),
             language: default_language(),
         }

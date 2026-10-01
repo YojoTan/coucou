@@ -120,6 +120,11 @@ pub fn start(app: AppHandle) {
     spawn(app, "integration_spotify", 4, 3, poll_spotify);
 }
 
+/// For other modules (Discord): is that pill on?
+pub fn is_enabled(app: &AppHandle, id: &str) -> bool {
+    enabled(app, id)
+}
+
 /// True when the user has this integration switched on in settings.
 fn enabled(app: &AppHandle, id: &str) -> bool {
     app.try_state::<crate::Shared>()

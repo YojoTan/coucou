@@ -98,7 +98,29 @@ export function buildChoose(actions: ViewActions): ViewHost {
     text: t("Cancel"),
     onclick: () => actions.setView(State.defaultView()),
   });
-  const row = h("div", { class: "actions" }, ask, cancel);
+  const toDiscord = h("button", {
+    class: "btn secondary",
+    text: t("Send to Discord"),
+    onclick: async () => {
+      const file = State.droppedFile;
+      if (!file) return;
+      State.noteMessage = t("Sending {file} to Discord…", { file: file.name });
+      actions.setView("note");
+      try {
+        await Bridge.discordWebhook("", file.path);
+        State.noteMessage = t("{file} sent to Discord ✓", { file: file.name });
+      } catch (err) {
+        State.noteMessage = t(String(err).replace(/^Error:\s*/, ""));
+      }
+      State.notify();
+      window.setTimeout(() => {
+        if (State.view === "note") actions.setView(State.defaultView());
+      }, 3000);
+    },
+  });
+  toDiscord.style.display = "none";
+  void Bridge.secretPresent("discord-webhook").then((on) => { toDiscord.style.display = on ? "" : "none"; });
+  const row = h("div", { class: "actions" }, ask, toDiscord, cancel);
   let peerKey = "";
 
   /** Paired Mochis online: the file can go to one of them. */

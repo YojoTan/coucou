@@ -73,6 +73,9 @@ pub fn control(action: &str) -> Result<(), String> {
     let session = session().map_err(|e| e.to_string())?.ok_or("Nothing is playing.")?;
     let op = match action {
         "toggle" => session.TryTogglePlayPauseAsync(),
+        // A Discord call pauses the music, and plays it again after (only if it paused it).
+        "play" => session.TryPlayAsync(),
+        "pause" => session.TryPauseAsync(),
         "next" => session.TrySkipNextAsync(),
         "previous" => session.TrySkipPreviousAsync(),
         _ => return Err("unknown media action".into()),

@@ -3,6 +3,7 @@
 mod capture;
 mod claude;
 mod clipboard;
+mod discord;
 mod cli_chat;
 mod files;
 mod github;
@@ -14,6 +15,7 @@ mod jump;
 mod lan;
 mod log;
 mod media;
+mod mic;
 mod openai_chat;
 mod opencode;
 mod orca;
@@ -585,6 +587,70 @@ fn lan_reveal(path: String) -> bool {
     Command::new("explorer").arg(format!("/select,{}", file.display())).spawn().is_ok()
 }
 
+// ── Discord (discord.rs) ─────────────────────────────────────────────────────
+
+#[tauri::command]
+fn discord_state() -> Option<discord::Snapshot> {
+    discord::snapshot()
+}
+
+/// Settings → Connect to Discord: the approval window in the Discord app.
+#[tauri::command]
+fn discord_connect(webview: Webview) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "discord_connect")?;
+    discord::request_approval();
+    Ok(())
+}
+
+#[tauri::command]
+fn discord_sign_out(webview: Webview) -> Result<(), String> {
+    only(&webview, SETTINGS_LABEL, "discord_sign_out")?;
+    discord::sign_out();
+    Ok(())
+}
+
+/// The card's buttons: mute, deafen, the microphone and the output.
+#[tauri::command]
+fn discord_set(what: String, on: Option<bool>, id: Option<String>) {
+    match (what.as_str(), on, id) {
+        ("mute", Some(on), _) => discord::set_mute(on),
+        ("deaf", Some(on), _) => discord::set_deaf(on),
+        ("input", _, Some(id)) => discord::set_device(false, &id),
+        ("output", _, Some(id)) => discord::set_device(true, &id),
+        _ => {}
+    }
+}
+
+#[tauri::command]
+fn discord_open(channel: Option<String>) {
+    discord::open(channel);
+}
+
+/// Rich Presence (opt-in in Settings → Discord).
+#[tauri::command]
+fn discord_presence(app: AppHandle, details: Option<String>, state: Option<String>) {
+    let on = app.state::<Shared>().settings.lock().unwrap().discord.presence;
+    discord::set_activity(if on { details.map(|d| (d, state)) } else { None });
+}
+
+/// "You're talking while muted" (opt-in): the island turns the meter on while
+/// Discord has the user muted in a call; the setting must be on as well.
+#[tauri::command]
+fn discord_mic(app: AppHandle, on: bool) {
+    let allowed = app.state::<Shared>().settings.lock().unwrap().discord.muted_alert;
+    mic::set_listening(&app, on && allowed);
+}
+
+/// The webhook: a test from Settings, or a dropped file (the inbox copy only).
+#[tauri::command]
+async fn discord_webhook(text: String, path: Option<String>) -> Result<(), String> {
+    let file = match path {
+        Some(p) => Some(claude::inbox_file(&p).ok_or("That file is not in Coucou's inbox — drop it again.")?),
+        None => None,
+    };
+    discord::webhook_send(&text, file).await
+}
+
 /// Drag-out of Mochi: the window under the cursor, captured into the inbox.
 #[tauri::command]
 async fn attach_window() -> Result<capture::AttachedWindow, String> {
@@ -902,6 +968,14 @@ pub fn run() {
             lan_send_file,
             lan_set_status,
             lan_pick_file,
+            discord_state,
+            discord_connect,
+            discord_sign_out,
+            discord_set,
+            discord_open,
+            discord_presence,
+            discord_webhook,
+            discord_mic,
             lan_send_picked,
             lan_reveal,
             opencode_status,
@@ -939,6 +1013,7 @@ pub fn run() {
             pipe::start(handle.clone());
             integrations::start(handle.clone());
             lan::init(&handle, &loaded.lan);
+            discord::start(&handle);
             Ok(())
         })
         .run(tauri::generate_context!())

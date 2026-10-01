@@ -2,7 +2,7 @@
 // Stage 2 covers the Claude Code hooks and the general preferences; API keys and
 // integrations land here too in a later stage.
 
-import type { LanView } from "../core/state";
+import type { DiscordSnapshot, LanView } from "../core/state";
 import { setLanguage, t } from "../core/i18n";
 import "./settings.css";
 import { Bridge, onEvent, type EngineInfo, type HookStatus, type HookTarget } from "../core/bridge";
@@ -685,6 +685,129 @@ function githubStatus(): HTMLElement {
   return line;
 }
 
+// ── Discord ───────────────────────────────────────────────────────────────────
+
+function discordSection(present: Record<string, boolean>): HTMLElement {
+  const prefs = settings.discord ?? {
+    postFinished: false, postPermission: false, pauseSpotify: true, quietCalls: true, lockMute: true, presence: false, mutedAlert: false,
+  };
+  settings.discord = prefs;
+  const persist = async () => {
+    settings.discord = { ...prefs };
+    await save();
+  };
+  const field = (key: string, placeholder: string, secret: boolean) => {
+    const input = h("input", {
+      type: secret ? "password" : "text", spellcheck: "false", autocomplete: "off", style: "flex:1 1 auto;min-width:0",
+      placeholder: present[key] ? "••••••••  (stored)" : placeholder,
+    }) as HTMLInputElement;
+    return input;
+  };
+  const clientId = field("discord-client-id", "Client ID", false);
+  const clientSecret = field("discord-client-secret", "Client Secret", true);
+  const webhook = field("discord-webhook", "https://discord.com/api/webhooks/…", true);
+  const status = h("div", { class: "hint" });
+  const note = h("div", { class: "hint" });
+  const connect = h("button", { text: t("Connect to Discord") }) as HTMLButtonElement;
+  const disconnect = h("button", { text: t("Disconnect") }) as HTMLButtonElement;
+
+  function show(s: DiscordSnapshot | null) {
+    const link = s?.link ?? { kind: "notSetUp" as const };
+    status.textContent = ({
+      notSetUp: t("Not set up."),
+      offline: t("Discord isn't running (or the pill is off)."),
+      needsApproval: t("Not connected yet: click Connect, then approve in Discord."),
+      waitingApproval: t("Waiting for your approval in the Discord window…"),
+      connected: t("✓ Connected as {name}.", { name: link.name ?? "" }),
+      failed: `❌ ${link.message ?? ""}`,
+    } as Record<string, string>)[link.kind];
+    connect.textContent = link.kind === "connected" ? t("Reconnect") : t("Connect to Discord");
+    disconnect.style.display = link.kind === "connected" ? "" : "none";
+  }
+  void Bridge.discordState().then(show);
+  void onEvent<DiscordSnapshot>("discord-state", show);
+
+  connect.addEventListener("click", async () => {
+    const id = clientId.value.trim();
+    const secret = clientSecret.value.trim();
+    if (id && !/^\d+$/.test(id)) {
+      note.textContent = t("❌ The Client ID is a number.");
+      return;
+    }
+    try {
+      if (id) await Bridge.secretSet("discord-client-id", id);
+      if (secret) await Bridge.secretSet("discord-client-secret", secret);
+      clientId.value = "";
+      clientSecret.value = "";
+      if (!settings.activeIntegrations.includes("integration_discord") && settings.activeIntegrations.length < 4) {
+        settings.activeIntegrations = [...settings.activeIntegrations, "integration_discord"];
+        await save();
+      }
+      await Bridge.discordConnect();
+      note.textContent = "";
+    } catch (err) {
+      note.textContent = `❌ ${String(err).replace(/^Error:\s*/, "")}`;
+    }
+  });
+  disconnect.addEventListener("click", () => void Bridge.discordSignOut());
+
+  const saveHook = async (): Promise<boolean> => {
+    const url = webhook.value.trim();
+    if (!url) return present["discord-webhook"] ?? false;
+    if (!/^https:\/\/(ptb\.|canary\.)?(discord|discordapp)\.com\/api\/webhooks\//.test(url)) {
+      note.textContent = t("❌ That isn't a Discord webhook URL.");
+      return false;
+    }
+    await Bridge.secretSet("discord-webhook", url);
+    present["discord-webhook"] = true;
+    webhook.value = "";
+    webhook.placeholder = "••••••••  (stored)";
+    note.textContent = t("✓ Webhook saved.");
+    return true;
+  };
+  const test = h("button", { text: t("Send a test") }) as HTMLButtonElement;
+  test.addEventListener("click", async () => {
+    if (!(await saveHook())) return;
+    test.disabled = true;
+    try {
+      await Bridge.discordWebhook(t("👋 Coucou is connected to this channel."), null);
+      note.textContent = t("✓ Sent — check the channel.");
+    } catch (err) {
+      note.textContent = `❌ ${String(err).replace(/^Error:\s*/, "")}`;
+    }
+    test.disabled = false;
+  });
+
+  const sw = (label: string, key: keyof typeof prefs) =>
+    h("div", { class: "row" }, h("label", { text: label }), toggle(prefs[key], (v) => { prefs[key] = v; void persist(); }));
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Discord" })),
+    h("div", { class: "hint", text: t("For calls, mute and DMs, Coucou talks to the Discord app on this PC through an application of your own: create it at discord.com/developers/applications, copy its Client ID and Client Secret from OAuth2, and add http://127.0.0.1 as a redirect there. Turn the Discord pill on above.") }),
+    h("div", { class: "row" }, h("label", { text: "Client ID" }), clientId),
+    h("div", { class: "row" }, h("label", { text: "Client Secret" }), clientSecret),
+    h("div", { class: "row" }, connect, disconnect),
+    status,
+    h("h3", { text: t("During calls") }),
+    sw(t("Pause Spotify during calls"), "pauseSpotify"),
+    sw(t("Call mode: Coucou stays quiet, and sums up after"), "quietCalls"),
+    sw(t("Mute me when the screen locks"), "lockMute"),
+    sw(t("Warn me when I talk while muted"), "mutedAlert"),
+    h("div", { class: "hint", text: t("Coucou listens to the microphone's level only — while you're muted in a call, never recorded, never sent. Windows shows its microphone icon meanwhile.") }),
+    h("div", { class: "hint", text: t("Transcribing the call isn't on Windows: its dictation sends the audio to Microsoft, and Coucou keeps your voice on this PC.") }),
+    sw(t("Show what Mochi is doing on my Discord profile"), "presence"),
+    h("div", { class: "hint", text: t("Your friends see “🤖 Claude Code is working on coucou” or the song Spotify plays, under the Coucou app.") }),
+    h("h3", { text: t("Webhook") }),
+    h("div", { class: "hint", text: t("Send-only, to one channel: in Discord, Channel settings › Integrations › Webhooks › New webhook › Copy URL. Then a dropped file can go to that channel, and Coucou can post there when Claude Code finishes or asks for permission (project and tool names, and the start of Claude's last reply).") }),
+    h("div", { class: "row" }, webhook, test),
+    sw(t("Post when Claude Code finishes"), "postFinished"),
+    sw(t("Post when Claude Code asks for permission"), "postPermission"),
+    note,
+  );
+}
+
 // ── Mochis on the network ─────────────────────────────────────────────────────
 
 function lanSection(): HTMLElement {
@@ -919,7 +1042,7 @@ async function main() {
     ["general", t("General"), [generalSection()]],
     ["chat", t("Chat"), [chatSection(), apiSection(hasKey)]],
     ["agents", t("Agents"), [claudeSection(status), hooksSection("codex", codexStatus), opencodeSection()]],
-    ["integrations", t("Integrations"), [integrationsSection(present)]],
+    ["integrations", t("Integrations"), [integrationsSection(present), discordSection(present)]],
     ["lan", t("Mochis"), [lanSection()]],
   ];
   const bar = h("div", { class: "tabs", role: "tablist" });

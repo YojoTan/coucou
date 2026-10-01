@@ -96,11 +96,12 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_orca", "Orca", "#8B5CF6", "n8n"),
   task("integration_spotify", "Spotify", "#1DB954", "n8n"),
   task("integration_lan", "Mochis", "#F472B6", "n8n"),
+  task("integration_discord", "Discord", "#5865F2", "n8n"),
 ];
 
 export const TOGGLEABLE_INTEGRATION_IDS = [
   "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-  "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan",
+  "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan", "integration_discord",
 ];
 
 /** What an integration poller last reported. */
@@ -136,6 +137,33 @@ export interface Extras {
   pet: { level: number; streak: number; sessions: number; worn: MochiAccessory; scruffy: boolean } | null;
   customStatus: Record<string, { text: string; state: string; at: number }>;
 }
+
+/** Discord (Rust discord.rs). */
+export interface DiscordMember { id: string; name: string; muted: boolean; deafened: boolean }
+export interface DiscordVoice { channelId: string; name: string; members: DiscordMember[]; speaking: string[] }
+export interface DiscordNote { id: string; channelId: string; author: string; text: string; reaction: "confetti" | "hearts" | "laugh" | "question" | "fire" | null }
+export interface DiscordDevice { id: string; name: string }
+export interface DiscordSnapshot {
+  running: boolean;
+  link: { kind: "notSetUp" | "offline" | "needsApproval" | "waitingApproval" | "connected" | "failed"; name?: string; message?: string };
+  me: string | null;
+  voice: DiscordVoice | null;
+  selfMute: boolean;
+  selfDeaf: boolean;
+  devices: { inputs: DiscordDevice[]; outputs: DiscordDevice[]; input: string; output: string };
+  notes: DiscordNote[];
+  unread: number;
+}
+export interface DiscordPrefs {
+  postFinished: boolean;
+  postPermission: boolean;
+  pauseSpotify: boolean;
+  quietCalls: boolean;
+  lockMute: boolean;
+  presence: boolean;
+  mutedAlert: boolean;
+}
+export interface DiscordCallSummary { minutes: number; myShare: number; top: string | null; topShare: number; missed: number; endedAt: number }
 
 /** One line in the compact island for a few seconds ("Ana joined"). */
 export interface CompactToast {
@@ -204,6 +232,7 @@ export interface Settings {
   lan: LanPrefs;
   focusMode: FocusMode;
   customMochis?: CustomMochi[];
+  discord?: DiscordPrefs;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -248,6 +277,11 @@ class AppState {
 
   isPinned = false;
   paused = false;
+
+  /** Discord: the pill's snapshot, the call that just ended, "you're muted!". */
+  discord: DiscordSnapshot | null = null;
+  discordLastCall: DiscordCallSummary | null = null;
+  discordTalkingMuted = false;
 
   /** Weather, PC, calendar, pet, custom Mochis' news (the extras). */
   extras: Extras = { weather: null, system: null, calendarNext: null, pet: null, customStatus: {} };

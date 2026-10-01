@@ -4,6 +4,9 @@
 export const ICONS = {
   // slider.horizontal.3 (the chat's model and effort)
   sliders: "M3 6h9.2a2.6 2.6 0 0 1 5 0H21v2h-3.8a2.6 2.6 0 0 1-5 0H3V6zm11.7-.4a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zM3 16h3.8a2.6 2.6 0 0 1 5 0H21v2h-9.2a2.6 2.6 0 0 1-5 0H3v-2zm6.3-.4a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z",
+  // mic.fill / headphones (Discord card)
+  mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zm-6 9h1.8a4.2 4.2 0 0 0 8.4 0H18a6 6 0 0 1-5.1 5.9V21h-1.8v-3.1A6 6 0 0 1 6 12z",
+  headphones: "M12 4a8 8 0 0 0-8 8v6a2 2 0 0 0 2 2h2v-7H5.8v-1a6.2 6.2 0 0 1 12.4 0v1H16v7h2a2 2 0 0 0 2-2v-6a8 8 0 0 0-8-8z",
   // play.fill / pause.fill / backward.end.fill / forward.end.fill (Spotify pill)
   play: "M7 4.5v15l12.5-7.5L7 4.5z",
   pause: "M6.5 4.5h4v15h-4zm7 0h4v15h-4z",

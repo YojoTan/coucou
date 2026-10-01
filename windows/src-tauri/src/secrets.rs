@@ -12,6 +12,11 @@ pub const KNOWN_KEYS: &[&str] = &[
     // Anthropic-compatible endpoint (upstream #26): its own key, so the official
     // one never goes anywhere but api.anthropic.com.
     "anthropic-compat-key",
+    // Discord (discord.rs): the user's own app, and a send-only webhook. The
+    // OAuth tokens are kept apart, out of the settings window's reach.
+    "discord-client-id",
+    "discord-client-secret",
+    "discord-webhook",
     "n8n-url",
     "n8n-api-key",
     "vercel-token",

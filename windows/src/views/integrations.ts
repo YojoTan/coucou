@@ -9,6 +9,7 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { isAgentTask, State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
+import { discordCard } from "./discord";
 
 /** Same shape as the Swift `timeAgo` computed properties. */
 export function timeAgo(value: unknown): string {
@@ -421,6 +422,8 @@ export function hasIntegrationData(id: string): boolean {
       return info.loaded;
     case "integration_spotify":
       return get(id).nowPlaying != null;
+    case "integration_discord":
+      return State.discord?.running === true;
     default:
       return false;
   }
@@ -453,6 +456,8 @@ export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHoo
       return orcaCard();
     case "integration_spotify":
       return spotifyCard();
+    case "integration_discord":
+      return discordCard();
     default:
       return idleCard(task, hooks.openSettings);
   }

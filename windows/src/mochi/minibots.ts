@@ -3,7 +3,7 @@
 
 import { BotEngine, hexToRGB } from "./engine";
 import type { AgentTask } from "../core/state";
-import { applyExtras, applyMusic } from "./sync";
+import { applyDiscord, applyExtras, applyMusic } from "./sync";
 
 interface MiniBot {
   canvas: HTMLCanvasElement;
@@ -53,6 +53,12 @@ export function createMiniBot(task: AgentTask, bodySize: number): HTMLElement {
   return slot;
 }
 
+/** The engine drawing in a slot from createMiniBot (a Discord member's flags…). */
+export function miniEngineOf(slot: HTMLElement): BotEngine | null {
+  const canvas = slot.querySelector("canvas");
+  return canvas ? live.get(canvas)?.engine ?? null : null;
+}
+
 export function releaseMiniBot(canvas: HTMLCanvasElement) {
   live.delete(canvas);
 }
@@ -71,6 +77,7 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
     mb.engine.setState(task.state);
     mb.engine.bodyColor = hexToRGB(task.color);
     if (mb.taskId === "integration_spotify") applyMusic(mb.engine, true);
+    if (mb.taskId === "integration_discord") applyDiscord(mb.engine, true, null);
     applyExtras(mb.engine, mb.taskId, false);
   }
 }

@@ -1,5 +1,6 @@
 // Entry point: boot the bridge, wire the island, start the greeting.
 
+import { callSilences, registerDiscordHandlers } from "./island/discord";
 import { registerLanHandlers } from "./island/lan";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
@@ -80,12 +81,14 @@ async function main() {
   });
 
   // Do Not Disturb and Sleep keep Coucou quiet; a toast shows the hidden island.
-  Sound.silenced = () => silences(State.settings.focusMode);
+  // A Discord call (call mode) too, counting what it silenced for the summary.
+  Sound.silenced = () => silences(State.settings.focusMode) || callSilences();
   State.onToast = () => island.reveal();
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);
   registerLanHandlers(island);
+  registerDiscordHandlers(island);
 
   island.launch();
 

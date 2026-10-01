@@ -244,6 +244,9 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         }
     }
 
+    // Posts to the user's Discord channel, when they switched that on.
+    crate::discord::notify_hook(&app, &event, &payload);
+
     if event != "PermissionRequest" {
         log::line(format!("hook {event}"));
         let _ = app.emit_to(WINDOW_LABEL, "hook", payload);

@@ -66,6 +66,11 @@ fn process_table() -> HashMap<u32, (u32, String)> {
     table
 }
 
+/// Lower-case exe names of every running process (Discord running?).
+pub fn process_names() -> std::collections::HashSet<String> {
+    process_table().into_values().map(|(_, exe)| exe.to_lowercase()).collect()
+}
+
 /// The ancestors of `pid` (excluding it), nearest first.
 fn ancestors_in(table: &HashMap<u32, (u32, String)>, pid: u32) -> Vec<HostProc> {
     let mut chain = Vec::new();

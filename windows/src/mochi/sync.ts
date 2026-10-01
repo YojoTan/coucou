@@ -8,6 +8,26 @@ import type { MochiAccessory } from "./accessories";
 
 const lastTitle = new WeakMap<BotEngine, string | null>();
 
+/**
+ * Discord's call into a Mochi: the headset in a voice channel, the mouth while
+ * you talk, a closed mouth and a red mic when muted, waves while the others
+ * talk, and a glance at whoever speaks (DiscordSync).
+ */
+export function applyDiscord(e: BotEngine, active: boolean, startedAt: number | null) {
+  const d = State.discord;
+  const voice = active ? d?.voice ?? null : null;
+  const me = d?.me ?? "";
+  e.voiceHeadset = voice != null;
+  e.callStartedAt = voice ? startedAt : null;
+  e.micMuted = voice != null && (d!.selfMute || d!.selfDeaf);
+  e.deafened = d?.selfDeaf ?? false;
+  e.talking = (voice?.speaking.includes(me) ?? false) && !e.micMuted;
+  e.othersSpeaking = (voice?.speaking.some((id) => id !== me)) ?? false;
+  // The card lists the call's first 7 people left to right, right of Mochi.
+  const i = voice ? voice.members.slice(0, 7).findIndex((m) => m.id !== me && voice.speaking.includes(m.id)) : -1;
+  e.glance = i >= 0 ? { x: Math.min(0.95, 0.5 + 0.075 * i), y: 0.05 } : null;
+}
+
 function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

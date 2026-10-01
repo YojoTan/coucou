@@ -69,6 +69,38 @@ fn outside_press(rect: IslandRect, x: f64, y: f64, down: bool, was_down: bool) -
         && !(x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h)
 }
 
+/// A click outside the island closes it — a click, not a press. A press that
+/// turns into a drag is someone fetching a file from Explorer to drop on Mochi,
+/// and closing then made the drop impossible.
+#[derive(Default)]
+struct OutsideClick {
+    press: Option<(f64, f64)>,
+}
+
+/// How far the cursor may move between press and release and still be a click.
+const CLICK_SLOP: f64 = 6.0;
+
+impl OutsideClick {
+    /// One poll tick; true when a click outside has just completed.
+    fn tick(&mut self, press_edge_outside: bool, down: bool, was_down: bool, x: f64, y: f64) -> bool {
+        if press_edge_outside {
+            self.press = Some((x, y));
+            return false;
+        }
+        let Some((px, py)) = self.press else { return false };
+        if down && ((x - px).abs() > CLICK_SLOP || (y - py).abs() > CLICK_SLOP) {
+            // It became a drag: whatever is being dragged may be meant for us.
+            self.press = None;
+            return false;
+        }
+        if !down && was_down {
+            self.press = None;
+            return true;
+        }
+        false
+    }
+}
+
 /// Wakes / parks the cursor poll thread so a hidden island costs literally nothing.
 pub struct PollGate {
     active: Mutex<bool>,
@@ -287,6 +319,7 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
         loop {
             gate.wait_until_active();
             let mut was_down = left_button_down();
+            let mut outside_click = OutsideClick::default();
             let mut last = (f64::MIN, f64::MIN);
             let mut ticks: u32 = 0;
             while gate.is_active() {
@@ -324,15 +357,16 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 let down = left_button_down();
                 let pressed = down && !was_down;
                 let r = *gate.rect.lock().unwrap();
-                if outside_press(r, x, y, down, was_down) {
-                    // Native select popups belong to our window even when their
-                    // menu extends beyond the island's painted bounds.
-                    let own_popup = win.hwnd().is_ok_and(|hwnd| unsafe {
+                // Native select popups belong to our window even when their
+                // menu extends beyond the island's painted bounds.
+                let press_outside = outside_press(r, x, y, down, was_down)
+                    && !win.hwnd().is_ok_and(|hwnd| unsafe {
                         let hit = WindowFromPoint(POINT { x: cx as i32, y: cy as i32 });
                         GetAncestor(hit, GA_ROOT).0 != hwnd.0 as *mut _
                             && GetAncestor(hit, GA_ROOTOWNER).0 == hwnd.0 as *mut _
                     });
-                    if !own_popup { let _ = win.emit("outside-click", ()); }
+                if outside_click.tick(press_outside, down, was_down, x, y) {
+                    let _ = win.emit("outside-click", ());
                 }
                 if was_down && !down {
                     let _ = win.emit("mouse-up", CursorPayload { x, y, down });
@@ -402,6 +436,23 @@ pub fn set_ignore_cursor(app: &AppHandle, ignore: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_click_outside_closes_but_a_drag_that_starts_outside_does_not() {
+        // Press, release in place: a click.
+        let mut c = OutsideClick::default();
+        assert!(!c.tick(true, true, false, 400.0, 50.0));
+        assert!(!c.tick(false, true, true, 402.0, 51.0), "a jitter is still a click");
+        assert!(c.tick(false, false, true, 402.0, 51.0));
+        // Press, then move away with the button held: a file being dragged to us.
+        let mut d = OutsideClick::default();
+        assert!(!d.tick(true, true, false, 400.0, 50.0));
+        assert!(!d.tick(false, true, true, 380.0, 40.0));
+        assert!(!d.tick(false, false, true, 200.0, 30.0), "dropping it must not close the island");
+        // A release with no press outside first (the press was on the island) is nothing.
+        let mut e = OutsideClick::default();
+        assert!(!e.tick(false, false, true, 400.0, 50.0));
+    }
 
     #[test]
     fn outside_click_is_a_press_edge_outside_the_painted_rect() {

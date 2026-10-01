@@ -90,6 +90,13 @@ export class Island {
   private draggingGhost = false;
   private ghostEl!: HTMLElement;
 
+  /**
+   * The Drop view holds the island open while the user goes looking for a file
+   * — that always takes longer than the auto-close delay, and a closed island
+   * can't take the drop. Esc and a real click outside still close it.
+   */
+  private dropPinned = false;
+
   private confusedRecovery: number | null = null;
   private prevViewBeforeConfused: IslandViewName = "overview";
   private lastSyncedView: IslandViewName | null = null;
@@ -393,6 +400,7 @@ export class Island {
 
   expand(view: IslandViewName) {
     this.stopSequenceIfLeaving(view);
+    this.pinForDrop(view);
     State.view = view;
     if (State.mode !== "expanded") this.setMode("expanded");
     else this.animateGeometry(false);
@@ -401,7 +409,28 @@ export class Island {
     State.notify();
   }
 
+  /** An approval or a LAN code/file waits for a click: those pins are not ours to drop. */
+  private decisionPending(): boolean {
+    const lan = State.lanPrompt;
+    return !!State.pendingApproval || (lan != null && (lan.kind === "pair" || lan.kind === "file"));
+  }
+
+  private pinForDrop(view: IslandViewName) {
+    if (view === "upload" && !this.dropPinned) {
+      this.dropPinned = true;
+      State.isPinned = true;
+      this.fsm.pinned = true;
+    } else if (view !== "upload" && this.dropPinned) {
+      this.dropPinned = false;
+      if (!this.decisionPending()) {
+        State.isPinned = false;
+        this.fsm.pinned = false;
+      }
+    }
+  }
+
   setView(view: IslandViewName) {
+    this.pinForDrop(view);
     if (view !== "prompt") State.peerChat = null;
     this.stopSequenceIfLeaving(view);
     if (State.mode !== "expanded") {
@@ -419,6 +448,7 @@ export class Island {
   }
 
   collapse() {
+    this.dropPinned = false;
     State.isPinned = false;
     this.fsm.pinned = false;
     // Drive the state machine rather than the mode: setting the mode behind its
@@ -429,7 +459,9 @@ export class Island {
 
   /** Explicit outside click closes the panel, while approval cards stay actionable. */
   dismissOutside() {
-    if (State.mode === "expanded" && !State.isPinned) this.collapse();
+    // A click (Rust only reports clicks, never the start of a drag) closes the
+    // island — the Drop view's pin included, but never a pending decision.
+    if (State.mode === "expanded" && (!State.isPinned || (this.dropPinned && !this.decisionPending()))) this.collapse();
   }
 
   /** Alert from the hook server: open on this view. Pinned alerts never auto-close. */
@@ -661,7 +693,9 @@ export class Island {
     window.addEventListener("mouseup", (e) => this.onMouseUp(e.clientX, e.clientY));
 
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
+      if (e.key === "Escape" && State.mode === "expanded" && (!State.isPinned || (this.dropPinned && !this.decisionPending()))) {
+        this.collapse();
+      }
       State.lastActivity = performance.now();
     });
 

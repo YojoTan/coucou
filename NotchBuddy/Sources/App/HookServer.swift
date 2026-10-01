@@ -580,7 +580,10 @@ final class HookServer: @unchecked Sendable {
 
     // MARK: - Logging
 
-    private func nbLog(_ message: String) {
+    /// The same log, for other parts of Coucou (one line, nothing private).
+    nonisolated static func log(_ message: String) { shared.nbLog(message) }
+
+    nonisolated private func nbLog(_ message: String) {
         let logsDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/NotchBuddy")
         try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)

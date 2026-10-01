@@ -3464,7 +3464,9 @@ struct OrcaCardView: View {
                         .foregroundColor(Color(hex: "#8E939C"))
                         .help(Text("Open changes in Orca"))
                     }
-                    if i == 0, !detail(w).isEmpty {
+                    if w.status == "permission" && w.agent == "claude" {
+                        OrcaAnswerButtons(worktree: w).padding(.leading, 11)
+                    } else if i == 0, !detail(w).isEmpty {
                         Text(verbatim: detail(w))
                             .font(.system(size: 10.5))
                             .foregroundColor(Color(hex: "#8E939C"))
@@ -3498,6 +3500,57 @@ struct OrcaCardView: View {
 }
 #endif
 
+
+#if !APPSTORE
+/// Allow / Always / Deny for an Orca agent's permission, right in the Orca card.
+struct OrcaAnswerButtons: View {
+    let worktree: OrcaWorktree
+    @State private var busy = false
+    @State private var error: String? = nil
+    @State private var armed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                pill("Deny", "#3A3E47") { decide(.deny) }
+                pill("Allow", "#30A46C") { if armed { decide(.allow) } }.opacity(armed ? 1 : 0.45)
+                pill("Always", "#3A3E47") { if armed { decide(.always) } }.opacity(armed ? 1 : 0.45)
+                if busy { ProgressView().controlSize(.mini) }
+            }
+            if let error { Text(verbatim: error).font(.system(size: 9.5)).foregroundColor(Color(hex: "#F87171")).lineLimit(1) }
+        }
+        .task(id: worktree.id + worktree.paneKey) {
+            armed = false
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            armed = true
+        }
+    }
+
+    private func decide(_ d: OrcaPoller.Decision) {
+        busy = true
+        error = nil
+        OrcaPoller.answer(worktree, d) { err in busy = false; error = err }
+    }
+
+    /// The pet card's buttons, smaller: a tinted Deny, a solid Allow, a neutral Always.
+    private func pill(_ title: LocalizedStringKey, _ color: String, _ action: @escaping () -> Void) -> some View {
+        let deny = title == "Deny", allow = title == "Allow"
+        return Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: deny ? "xmark" : allow ? "checkmark" : "checkmark.circle").font(.system(size: 8, weight: .bold))
+                Text(title).font(.system(size: 10, weight: .semibold)).lineLimit(1)
+            }
+            .foregroundColor(deny ? Color(hex: "#FCA5A5") : .white)
+            .padding(.horizontal, 8).frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 6).fill(deny ? Color(hex: "#E5484D").opacity(0.16)
+                                                                     : allow ? Color(hex: "#30A46C") : Color.white.opacity(0.09)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(deny ? Color(hex: "#E5484D").opacity(0.35) : Color.white.opacity(allow ? 0 : 0.12)))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+}
+#endif
 
 // MARK: - Spotify card (GitHub build) — SpotifyWatcher
 

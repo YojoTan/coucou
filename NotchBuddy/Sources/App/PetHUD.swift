@@ -40,7 +40,7 @@ final class PetHUD {
     func showApproval() {
         guard let pet = DesktopMochi.shared.petPanel, DesktopMochi.shared.isVisible else { return }
         if approval == nil {
-            let p = makePanel(NSSize(width: 300, height: 120), clicks: true)
+            let p = makePanel(NSSize(width: 300, height: 150), clicks: true)
             p.contentView = NSHostingView(rootView: PetApprovalView().environmentObject(AppState.shared))
             pet.addChildWindow(p, ordered: .above)
             approval = p
@@ -187,42 +187,77 @@ struct SquadMember: Identifiable {
 
 // MARK: Views
 
+/// The permission card: a request from Coucou's own hooks, or an Orca agent's.
 private struct PetApprovalView: View {
     @EnvironmentObject var state: AppState
-    @State private var armedID: UUID? = nil
+    @State private var armedID: String? = nil
+    @State private var busy = false
+    @State private var error: String? = nil
+
+    #if !APPSTORE
+    private var orcaRequest: OrcaWorktree? {
+        state.pendingApproval == nil ? state.orcaWorktrees.first { $0.status == "permission" } : nil
+    }
+    #endif
+
+    private var requestID: String? {
+        if let a = state.pendingApproval { return a.id.uuidString }
+        #if !APPSTORE
+        if let w = orcaRequest { return w.id + w.paneKey }
+        #endif
+        return nil
+    }
 
     var body: some View {
-        let a = state.pendingApproval
-        let shownID = a?.id
-        let full = HookServer.needsFullReview(a?.command ?? "")
+        let shownID = requestID
+        let live = armedID != nil && armedID == shownID && !busy
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "hand.raised.fill").font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#F5A524"))
-                Text(verbatim: (CodingAgent(rawValue: a?.agent ?? "")?.displayName ?? "Claude Code") + " · " + String(localized: "needs permission"))
-                    .font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
-            }
-            Text(verbatim: a?.command.isEmpty == false ? a!.command : (a?.tool ?? "…"))
-                .font(.system(size: 11, design: .monospaced)).foregroundColor(Color(hex: "#E8E9EC"))
-                .lineLimit(1).truncationMode(.middle)
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
-            HStack(spacing: 6) {
-                button("Deny", fill: Color.white.opacity(0.1)) { HookServer.shared.sendApprovalDecision("deny", for: shownID) }
-                if full {
-                    button("Review in VS Code", fill: Color(hex: "#3B82F6")) { HookServer.shared.sendApprovalDecision("ask", for: shownID) }
-                } else {
-                    let live = armedID != nil && armedID == shownID
-                    button("Allow", fill: Color(hex: "#30A46C").opacity(live ? 1 : 0.4)) {
-                        guard live else { return }
-                        HookServer.shared.sendApprovalDecision("allow", for: shownID)
+            if let a = state.pendingApproval {
+                header((CodingAgent(rawValue: a.agent)?.displayName ?? "Claude Code") + " · " + String(localized: "needs permission"))
+                command(a.command.isEmpty ? a.tool : a.command)
+                let id = a.id
+                if HookServer.needsFullReview(a.command) {
+                    HStack(spacing: 6) {
+                        choice("Deny", icon: "xmark", style: .deny, live: true) { HookServer.shared.sendApprovalDecision("deny", for: id) }
+                        choice("Review in VS Code", icon: "arrow.up.forward.app", style: .primary, live: true) {
+                            HookServer.shared.sendApprovalDecision("ask", for: id)
+                        }
                     }
-                    button("Always", fill: Color.white.opacity(live ? 0.1 : 0.05)) {
-                        guard live else { return }
-                        HookServer.shared.sendApprovalDecision("always", for: shownID)
+                } else {
+                    HStack(spacing: 6) {
+                        choice("Deny", icon: "xmark", style: .deny, live: true) { HookServer.shared.sendApprovalDecision("deny", for: id) }
+                        choice("Allow", icon: "checkmark", style: .primary, live: live) { HookServer.shared.sendApprovalDecision("allow", for: id) }
+                        choice("Always", icon: "checkmark.circle", style: .neutral, live: live) { HookServer.shared.sendApprovalDecision("always", for: id) }
                     }
                 }
             }
+            #if !APPSTORE
+            if let w = orcaRequest {
+                header("Orca · " + String(localized: "needs permission"))
+                Text(verbatim: w.name).font(.system(size: 11)).foregroundColor(Color(hex: "#A1A6AE")).lineLimit(1).truncationMode(.middle)
+                command([w.tool, w.toolInput].filter { !$0.isEmpty }.joined(separator: " · "))
+                if w.agent == "claude" {
+                    HStack(spacing: 6) {
+                        choice("Deny", icon: "xmark", style: .deny, live: !busy) { decide(w, .deny) }
+                        choice("Allow", icon: "checkmark", style: .primary, live: live) { decide(w, .allow) }
+                        choice("Always", icon: "checkmark.circle", style: .neutral, live: live) { decide(w, .always) }
+                    }
+                }
+                HStack(spacing: 6) {
+                    if busy {
+                        ProgressView().controlSize(.mini)
+                        Text("Answering in its terminal…").font(.system(size: 10)).foregroundColor(Color(hex: "#8E939C"))
+                    } else if let error {
+                        Text(verbatim: error).font(.system(size: 10)).foregroundColor(Color(hex: "#F87171")).lineLimit(2)
+                    }
+                    Spacer(minLength: 4)
+                    Button { OrcaPoller.focus(w) } label: {
+                        Label("Open in Orca", systemImage: "arrow.up.right").font(.system(size: 10.5, weight: .medium))
+                    }
+                    .buttonStyle(.plain).foregroundColor(Color(hex: "#A78BFA"))
+                }
+            }
+            #endif
         }
         .padding(12)
         .frame(width: 300, alignment: .leading)
@@ -230,16 +265,62 @@ private struct PetApprovalView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(hex: "#F5A524").opacity(0.45)))
         .task(id: shownID) {
             armedID = nil
+            error = nil
             do { try await Task.sleep(nanoseconds: 700_000_000) } catch { return }
             armedID = shownID
         }
     }
 
-    private func button(_ title: LocalizedStringKey, fill: Color, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white)
-                .padding(.horizontal, 11).padding(.vertical, 5)
-                .background(Capsule().fill(fill))
+    #if !APPSTORE
+    private func decide(_ w: OrcaWorktree, _ d: OrcaPoller.Decision) {
+        busy = true
+        error = nil
+        OrcaPoller.answer(w, d) { err in
+            busy = false
+            error = err
+        }
+    }
+    #endif
+
+    private func header(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "hand.raised.fill").font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#F5A524"))
+            Text(verbatim: text).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+        }
+    }
+
+    private func command(_ text: String) -> some View {
+        Text(verbatim: text.isEmpty ? "…" : text)
+            .font(.system(size: 11, design: .monospaced)).foregroundColor(Color(hex: "#E8E9EC"))
+            .lineLimit(2).truncationMode(.middle)
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
+    }
+
+    enum ChoiceStyle { case deny, primary, neutral }
+
+    /// One of the card's answers: equal widths, an icon, the island's colours.
+    private func choice(_ title: LocalizedStringKey, icon: String, style: ChoiceStyle, live: Bool,
+                        _ action: @escaping () -> Void) -> some View {
+        let (fg, bg, stroke): (Color, Color, Color) = {
+            switch style {
+            case .deny: return (Color(hex: "#FCA5A5"), Color(hex: "#E5484D").opacity(0.14), Color(hex: "#E5484D").opacity(0.35))
+            case .primary: return (.white, Color(hex: "#30A46C"), .clear)
+            case .neutral: return (Color(hex: "#E8E9EC"), Color.white.opacity(0.08), Color.white.opacity(0.12))
+            }
+        }()
+        return Button { if live { action() } } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .bold))
+                Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundColor(fg)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .background(RoundedRectangle(cornerRadius: 9).fill(bg))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(stroke))
+            .opacity(live ? 1 : 0.45)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

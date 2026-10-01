@@ -82,6 +82,7 @@ final class PetBrain {
     /// Let go: fast enough, it flies; else it stays (and may peek at an edge).
     func released(velocity v: CGVector) {
         if hypot(v.dx, v.dy) > 700 {
+            NotificationCenter.default.post(name: .petHop, object: nil)
             velocity = CGVector(dx: max(-4000, min(4000, v.dx)), dy: max(-4000, min(4000, v.dy)))
             physics = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { _ in
                 MainActor.assumeIsolated { PetBrain.shared.step() }

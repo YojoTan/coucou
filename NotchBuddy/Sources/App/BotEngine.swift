@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import SwiftUI
+import AppKit
 
 // MARK: - Easing functions (same as prototype: E.out, E.inOut, E.back, E.lin)
 
@@ -31,7 +32,7 @@ struct Tween {
 // MARK: - Particle
 
 struct Particle {
-    enum ParticleType { case heart, star, spark, sweat, z, note, confetti }
+    enum ParticleType { case heart, star, spark, sweat, z, note, confetti, bolt, smoke }
     var type: ParticleType
     var x, y, vx, vy: CGFloat
     var age: Double        // seconds
@@ -268,10 +269,32 @@ final class BotEngine: ObservableObject {
     var micBoom: CGFloat = 0
     var talk: CGFloat = 0
     private var nextVoiceWave: Double = 0
-    var wantsHeadphones: Bool { musicHeadphones || voiceHeadset }
+    var wantsHeadphones: Bool { musicHeadphones || voiceHeadset || theme == .outlaw }
     /// Where the person speaking sits on the card (DiscordSync), in look units; nil when nobody.
     var glance: CGPoint? = nil
     private var lastSleepZ: Double = 0
+    /// The body colour's material, worked out once per colour (BodyPalette).
+    var paletteCache: (key: [CGFloat], palette: BodyPalette)? = nil
+    // Costume and hands (MochiThemes.swift, MochiHands.swift).
+    var theme: MochiTheme = .none
+    var handLeft = HandPose.rest
+    var handRight = HandPose.rest
+    var quickDrawUntil: Double = 0
+    var nextQuickDraw: Double = CACurrentMediaTime() + 10
+    var lastBoltBeat = -1
+    var lastSparkle: Double = 0
+    var lastHandState: BotState = .idle
+    var muzzleUntil: [Double] = [0, 0]
+    // The outlaw's tricks (MochiHands.swift): recoil, twirls, heat, jets.
+    var lastShot: [Double] = [0, 0]
+    var spinStart: [Double] = [0, 0]
+    var shotTimes: [Double] = []
+    var heat: CGFloat = 0
+    var jetUntil: Double = 0
+    var lastSteam: Double = 0
+    var lastTrickBeat = -1
+    var fingerHeartUntil: Double = 0
+    var nextFingerHeart: Double = CACurrentMediaTime() + 8
     // Accessories and moods (MochiAccessories.swift), set by MochiExtrasSync.
     var accessory: MochiAccessory = .none
     var accessoryColor: Color? = nil
@@ -784,6 +807,7 @@ final class BotEngine: ObservableObject {
 
         updateDance(now: now, dt: dt)
         updateMoods(now: now)
+        updateHands(dt: dt, now: now)
 
         // Smooth look
         let kLook = CGFloat(1 - pow(0.0025, dt))
@@ -825,6 +849,14 @@ final class BotEngine: ObservableObject {
 
         // Age particles
         for i in particles.indices { particles[i].age += dt }
+        // A bolt that runs out hits something: a little burst of sparks where it ends.
+        for p in particles where p.type == .bolt && p.age >= p.life {
+            let ex = p.x + p.vx * CGFloat(p.life), ey = p.y + p.vy * CGFloat(p.life)
+            for _ in 0..<3 {
+                particles.append(Particle(type: .spark, x: ex, y: ey, vx: CGFloat.random(in: -0.6...0.6), vy: CGFloat.random(in: -0.6...0.3),
+                                          age: 0.001, life: 0.35, rot: CGFloat.random(in: 0...6), size: 0.07))
+            }
+        }
         particles.removeAll { $0.age >= $0.life }
 
         // Mouth slot spring — ω₀ ≈ 25 rad/s (T=0.25s), ζ=0.6 (underdamped, slight clack)
@@ -933,7 +965,7 @@ final class BotEngine: ObservableObject {
     /// Where the mouth sits, projected on the head like the eyes (drawEyes): it
     /// follows yaw and pitch, narrows (f) as the head turns, and is nil when it
     /// has turned out of sight. Below the eyes by a fixed angle on the sphere.
-    private func mouthSpot(rx: CGFloat, ry: CGFloat) -> (CGFloat, CGFloat, CGFloat)? {
+    func mouthSpot(rx: CGFloat, ry: CGFloat) -> (CGFloat, CGFloat, CGFloat)? {
         let p = MochiConst.eyeP - 0.36 + pitch + roll
         let cp = cos(p)
         guard cos(yaw) * cp > 0.1 else { return nil }
@@ -978,6 +1010,7 @@ final class BotEngine: ObservableObject {
         let bodyPath = mochiPath(rx: rx, ry: ry, morph: morph, R: R)
 
         // Body fill
+        drawThemeBehind(ctx: ctx, R: R, rx: rx, ry: ry)
         drawBody(ctx: &ctx, path: bodyPath, R: R, rx: rx, ry: ry)
 
         // Blush — always shows a floor proportional to tint (prototype behaviour)
@@ -1002,6 +1035,7 @@ final class BotEngine: ObservableObject {
             drawNightcap(ctx: bodySpace, R: R, rx: rx, ry: ry)
         }
         drawAccessory(ctx: bodySpace, bodyPath: bodyPath, R: R, rx: rx, ry: ry)
+        drawThemeFront(ctx: bodySpace, bodyPath: bodyPath, R: R, rx: rx, ry: ry)
 
         // Mouth hole — dark pill cutout inside the box face
         // Spec: left/right margins 0.10R, top margin 0.08R from box top (-0.94R)
@@ -1054,99 +1088,7 @@ final class BotEngine: ObservableObject {
     // MARK: - Draw hands behind body (called before draw() so hands appear under Mochi)
 
     func drawHandsBehind(context: GraphicsContext, size: CGSize) {
-        guard hands > 0.01, !isMini else { return }
-        let W = size.width, H = size.height
-        let R = W * 0.3
-        // Only draw hands when Mochi is large enough to be meaningful (not compact/peek)
-        guard R > 14 else { return }
-        let rx = R * 1.14
-        let ry = R * 0.88
-        let cx = W / 2 + ox * R
-        let cy = H / 2 + particleOverhang / 2 + (oy + danceOy) * R + R * 0.06
-
-        let now = CACurrentMediaTime()
-        let bodyH = 2 * ry   // full body height
-
-        // Hand ellipse half-dims: 0.30×bodyH wide, 0.26×bodyH tall (scaled by hands 0→1)
-        let hew = 0.30 * ry * hands   // half-width
-        let heh = 0.26 * ry * hands   // half-height
-
-        // Body half-dims with current squash scale
-        let hwB = rx * sx
-        let hhB = ry * sy
-
-        let isWaving = now >= waveStart && waveStart > 0 && now < waveUntil
-
-        for sd in [-1.0, 1.0] {
-            var localX: CGFloat
-            var localY: CGFloat
-            var handRot: CGFloat = 0
-
-            if sd > 0 && isWaving {
-                // Right hand: rise to wave position over first 180ms, then oscillate
-                let wt = CGFloat(now - waveStart)
-                let rise = min(1.0, wt / 0.18)
-                let riseEased: CGFloat = 1 - pow(1 - rise, 3)   // easeOut cubic
-
-                // Rest position is lower-side; wave position is upper-side (at eye height)
-                let restX: CGFloat = hwB * 1.08
-                let restY: CGFloat = hhB * 0.70
-                let oscX = cos(13 * wt) * 0.06 * bodyH
-                let oscY = -sin(13 * wt) * 0.14 * bodyH
-                let waveX: CGFloat = hwB * 1.10 + oscX
-                let waveY: CGFloat = -hhB * 0.15 + oscY
-                localX = restX + (waveX - restX) * riseEased
-                localY = restY + (waveY - restY) * riseEased
-                handRot = (-0.5 + sin(13 * wt) * 0.35) * riseEased
-
-            } else if sd < 0 && isWaving {
-                // Left hand: gentle sway at rest position
-                let wt = CGFloat(now - waveStart)
-                localX = -hwB * 1.08
-                localY = hhB * 0.70 + sin(6 * wt) * 0.04 * bodyH
-
-            } else {
-                // Rest: lower-side, clearly peeking behind body bottom
-                localX = CGFloat(sd) * hwB * 1.08
-                localY = hhB * 0.70
-            }
-
-            // Apply body tilt to get world position
-            let cosT = cos(tilt), sinT = sin(tilt)
-            let worldX = cx + cosT * localX - sinT * localY
-            let worldY = cy + sinT * localX + cosT * localY
-
-            // Draw
-            var handCtx = context
-            handCtx.translateBy(x: worldX, y: worldY)
-            if handRot != 0 { handCtx.rotate(by: .radians(handRot)) }
-
-            let handRect = CGRect(x: -hew, y: -heh, width: hew * 2, height: heh * 2)
-            var handPath = Path()
-            handPath.addEllipse(in: handRect)
-
-            // Fill with body material (same gradient as body)
-            if let bc = bodyColor {
-                let c0 = mix3(cgColorToTuple(bc), (1, 1, 1), 0.35)
-                let c1 = cgColorToTuple(bc)
-                handCtx.fill(handPath, with: .linearGradient(
-                    Gradient(colors: [colorFromTuple(c0), colorFromTuple(c1)]),
-                    startPoint: CGPoint(x: hew * 0.7, y: -heh * 0.85),
-                    endPoint: CGPoint(x: -hew * 0.8, y: heh * 0.9)
-                ))
-            } else {
-                let c0 = cgColorToTuple(MochiConst.baseTop)
-                let c1 = cgColorToTuple(MochiConst.baseBottom)
-                handCtx.fill(handPath, with: .linearGradient(
-                    Gradient(colors: [colorFromTuple(c0), colorFromTuple(c1)]),
-                    startPoint: CGPoint(x: hew * 0.7, y: -heh * 0.85),
-                    endPoint: CGPoint(x: -hew * 0.8, y: heh * 0.9)
-                ))
-            }
-
-            // Subtle separation border — rgba(0,0,0,0.08) 1pt
-            handCtx.stroke(handPath, with: .color(Color.black.opacity(0.08)), lineWidth: 1)
-        }
+        drawHands(context: context, size: size, front: false)     // MochiHands.swift
     }
 
     func drawHandsAndExtras(context: GraphicsContext, size: CGSize) {
@@ -1167,7 +1109,8 @@ final class BotEngine: ObservableObject {
             drawBadge(context: context, size: size, badge: badge, R: R, rx: rx, ry: ry, cx: cx, cy: cy)
         }
 
-        // Particles
+        // Hands in front of the body (typing, a hand to the chin…), then particles.
+        drawHands(context: context, size: size, front: true)
         drawParticles(context: context, size: size, R: R, cx: cx, cy: cy)
     }
 
@@ -1195,7 +1138,8 @@ final class BotEngine: ObservableObject {
             let rect = CGRect(x: x - cw / 2, y: -ry * 0.22, width: cw, height: ch)
             let cup = Path(roundedRect: rect, cornerRadius: cw * 0.45)
             c.fill(cup, with: .linearGradient(
-                Gradient(colors: [Color(hex: "#3A3E47"), Color(hex: "#16181D")]),
+                Gradient(colors: theme == .outlaw ? [Color(hex: "#C47A45"), Color(hex: "#6B3A1E")]   // copper, retro
+                                                  : [Color(hex: "#3A3E47"), Color(hex: "#16181D")]),
                 startPoint: CGPoint(x: rect.midX, y: rect.minY), endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
             c.stroke(cup, with: .color(Color.white.opacity(0.14)), lineWidth: max(0.5, R * 0.025))
             // A small green light on the outer side of each cup.
@@ -1404,8 +1348,37 @@ final class BotEngine: ObservableObject {
 
     private func drawBody(ctx: inout GraphicsContext, path: Path, R: CGFloat, rx: CGFloat, ry: CGFloat) {
         if let bc = bodyColor {
-            // Mini bots: flat solid fill — no gradient, no reflection, no highlight
-            ctx.fill(path, with: .color(Color(cgColor: bc)))
+            // A coloured Mochi (a pill's colour): a material, not a flat fill — a
+            // three-tone gradient whose hue drifts warm at the top and cool at the
+            // bottom, a soft inner glow, a shadow rim, bounce light underneath, a
+            // sheen and a specular dot. Minis get the gradient, rim and sheen only.
+            let pal = palette(for: bc)
+            ctx.fill(path, with: .linearGradient(Gradient(stops: [
+                .init(color: pal.light, location: 0), .init(color: pal.mid, location: 0.5), .init(color: pal.dark, location: 1)]),
+                startPoint: CGPoint(x: rx * 0.75, y: -ry * 0.9), endPoint: CGPoint(x: -rx * 0.85, y: ry * 0.95)))
+            if !isMini {
+                ctx.fill(path, with: .radialGradient(Gradient(stops: [
+                    .init(color: pal.glow.opacity(0.38), location: 0), .init(color: .clear, location: 1)]),
+                    center: CGPoint(x: -rx * 0.1, y: ry * 0.18), startRadius: 0, endRadius: R * 0.95))
+            }
+            ctx.fill(path, with: .radialGradient(Gradient(stops: [
+                .init(color: .clear, location: 0), .init(color: .clear, location: 0.58),
+                .init(color: pal.shadow.opacity(isMini ? 0.28 : 0.4), location: 1)]),
+                center: .zero, startRadius: R * 0.15, endRadius: R * 1.25))
+            if !isMini {
+                ctx.fill(path, with: .linearGradient(Gradient(stops: [
+                    .init(color: .clear, location: 0), .init(color: .clear, location: 0.8),
+                    .init(color: pal.light.opacity(0.32), location: 1)]),
+                    startPoint: CGPoint(x: 0, y: -ry), endPoint: CGPoint(x: 0, y: ry)))
+            }
+            ctx.fill(path, with: .radialGradient(Gradient(stops: [
+                .init(color: Color.white.opacity(isMini ? 0.4 : 0.5), location: 0), .init(color: .clear, location: 1)]),
+                center: CGPoint(x: rx * 0.34, y: -ry * 0.46), startRadius: 0, endRadius: R * 0.42))
+            if !isMini {
+                ctx.fill(Path(ellipseIn: CGRect(x: rx * 0.36, y: -ry * 0.62, width: R * 0.16, height: R * 0.1)),
+                         with: .radialGradient(Gradient(colors: [Color.white.opacity(0.8), .clear]),
+                                               center: CGPoint(x: rx * 0.36 + R * 0.08, y: -ry * 0.62 + R * 0.05), startRadius: 0, endRadius: R * 0.09))
+            }
         } else {
             // Main bot: linear gradient body
             let c0 = cgColorToTuple(MochiConst.baseTop)
@@ -1697,6 +1670,22 @@ final class BotEngine: ObservableObject {
                 drop.addQuadCurve(to: CGPoint(x: 0, y: sz*0.6), control: CGPoint(x: sz*0.8, y: sz*0.2))
                 drop.addQuadCurve(to: CGPoint(x: 0, y: -sz), control: CGPoint(x: -sz*0.8, y: sz*0.2))
                 pctx.fill(drop, with: .color(Color(hex: "#7CC7FF")))
+            case .smoke:
+                // A puff: grey, growing, rising, fading.
+                let r = sz * (1 + k * 2.2)
+                pctx.opacity = Double(max(0, 0.55 * (1 - k)))
+                pctx.fill(Path(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2)),
+                          with: .radialGradient(Gradient(colors: [Color(white: 0.85), Color(white: 0.6).opacity(0)]),
+                                                center: .zero, startRadius: 0, endRadius: r))
+            case .bolt:
+                // A blaster bolt: a glowing capsule along its flight, bright from the muzzle on.
+                pctx.opacity = Double(max(0, 1 - k * k))
+                pctx.rotate(by: .radians(atan2(p.vy, p.vx)))
+                let len = sz * 3.2, th = sz * 0.55
+                pctx.fill(Path(roundedRect: CGRect(x: -len / 2, y: -th, width: len, height: th * 2), cornerRadius: th),
+                          with: .color(Color(hex: "#FB923C").opacity(0.45)))
+                pctx.fill(Path(roundedRect: CGRect(x: -len / 2, y: -th * 0.45, width: len, height: th * 0.9), cornerRadius: th * 0.45),
+                          with: .color(Color(hex: "#FFE4C4")))
             case .confetti:
                 let palette = ["#F87171", "#FBBF24", "#34D399", "#60A5FA", "#A78BFA", "#F472B6"]
                 let color = palette[Int(abs(p.rot) * 100) % palette.count]
@@ -1782,12 +1771,12 @@ final class BotEngine: ObservableObject {
 private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b-a) * t }
 private func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { max(lo, min(hi, v)) }
 
-private func cgColorToTuple(_ c: CGColor) -> (CGFloat, CGFloat, CGFloat) {
+func cgColorToTuple(_ c: CGColor) -> (CGFloat, CGFloat, CGFloat) {
     guard let comps = c.components, comps.count >= 3 else { return (1,1,1) }
     return (comps[0], comps[1], comps[2])
 }
 
-private func mix3(_ a: (CGFloat,CGFloat,CGFloat), _ b: (CGFloat,CGFloat,CGFloat), _ t: CGFloat) -> (CGFloat,CGFloat,CGFloat) {
+func mix3(_ a: (CGFloat,CGFloat,CGFloat), _ b: (CGFloat,CGFloat,CGFloat), _ t: CGFloat) -> (CGFloat,CGFloat,CGFloat) {
     (lerp(a.0,b.0,t), lerp(a.1,b.1,t), lerp(a.2,b.2,t))
 }
 
@@ -1795,7 +1784,7 @@ private func mixColor(_ a: (CGFloat,CGFloat,CGFloat), _ b: (CGFloat,CGFloat,CGFl
     mix3(a, b, t)
 }
 
-private func colorFromTuple(_ t: (CGFloat,CGFloat,CGFloat)) -> Color {
+func colorFromTuple(_ t: (CGFloat,CGFloat,CGFloat)) -> Color {
     Color(red: Double(t.0), green: Double(t.1), blue: Double(t.2))
 }
 
@@ -1862,5 +1851,53 @@ extension BadgeType: Equatable {
         case (.dot, .dot): return true
         default: return false
         }
+    }
+}
+
+// MARK: - BodyPalette — a colour as a material
+
+/// Tones for a coloured body: lighter and warmer on top, deeper and cooler below,
+/// so the gradient reads as light on a soft object, not a darker copy.
+struct BodyPalette {
+    let light: Color, mid: Color, dark: Color, glow: Color, shadow: Color
+
+    init(_ base: CGColor) {
+        let c = NSColor(cgColor: base)?.usingColorSpace(.sRGB) ?? .gray
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        // As in painting: lights drift towards a warm yellow, shadows towards a cool
+        // violet — each by the shorter way round, so orange darkens into red, not olive.
+        func toward(_ target: CGFloat, _ amount: CGFloat) -> CGFloat {
+            var d = target - h
+            if d > 0.5 { d -= 1 } else if d < -0.5 { d += 1 }
+            return (h + (d > 0 ? 1 : -1) * min(abs(d), amount) + 1).truncatingRemainder(dividingBy: 1)
+        }
+        func tone(_ hh: CGFloat, _ sm: CGFloat, _ bm: CGFloat, _ ba: CGFloat = 0) -> Color {
+            Color(nsColor: NSColor(hue: hh, saturation: min(1, max(0, s * sm)), brightness: min(1, max(0, b * bm + ba)), alpha: 1))
+        }
+        let warm: CGFloat = 0.14, cool: CGFloat = 0.72
+        light = tone(toward(warm, 0.025), 0.78, 1.0, 0.16)
+        mid = tone(h, 1.0, 1.0)
+        dark = tone(toward(cool, 0.035), 1.12, 0.7)
+        glow = tone(toward(warm, 0.015), 0.6, 1.0, 0.22)
+        shadow = tone(toward(cool, 0.05), 1.2, 0.35)
+    }
+}
+
+extension BotEngine {
+    /// Mochi's colour, deeper: the desktop pet's halo. A pill's colour uses its
+    /// palette's dark tone; the white Mochi, its current state colour, darkened.
+    var haloColor: Color {
+        if let bc = bodyColor { return palette(for: bc).dark }
+        let c = col
+        return Color(red: Double(c.0 * 0.5), green: Double(c.1 * 0.52), blue: Double(c.2 * 0.6))
+    }
+
+    func palette(for c: CGColor) -> BodyPalette {
+        let key = c.components ?? []
+        if let cached = paletteCache, cached.key == key { return cached.palette }
+        let p = BodyPalette(c)
+        paletteCache = (key, p)
+        return p
     }
 }

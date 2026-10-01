@@ -51,7 +51,10 @@ final class DesktopMochi {
     static let enabledKey = "desktop-mochi"
     static let followKey = "desktop-mochi-follow"
     private static let positionKey = "desktop-mochi-position"     // [displayID: [x, y]] relative, 0…1
-    static let size: CGFloat = 92
+    /// The pet's window; Mochi itself is drawn `body` wide in its middle, the rest is
+    /// room for its hands, props and bolts.
+    static let size: CGFloat = 120
+    static let body: CGFloat = 92
 
     private var panel: NSPanel?
     private var bubble: NSPanel?
@@ -303,16 +306,17 @@ final class DesktopMochi {
         watches.append(state.$compactToast.sink { t in
             if t != nil { MainActor.assumeIsolated { PetBrain.shared.news() } }
         })
-        watches.append(state.$pendingApproval.sink { a in
-            MainActor.assumeIsolated {
-                if a != nil {
-                    PetHUD.shared.showApproval()
-                    NotificationCenter.default.post(name: .petHop, object: nil)
-                } else {
-                    PetHUD.shared.hideApproval()
-                }
-            }
+        // A permission from any source: Coucou's own hooks, or an Orca agent — for
+        // whichever pill is focused. @Published speaks *before* the value changes,
+        // so the state is read on the next turn of the run loop, once it has.
+        watches.append(state.$pendingApproval.sink { _ in
+            DispatchQueue.main.async { DesktopMochi.shared.permissionChanged() }
         })
+        #if !APPSTORE
+        watches.append(state.$orcaWorktrees.sink { _ in
+            DispatchQueue.main.async { DesktopMochi.shared.permissionChanged() }
+        })
+        #endif
         #if !APPSTORE
         watches.append(state.$lanPrompt.sink { p in
             MainActor.assumeIsolated {
@@ -327,6 +331,24 @@ final class DesktopMochi {
         watches.append(state.$chatHistory.sink { history in
             MainActor.assumeIsolated { DesktopMochi.shared.replyArrived(history) }
         })
+    }
+
+    private var wasAsking = false
+
+    /// The permission card follows whoever is asking; the pet hops when a new ask arrives.
+    func permissionChanged() {
+        let state = AppState.shared
+        var asking = state.pendingApproval != nil
+        #if !APPSTORE
+        asking = asking || state.orcaWorktrees.contains { $0.status == "permission" }
+        #endif
+        if asking {
+            PetHUD.shared.showApproval()
+            if !wasAsking { NotificationCenter.default.post(name: .petHop, object: nil) }
+        } else {
+            PetHUD.shared.hideApproval()
+        }
+        wasAsking = asking
     }
 
     /// The pet's menu asked something: the answer shows in its bubble.
@@ -505,16 +527,7 @@ private struct DesktopMochiView: View {
     @StateObject private var engine = BotEngine()
 
     var body: some View {
-        ZStack {
-            // On a white page the idle Mochi is white on white: a dark halo behind
-            // it, fading out, reads on any background (and is nearly invisible on dark ones).
-            Circle()
-                .fill(RadialGradient(colors: [Color.black.opacity(0.62), Color.black.opacity(0.38), Color.black.opacity(0)],
-                                     center: .center, startRadius: 6, endRadius: DesktopMochi.size * 0.48))
-                .padding(2)
-            pet
-                .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
-        }
+        pet.shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
     }
 
     private var pet: some View {
@@ -532,9 +545,22 @@ private struct DesktopMochiView: View {
                 }
                 engine.bodyColor = state.focusTask?.isIntegration == true ? cgColorFromHex(state.focusTask!.color) : nil
                 engine.update(dt: min(0.05, now - engine.lastTime))
-                engine.drawHandsBehind(context: context, size: size)
-                engine.draw(context: context, size: size)
-                engine.drawHandsAndExtras(context: context, size: size)
+                // A halo in Mochi's own colour, deeper, so it stands out on any page
+                // (a white Mochi on a white page most of all) without a black smudge.
+                let halo = engine.haloColor
+                let mid = CGPoint(x: size.width / 2, y: size.height / 2 + DesktopMochi.body * 0.03)
+                let hr = DesktopMochi.body * 0.5
+                context.fill(Path(ellipseIn: CGRect(x: mid.x - hr, y: mid.y - hr, width: hr * 2, height: hr * 2)),
+                             with: .radialGradient(Gradient(stops: [
+                                .init(color: halo.opacity(0.8), location: 0), .init(color: halo.opacity(0.5), location: 0.55),
+                                .init(color: halo.opacity(0), location: 1)]), center: mid, startRadius: 0, endRadius: hr))
+                // Mochi at its usual size in the middle; hands and bolts use the margin.
+                var inner = context
+                inner.translateBy(x: (size.width - DesktopMochi.body) / 2, y: (size.height - DesktopMochi.body) / 2)
+                let body = CGSize(width: DesktopMochi.body, height: DesktopMochi.body)
+                engine.drawHandsBehind(context: inner, size: body)
+                engine.draw(context: inner, size: body)
+                engine.drawHandsAndExtras(context: inner, size: body)
             }
         }
         .onAppear { engine.setState(state.effectiveState, force: true) }
@@ -544,6 +570,7 @@ private struct DesktopMochiView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .botGreet)) { _ in engine.greet() }
         .onReceive(NotificationCenter.default.publisher(for: .petHop)) { _ in
+            engine.jetUntil = CACurrentMediaTime() + 0.8      // the outlaw's rocket boots
             engine.squash()
             engine.eyeOverride = .happy
             engine.eyeOverrideUntil = CACurrentMediaTime() + 1

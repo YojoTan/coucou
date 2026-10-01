@@ -207,7 +207,7 @@ async fn call(key: &str, body: &Value) -> Result<Value, String> {
 /// The canonical path of `path` when it is a regular file inside the inbox.
 /// Canonicalising both sides resolves `..`, short names and links before the
 /// comparison, so nothing can step out of the folder.
-fn inbox_file(path: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn inbox_file(path: &str) -> Option<std::path::PathBuf> {
     let inbox = std::fs::canonicalize(crate::files::inbox_dir()).ok()?;
     let file = std::fs::canonicalize(path).ok()?;
     (file.starts_with(&inbox) && file.is_file()).then_some(file)

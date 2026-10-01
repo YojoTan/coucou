@@ -72,6 +72,11 @@ fn connect() -> Option<std::fs::File> {
 }
 
 fn main() {
+    // Mochi's own chat runs Claude Code headless; its hooks fire too, and must
+    // not show up in the island or ask the island to approve itself.
+    if std::env::var_os("COUCOU_INTERNAL").is_some() {
+        std::process::exit(0);
+    }
     let Some((payload, event)) = read_event() else { std::process::exit(0) };
 
     let waits_for_answer = event == "PermissionRequest";

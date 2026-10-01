@@ -20,10 +20,22 @@ pub struct Settings {
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
+    /// What answers the chat: "auto", "api", or a CLI id ("claude", "codex",
+    /// "gemini", "opencode"). "auto" keeps the API when a key is saved, and
+    /// otherwise uses the first CLI installed, so nobody needs a key to start.
+    #[serde(default = "default_chat_engine")]
+    pub chat_engine: String,
+    /// Model passed to the CLI engine; empty means the CLI's own default.
+    #[serde(default)]
+    pub cli_model: String,
 }
 
 fn default_model() -> String {
     crate::claude::DEFAULT_MODEL.to_string()
+}
+
+fn default_chat_engine() -> String {
+    "auto".into()
 }
 
 impl Default for Settings {
@@ -43,6 +55,8 @@ impl Default for Settings {
             autostart: false,
             hooks_installed: false,
             model: default_model(),
+            chat_engine: default_chat_engine(),
+            cli_model: String::new(),
         }
     }
 }

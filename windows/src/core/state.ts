@@ -92,6 +92,10 @@ export interface Settings {
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
   model: string;
+  /** What answers the chat: "auto", "api", "claude", "codex", "gemini", "opencode". */
+  chatEngine: string;
+  /** Model passed to a CLI engine; empty = the CLI's own default. */
+  cliModel: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -106,6 +110,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autostart: false,
   hooksInstalled: false,
   model: "claude-opus-5",
+  chatEngine: "auto",
+  cliModel: "",
 };
 
 type Listener = () => void;

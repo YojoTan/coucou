@@ -1,6 +1,7 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
 mod claude;
+mod cli_chat;
 mod files;
 mod hooks;
 mod integrations;
@@ -25,6 +26,7 @@ use tauri::{
 use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
 
 use claude::{Chat, ChatContext, ChatReply};
+use cli_chat::{CliChat, Engine, EngineInfo};
 use files::DroppedFile;
 use hooks::{HookPreview, HookStatus};
 use island::{PollGate, ScreenInfo};
@@ -84,13 +86,21 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
-    let (screen_changed, autostart_changed) = {
+    let (screen_changed, autostart_changed, engine_changed) = {
         let mut current = shared.settings.lock().unwrap();
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
+        let engine_changed = current.chat_engine != settings.chat_engine
+            || current.cli_model != settings.cli_model
+            || current.model != settings.model;
         *current = settings.clone();
-        (screen_changed, autostart_changed)
+        (screen_changed, autostart_changed, engine_changed)
     };
+    // Each engine keeps its own history shape; switching starts a new chat.
+    if engine_changed {
+        app.state::<Chat>().reset();
+        app.state::<CliChat>().reset();
+    }
     if let Err(err) = settings::save(&settings) {
         eprintln!("[coucou] could not save settings: {err}");
     }
@@ -214,7 +224,7 @@ fn open_in_vscode(path: Option<String>) -> bool {
 /// Our own `where`: walks %PATH% against %PATHEXT%, no shell involved.
 /// Rust quotes arguments correctly for `.cmd`/`.bat` targets since 1.77, so
 /// spawning `code.cmd` directly is safe.
-fn find_on_path(stem: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn find_on_path(stem: &str) -> Option<std::path::PathBuf> {
     let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
     let dirs = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&dirs) {
@@ -314,17 +324,72 @@ async fn chat_send(
     webview: Webview,
     shared: State<'_, Shared>,
     chat: State<'_, Chat>,
+    cli: State<'_, CliChat>,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
     only(&webview, island::WINDOW_LABEL, "chat_send")?;
-    let model = shared.settings.lock().unwrap().model.clone();
-    claude::send(&chat, &model, query, context).await
+    let (model, pref, cli_model) = {
+        let s = shared.settings.lock().unwrap();
+        (s.model.clone(), s.chat_engine.clone(), s.cli_model.clone())
+    };
+    match resolve_engine(&pref) {
+        Backend::Api => claude::send(&chat, &model, query, context).await,
+        Backend::Cli(engine) => cli_chat::send(&cli, engine, &cli_model, query, context).await,
+        Backend::None => Err(
+            "No chat engine yet: install Claude Code (or Codex, Gemini CLI, opencode), or add an Anthropic API key in Settings → Chat."
+                .into(),
+        ),
+    }
+}
+
+enum Backend {
+    Api,
+    Cli(Engine),
+    None,
+}
+
+/// "auto" keeps the API for anyone who saved a key (nothing changes for them)
+/// and otherwise picks the first CLI that is installed, Claude Code first.
+fn resolve_engine(pref: &str) -> Backend {
+    match pref {
+        "api" => Backend::Api,
+        "auto" | "" => {
+            if secrets::present("anthropic-api-key") {
+                Backend::Api
+            } else {
+                let found = cli_chat::installed();
+                Engine::ALL
+                    .into_iter()
+                    .find(|e| found.contains_key(e))
+                    .map_or(Backend::None, Backend::Cli)
+            }
+        }
+        id => Engine::from_id(id).map_or(Backend::Api, Backend::Cli),
+    }
 }
 
 #[tauri::command]
-fn chat_reset(chat: State<Chat>) {
+fn chat_reset(chat: State<Chat>, cli: State<CliChat>) {
     chat.reset();
+    cli.reset();
+}
+
+/// Which chat engines are installed, with their versions, for Settings → Chat.
+#[tauri::command]
+async fn chat_engines() -> Vec<EngineInfo> {
+    tauri::async_runtime::spawn_blocking(cli_chat::detect).await.unwrap_or_default()
+}
+
+/// The engine "auto" resolves to right now, for the island's badge and Settings.
+#[tauri::command]
+fn chat_engine_active(shared: State<Shared>) -> String {
+    let pref = shared.settings.lock().unwrap().chat_engine.clone();
+    match resolve_engine(&pref) {
+        Backend::Api => "api".into(),
+        Backend::Cli(e) => e.id().into(),
+        Backend::None => String::new(),
+    }
 }
 
 /// Copies a dropped file into the inbox and reports its name back. Only a path
@@ -485,6 +550,7 @@ pub fn run() {
         })
         .manage(Pending::default())
         .manage(Chat::default())
+        .manage(CliChat::default())
         .manage(Dropped::default())
         // Depending on the webview, a drop arrives as a window or a webview
         // event; both feed the same list.
@@ -517,6 +583,8 @@ pub fn run() {
             log_line,
             chat_send,
             chat_reset,
+            chat_engines,
+            chat_engine_active,
             ingest_file,
             secret_present,
             secret_set,

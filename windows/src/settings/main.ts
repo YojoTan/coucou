@@ -3,7 +3,7 @@
 // integrations land here too in a later stage.
 
 import "./settings.css";
-import { Bridge, onEvent, type HookStatus } from "../core/bridge";
+import { Bridge, onEvent, type EngineInfo, type HookStatus } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
@@ -179,9 +179,109 @@ const MODELS: [string, string][] = [
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
 ];
 
+// ── Chat engine section ───────────────────────────────────────────────────────
+
+const ENGINE_LABELS: Record<string, string> = {
+  api: "Anthropic API",
+  claude: "Claude Code",
+  codex: "Codex",
+  gemini: "Gemini CLI",
+  opencode: "opencode",
+};
+
+/**
+ * Which brain answers the island's chat. A CLI uses the login it already has —
+ * a Claude Code subscription needs no API key at all — and runs read-only in
+ * Coucou's own folder, so the chat can look things up but never change files.
+ */
+function chatSection(): HTMLElement {
+  const select = h("select", {}) as HTMLSelectElement;
+  const active = h("div", { class: "hint" });
+  const list = h("div", { style: "display:flex;flex-direction:column;gap:4px;margin:6px 0" });
+  const detect = h("button", { text: "Detect again" });
+  const cliModel = h("input", {
+    type: "text",
+    placeholder: "CLI default (e.g. sonnet, haiku)",
+    spellcheck: "false",
+    autocomplete: "off",
+    style: "flex:1 1 auto;min-width:0",
+  }) as HTMLInputElement;
+  cliModel.value = settings.cliModel;
+
+  let engines: EngineInfo[] = [];
+
+  function fillSelect() {
+    clear(select);
+    select.append(h("option", { value: "auto", text: "Automatic — API key if saved, else the first CLI found" }));
+    for (const e of engines) {
+      const state = e.installed ? (e.version ?? "installed") : "not installed";
+      const tag = e.experimental ? " · experimental" : "";
+      select.append(h("option", { value: e.id, text: `${e.label} (${state})${tag}`, disabled: !e.installed && settings.chatEngine !== e.id }));
+    }
+    select.append(h("option", { value: "api", text: "Anthropic API (key below)" }));
+    select.value = settings.chatEngine || "auto";
+  }
+
+  function fillList() {
+    clear(list);
+    for (const e of engines) {
+      list.append(
+        h("div", { class: "row", style: "gap:8px" },
+          statusDot(e.installed),
+          h("span", { style: "min-width:96px", text: e.label }),
+          h("span", { class: "hint", text: e.installed ? `${e.version ?? ""}  ${e.path ?? ""}`.trim() : "Not installed" }),
+        ),
+      );
+    }
+  }
+
+  async function refreshActive() {
+    const id = (await Bridge.chatEngineActive()) ?? "";
+    active.textContent = id
+      ? `Answering now: ${ENGINE_LABELS[id] ?? id}.`
+      : "Nothing can answer yet: install Claude Code (or another CLI) or save an API key below.";
+  }
+
+  async function load() {
+    detect.setAttribute("disabled", "");
+    list.textContent = "Looking for installed CLIs…";
+    engines = (await Bridge.chatEngines()) ?? [];
+    fillSelect();
+    fillList();
+    detect.removeAttribute("disabled");
+    await refreshActive();
+  }
+
+  select.addEventListener("change", async () => {
+    settings.chatEngine = select.value;
+    await save();
+    await refreshActive();
+  });
+  cliModel.addEventListener("change", async () => {
+    settings.cliModel = cliModel.value.trim();
+    await save();
+  });
+  detect.addEventListener("click", () => void load());
+  void load();
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Chat" })),
+    h("div", {
+      class: "hint",
+      text: "Mochi can answer with an AI CLI you already use — Claude Code with your subscription needs no API key. It runs read-only in Coucou's own folder: it can read a dropped file and search the web, never change files or run commands.",
+    }),
+    h("div", { class: "row" }, h("label", { text: "Engine" }), select),
+    list,
+    h("div", { class: "row" }, h("label", { text: "CLI model" }), cliModel, detect),
+    active,
+  );
+}
+
 function apiSection(hasKey: boolean): HTMLElement {
   const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — the chat needs one." });
+  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key — only needed for the Anthropic API engine." });
 
   const field = h("input", {
     type: "password",
@@ -200,7 +300,7 @@ function apiSection(hasKey: boolean): HTMLElement {
     dot.style.background = present ? "#22c55e" : "#f4505e";
     state.textContent = present
       ? "Key saved in the Windows Credential Manager."
-      : "No key yet — the chat needs one.";
+      : "No key — only needed for the Anthropic API engine.";
     field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
     clearBtn.style.display = present ? "" : "none";
   }
@@ -246,7 +346,7 @@ function apiSection(hasKey: boolean): HTMLElement {
   return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Claude" })),
+    h("h2", {}, dot, h("span", { text: "Anthropic API" })),
     state,
     h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
     h("div", { class: "row" }, h("label", { text: "Model" }), model),
@@ -442,6 +542,7 @@ async function main() {
   root.append(
     h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
     claudeSection(status),
+    chatSection(),
     apiSection(hasKey),
     integrationsSection(present),
     generalSection(),

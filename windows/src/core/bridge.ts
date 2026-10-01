@@ -83,6 +83,10 @@ export const Bridge = {
   chatSend: (query: string, context: ChatContext | null) =>
     callOrThrow<{ text: string }>("chat_send", { query, context }),
   chatReset: () => call<void>("chat_reset"),
+  /** Installed chat CLIs and their versions (slow: runs each `--version`). */
+  chatEngines: () => call<EngineInfo[]>("chat_engines"),
+  /** What "auto" resolves to right now: "api", a CLI id, or "" for nothing. */
+  chatEngineActive: () => call<string>("chat_engine_active"),
   /** Copies a dropped file into the inbox. */
   ingestFile: (path: string) => callOrThrow<DroppedFile>("ingest_file", { path }),
   /** Only ever tells you whether a key exists — never its value. */
@@ -109,6 +113,15 @@ export interface IntegrationUpdate {
 export type ChatContext =
   | { kind: "file"; name: string; path: string }
   | { kind: "window"; appName: string; title: string; url?: string };
+
+export interface EngineInfo {
+  id: string;
+  label: string;
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+  experimental: boolean;
+}
 
 export interface DroppedFile {
   name: string;

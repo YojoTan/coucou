@@ -427,9 +427,60 @@ export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHoo
       return notionCard();
     case "integration_calcom":
       return calcomCard();
+    case "integration_orca":
+      return orcaCard();
     default:
       return idleCard(task, hooks.openSettings);
   }
+}
+
+// ── Orca ──────────────────────────────────────────────────────────────────────
+
+/** Status → dot colour, the way Orca's own sidebar reads. */
+const ORCA_COLORS: Record<string, string> = {
+  permission: "#F5A524",
+  working: "#38BDF8",
+  done: "#22C55E",
+  active: "#8E939C",
+  inactive: "#5F646D",
+};
+const ORCA_STATUS: Record<string, string> = {
+  permission: "needs permission",
+  working: "working",
+  done: "done",
+  active: "active",
+  inactive: "idle",
+};
+
+/** Worktrees Orca is running; a permission is answered in Orca itself. */
+function orcaCard(): HTMLElement {
+  const worktrees = arr("integration_orca", "worktrees");
+  const rows = h("div", { class: "int-rows" });
+  if (worktrees.length === 0) {
+    rows.append(h("div", { class: "int-sub", text: t("No worktrees in Orca right now.") }));
+  }
+  worktrees.slice(0, 3).forEach((w, i) => {
+    const status = String(w.status ?? "");
+    const accent = ORCA_COLORS[status] ?? "#8E939C";
+    const cells: Node[] = [
+      h("span", { class: "int-name", text: String(w.name || w.repo || "worktree") }),
+      h("span", { class: "int-ago", text: t(ORCA_STATUS[status] ?? status) }),
+    ];
+    const what = status === "permission" ? [w.tool, w.prompt].filter(Boolean).join(" · ") : String(w.prompt ?? "");
+    if (i === 0 && what) cells.push(h("span", { class: "int-sub", text: what }));
+    rows.append(listRow(accent, i === 0, ...cells));
+  });
+  const waiting = worktrees.filter((w) => w.status === "permission").length;
+  const extra = waiting
+    ? h("span", { class: "int-total" }, h("i", { class: "pulse" }), h("span", { text: String(waiting) }))
+    : undefined;
+  const open = h("button", {
+    class: "link-btn",
+    style: "color:#8B5CF6",
+    text: t("Open Orca"),
+    onclick: () => void Bridge.openOrca(),
+  });
+  return h("div", { class: "int-card" }, header("#8B5CF6", "Orca", t("Worktrees"), extra), rows, h("div", { class: "int-actions" }, open));
 }
 
 export { clear };

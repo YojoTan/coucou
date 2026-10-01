@@ -88,6 +88,8 @@ export const Bridge = {
   /** Clipboard text — only ever read on an explicit click in the chat. */
   clipboardText: () => call<string | null>("clipboard_text"),
   hotkeyChoices: () => call<[string, string][]>("hotkey_choices"),
+  /** `orca open`: launches or focuses Orca. */
+  openOrca: () => call<boolean>("open_orca"),
   opencodeStatus: () => call<PluginStatus>("opencode_status"),
   opencodePluginText: () => call<string>("opencode_plugin_text"),
   opencodeApply: (install: boolean) => callOrThrow<string>("opencode_apply", { install }),
@@ -116,7 +118,8 @@ export interface IntegrationUpdate {
   id: string;
   data: Record<string, unknown>;
   error: string | null;
-  event: { success: boolean; label: string; detail: string | null } | null;
+  /** `attention`: needs the user (an Orca permission) rather than a result. */
+  event: { success: boolean; attention?: boolean; label: string; detail: string | null } | null;
 }
 
 export type ChatContext =

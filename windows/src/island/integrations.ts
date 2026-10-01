@@ -5,6 +5,7 @@
 import { onEvent, Bridge, type IntegrationUpdate } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
+import { t } from "../core/i18n";
 import type { Island } from "./island";
 
 /** Which Credential Manager key backs each pill. */
@@ -37,6 +38,9 @@ export async function refreshConfigured() {
     data: {}, error: null, loaded: false, configured: false,
   };
   State.integrations.integration_claude = { ...claude, configured: hooks };
+  // Orca needs no key: it is "configured" whenever its runtime answers.
+  const orca = State.integrations.integration_orca ?? { data: {}, error: null, loaded: false, configured: true };
+  State.integrations.integration_orca = { ...orca, configured: true };
   State.notify();
 }
 
@@ -53,15 +57,19 @@ function handle(island: Island, update: IntegrationUpdate) {
 
   const event = update.event;
   if (event) {
-    const task = State.tasks.find((t) => t.id === update.id);
+    const task = State.tasks.find((x) => x.id === update.id);
     if (task) {
-      task.state = event.success ? "finished" : "error";
-      task.steps = event.detail ? [event.label, event.detail] : [event.label];
+      // Orca sends the worktree's name; the sentence is ours, so it can be translated.
+      const label = update.id === "integration_orca"
+        ? t(event.attention ? "{name} needs permission" : "{name} finished", { name: event.label })
+        : event.label;
+      task.state = event.attention ? "approval" : event.success ? "finished" : "error";
+      task.steps = event.detail ? [label, event.detail] : [label];
       task.stepIndex = task.steps.length - 1;
       if (State.focusId !== update.id) {
-        task.pillBadge = event.success ? "finished" : "error";
+        task.pillBadge = event.attention ? "approval" : event.success ? "finished" : "error";
       }
-      Sound.play(event.success ? "finish" : "error");
+      Sound.play(event.attention ? "approval" : event.success ? "finish" : "error");
       // Same as the Swift pollers: show the compact island so the badge is seen,
       // but never steal the screen for a successful deploy.
       island.reveal();

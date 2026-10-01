@@ -11,6 +11,7 @@ mod island;
 mod log;
 mod openai_chat;
 mod opencode;
+mod orca;
 mod pipe;
 mod secrets;
 mod settings;
@@ -441,6 +442,12 @@ fn hotkey_set(app: AppHandle, webview: Webview, shared: State<Shared>, spec: Str
     result
 }
 
+/// "Open Orca" on the Orca card: `orca open` launches or focuses the app.
+#[tauri::command]
+fn open_orca() -> bool {
+    orca::open_app()
+}
+
 /// opencode plugin state for Settings (experimental).
 #[tauri::command]
 fn opencode_status() -> opencode::PluginStatus {
@@ -675,6 +682,7 @@ pub fn run() {
             clipboard_text,
             hotkey_choices,
             hotkey_set,
+            open_orca,
             opencode_status,
             opencode_plugin_text,
             opencode_apply,

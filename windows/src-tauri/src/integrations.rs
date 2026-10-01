@@ -37,6 +37,10 @@ pub struct IntegrationUpdate {
 #[serde(rename_all = "camelCase")]
 pub struct IntegrationEvent {
     pub success: bool,
+    /// Needs the user (Orca: a worktree waiting for a permission) rather than
+    /// a result: the pill shows an approval badge instead of ✓ or ✗.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub attention: bool,
     pub label: String,
     pub detail: Option<String>,
 }
@@ -111,7 +115,8 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_resend", 6, 60, poll_resend);
     spawn(app.clone(), "integration_github", 7, 300, poll_github);
     spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
-    spawn(app, "integration_notion", 9, 300, poll_notion);
+    spawn(app.clone(), "integration_notion", 9, 300, poll_notion);
+    spawn(app, "integration_orca", 6, 5, poll_orca);
 }
 
 /// True when the user has this integration switched on in settings.
@@ -156,6 +161,7 @@ pub async fn poll_once(app: AppHandle, id: &str) {
         "integration_resend" => poll_resend(app).await,
         "integration_notion" => poll_notion(app).await,
         "integration_calcom" => poll_calcom(app).await,
+        "integration_orca" => poll_orca(app).await,
         _ => {}
     }
 }
@@ -292,7 +298,7 @@ async fn poll_stripe(app: AppHandle) {
                 let cents = payments[0].get("amount").and_then(Value::as_i64).unwrap_or(0);
                 format!("{:.2}", cents as f64 / 100.0)
             });
-        Some(IntegrationEvent { success: true, label, detail: None })
+        Some(IntegrationEvent { success: true, attention: false, label, detail: None })
     } else {
         None
     };
@@ -424,6 +430,7 @@ async fn poll_vercel(app: AppHandle) {
         }
         let success = latest.get("state")?.as_str()? == "READY";
         Some(IntegrationEvent {
+            attention: false,
             success,
             label: latest.get("projectName")?.as_str()?.to_string(),
             detail: None,
@@ -648,6 +655,46 @@ async fn poll_calcom(app: AppHandle) {
     });
 }
 
+// ── Orca ──────────────────────────────────────────────────────────────────────
+
+async fn poll_orca(app: AppHandle) {
+    match crate::orca::query().await {
+        Err(err) => emit(&app, IntegrationUpdate {
+            id: "integration_orca",
+            data: json!({}),
+            error: Some(err),
+            event: None,
+        }),
+        Ok(rows) => {
+            let changes = crate::orca::diff(&rows);
+            // A permission beats a finish: it is the one that needs the user.
+            let event = changes
+                .attention
+                .first()
+                .map(|w| IntegrationEvent {
+                    success: false,
+                    attention: true,
+                    label: w.name.clone(),
+                    detail: Some(if w.tool.is_empty() { w.prompt.clone() } else { format!("{} · {}", w.tool, w.prompt) }),
+                })
+                .or_else(|| {
+                    changes.finished.first().map(|w| IntegrationEvent {
+                        success: true,
+                        attention: false,
+                        label: w.name.clone(),
+                        detail: Some(if w.last_message.is_empty() { w.prompt.clone() } else { w.last_message.clone() }),
+                    })
+                });
+            emit(&app, IntegrationUpdate {
+                id: "integration_orca",
+                data: json!({ "worktrees": rows.into_iter().take(6).collect::<Vec<_>>() }),
+                error: None,
+                event,
+            });
+        }
+    }
+}
+
 // ── n8n ───────────────────────────────────────────────────────────────────────
 
 async fn poll_n8n(app: AppHandle) {
@@ -750,7 +797,7 @@ async fn poll_n8n(app: AppHandle) {
         id: "integration_n8n",
         data: json!({ "workflow": name, "status": status }),
         error: None,
-        event: Some(IntegrationEvent { success, label: name, detail }),
+        event: Some(IntegrationEvent { success, attention: false, label: name, detail }),
     });
 }
 

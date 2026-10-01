@@ -9,13 +9,38 @@ use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
 use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
-use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
+use windows::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
 /// The SID of the account this process runs as, as `S-1-5-21-…`.
 pub fn current_user_sid() -> Option<String> {
+    unsafe { process_sid(GetCurrentProcess()) }
+}
+
+/// True when the process serving the pipe `handle` runs as this same user —
+/// the check coucou-hook makes before talking to Coucou, used here before
+/// Coucou hands another program's pipe (Orca's) a token. Unknown means no.
+pub fn pipe_server_is_same_user(handle: HANDLE) -> bool {
+    let Some(mine) = current_user_sid() else { return false };
+    unsafe {
+        let mut pid = 0u32;
+        if GetNamedPipeServerProcessId(handle, &mut pid).is_err() || pid == 0 {
+            return false;
+        }
+        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return false };
+        let theirs = process_sid(process);
+        let _ = CloseHandle(process);
+        theirs.as_deref() == Some(mine.as_str())
+    }
+}
+
+/// The user SID behind a process handle (borrowed, never closed).
+unsafe fn process_sid(process: HANDLE) -> Option<String> {
     unsafe {
         let mut token = HANDLE::default();
-        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).ok()?;
+        OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
 
         // First call sizes the buffer, second fills it.
         let mut needed = 0u32;

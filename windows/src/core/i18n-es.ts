@@ -173,4 +173,15 @@ export const ES: Record<string, string> = {
   "No telemetry. Network requests only go to the services you configure yourself.":
     "Sin telemetría. Las peticiones de red solo van a los servicios que tú configuras.",
   "opens Mochi's chat from anywhere": "abre el chat de Mochi desde cualquier lugar",
+
+  // ── Orca ──────────────────────────────────────────────────────────────────
+  "{name} needs permission": "{name} pide permiso",
+  "{name} finished": "{name} terminó",
+  "No worktrees in Orca right now.": "Ahora no hay worktrees en Orca.",
+  "Open Orca": "Abrir Orca",
+  "Worktrees": "Worktrees",
+  "working": "trabajando",
+  "done": "terminado",
+  "active": "activo",
+  "idle": "inactivo",
 };

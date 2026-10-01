@@ -75,7 +75,12 @@ enum LanWire {
         func seal(_ plain: Data) throws -> Data {
             let box = try AES.GCM.seal(plain, using: key, nonce: nonce())
             counter += 1
-            return box.ciphertext + box.tag
+            // Fresh storage: CryptoKit's ciphertext is a slice, and a slice keeps
+            // its start index — `frame[0]` on it would trap.
+            var out = Data(capacity: box.ciphertext.count + 16)
+            out.append(contentsOf: box.ciphertext)
+            out.append(contentsOf: box.tag)
+            return out
         }
 
         func open(_ data: Data) throws -> Data {

@@ -305,6 +305,63 @@ final class ClaudeService {
 
     // MARK: - API call
 
+    #if !APPSTORE
+    /// A paired Mochi asks this one (LanService): one turn, no history, and
+    /// only engines that can't read this Mac's files — the API ones, or Claude
+    /// Code with web tools only.
+    func answerForPeer(from peer: String, text: String) async -> (ok: Bool, text: String) {
+        let engine = await resolveEngine(state: AppState.shared)
+        let query = "\(peer)'s Mochi, on the same local network, asks you this — answer them directly:\n\n\(text)"
+        let messages: [[String: Any]] = [["role": "user", "content": [["type": "text", "text": query]]]]
+        func texts(_ data: Data) -> String? {
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let content = json["content"] as? [[String: Any]] else { return nil }
+            let t = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        do {
+            switch engine {
+            case .api:
+                guard let key = apiKey, !key.isEmpty else { return (false, "This Mochi has no chat engine set up.") }
+                let body: [String: Any] = ["model": model, "max_tokens": 2048, "system": systemPrompt,
+                                           "tools": webSearchTools, "messages": messages]
+                let data = try await callAPI(body: body, key: key, beta: "web-search-2025-03-05")
+                return texts(data).map { (true, $0) } ?? (false, "No answer.")
+            case .anthropic:
+                guard AnthropicCompat.isConfigured, let url = AnthropicCompat.endpoint(AnthropicCompat.baseURL) else {
+                    return (false, "This Mochi has no chat engine set up.")
+                }
+                let body: [String: Any] = ["model": AnthropicCompat.model, "max_tokens": 2048, "system": systemPrompt, "messages": messages]
+                let data = try await callCompat(url: url, body: body, key: KeychainStore.shared.get(AnthropicCompat.keychainKey))
+                return texts(data).map { (true, $0) } ?? (false, "No answer.")
+            case .openai:
+                let reply = await OpenAICompatChat.oneShot(query: query)
+                return (!reply.isError, reply.text)
+            case .claude:
+                guard let path = await Task.detached(operation: { LocalCLI.locate("claude") }).value else {
+                    return (false, "Claude Code isn't installed.")
+                }
+                let dir = HookServer.supportDir.appendingPathComponent("chat")
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let r = await LocalCLI.run(path, ["-p", "--output-format", "json",
+                                                  "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
+                                                  "--append-system-prompt", systemPrompt],
+                                           cwd: dir, stdin: query, timeout: 180)
+                guard let json = try? JSONSerialization.jsonObject(with: r.stdout) as? [String: Any],
+                      let result = json["result"] as? String, json["is_error"] as? Bool != true, !result.isEmpty else {
+                    return (false, "Claude Code didn't answer.")
+                }
+                return (true, result.trimmingCharacters(in: .whitespacesAndNewlines))
+            default:
+                return (false, "This Mochi's chat engine can't take questions from other Mochis.")
+            }
+        } catch {
+            return (false, "Network error: \(error.localizedDescription)")
+        }
+    }
+    #endif
+
     /// One Messages request, to Anthropic or to the compatible endpoint.
     private func sendTurn(official: Bool, url: URL, body: [String: Any], key: String?) async throws -> Data {
         if official {

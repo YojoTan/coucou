@@ -12,6 +12,7 @@ enum IslandView: String, CaseIterable {
     case overview, empty, approval, question, error, finished
     case confused, upload, uploading, choose, mail, prompt
     case searching, result, note, settings, greeting
+    case lan   // Mochis on the network: a pairing code, a file, a message
 }
 
 // MARK: - Bot State
@@ -124,6 +125,7 @@ enum IslandConst {
         .searching: ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .result:    ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .note:      ViewLayout(height: 160, botX: 60,  botY: nil, botDiameter: 50, agentMode: .column),
+        .lan:       ViewLayout(height: 184, botX: 60,  botY: nil, botDiameter: 50, agentMode: .column),
         .settings:  ViewLayout(height: 160, botX: 54,  botY: nil, botDiameter: 46, agentMode: .none),
         // Greeting: bot drawn by GreetingCanvasView; no BotPlacement needed
         .greeting:  ViewLayout(height: 150, botX: 320, botY: 90,  botDiameter: 0,  agentMode: .none),
@@ -161,6 +163,7 @@ enum IslandConst {
         .init(id: "integration_stripe",  name: "Stripe",  color: "#0570DE"),
         .init(id: "integration_orca",    name: "Orca",    color: "#8B5CF6"),
         .init(id: "integration_spotify", name: "Spotify", color: "#1DB954"),
+        .init(id: "integration_lan",     name: "Mochis",  color: "#F472B6"),
     ]
 
     /// Returns the fixed project color for a display name, or a stable fallback.

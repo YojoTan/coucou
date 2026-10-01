@@ -23,6 +23,12 @@ struct IslandViewContent: View {
         case .searching: SearchingView(state: state)
         case .result:    ResultView(state: state)
         case .note:      NoteView(state: state)
+        case .lan:
+            #if APPSTORE
+            EmptyView()
+            #else
+            LanPromptView(state: state)
+            #endif
         case .settings:  SettingsIslandView(state: state)
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
         }
@@ -575,12 +581,33 @@ struct ChooseView: View {
                 HStack(spacing: 8) {
                     PrimaryButton("Ask a question") { state.view = .prompt }
                     SecondaryButton("Send by email") { state.view = .mail }
+                    #if !APPSTORE
+                    ForEach(Array(state.lanSnapshot.peers.filter { $0.paired && $0.online }.prefix(2))) { p in
+                        SecondaryButton(String(localized: "Send to \(p.name)")) { sendToPeer(p) }
+                    }
+                    #endif
                 }
             }
             .padding(.leading, 98)
             .padding(.trailing, 18)
         }
     }
+
+    #if !APPSTORE
+    private func sendToPeer(_ p: LanPeer) {
+        guard let file = state.droppedFile else { return }
+        let id = p.id, name = p.name, url = file.url, fileName = file.name
+        state.noteMessage = String(localized: "Waiting for \(name) to accept \(fileName)…")
+        state.view = .note
+        Task {
+            let result = await LanService.run { try LanService.shared.sendFile(id: id, url: url) }
+            switch result {
+            case .success: state.noteMessage = String(localized: "\(fileName) sent to \(name) ✓")
+            case .failure(let e): state.noteMessage = e.localizedDescription
+            }
+        }
+    }
+    #endif
 }
 
 // MARK: - Mail
@@ -817,6 +844,34 @@ struct PromptView: View {
                 if let ctx = state.promptContext {
                     ContextChip(context: ctx).padding(.top, 4)
                 }
+                #if !APPSTORE
+                if let peer = state.peerChat {
+                    HStack(spacing: 6) {
+                        Circle().fill(Color(hex: "#F472B6")).frame(width: 6, height: 6)
+                        Button {
+                            // Switches between a message for the person and a question for their Mochi.
+                            state.peerChat?.asking.toggle()
+                        } label: {
+                            if peer.asking { Text("Ask \(peer.name)'s Mochi") } else { Text("Message to \(peer.name)") }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11.5))
+                        .help("Click to switch between a message and a question")
+                        Button {
+                            state.peerChat = nil
+                            state.chatHistory = []
+                        } label: {
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .foregroundColor(Color(hex: "#F1F2F4"))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Capsule())
+                    .padding(.top, 4)
+                }
+                #endif
                 if let clip {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.on.clipboard").font(.system(size: 10))
@@ -887,10 +942,12 @@ struct PromptView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Ask about the clipboard")
+                    .opacity(isPeerChat ? 0 : 1)
+                    .disabled(isPeerChat)
 
-                    tuneMenu
+                    if !isPeerChat { tuneMenu }
 
-                    TextField(state.chatHistory.isEmpty ? "Ask me anything…" : "Continue…", text: $text)
+                    TextField(placeholder, text: $text)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .focused($focused)
@@ -916,6 +973,18 @@ struct PromptView: View {
         }
         .padding(.bottom, 10)
         .onAppear { focused = true }
+        #if !APPSTORE
+        .onDisappear { state.peerChat = nil }
+        #endif
+    }
+
+    private var placeholder: LocalizedStringKey {
+        #if !APPSTORE
+        if let peer = state.peerChat {
+            return peer.asking ? "Ask \(peer.name)'s Mochi…" : "Write to \(peer.name)…"
+        }
+        #endif
+        return state.chatHistory.isEmpty ? "Ask me anything…" : "Continue…"
     }
 
     private func sendMessage() {
@@ -925,6 +994,28 @@ struct PromptView: View {
         focused = false
         state.chatHistory.append(ChatMessage(role: .user, content: query))
         state.stateOverride = .thinking
+        #if !APPSTORE
+        if let peer = state.peerChat {
+            let id = peer.id, name = peer.name, asking = peer.asking
+            Task {
+                let result = await LanService.run { () throws -> String in
+                    if asking { return try LanService.shared.ask(id: id, text: query) }
+                    try LanService.shared.sendMessage(id: id, text: query)
+                    return String(localized: "Sent to \(name) ✓")
+                }
+                state.stateOverride = nil
+                switch result {
+                case .success(let reply):
+                    state.chatHistory.append(ChatMessage(role: .assistant, content: reply))
+                case .failure(let e):
+                    state.noteMessage = e.localizedDescription
+                    state.view = .note
+                }
+                focused = true
+            }
+            return
+        }
+        #endif
         // The bubble shows what was typed; the clipboard rides along with it.
         var sent = query
         if let clip {
@@ -940,6 +1031,14 @@ struct PromptView: View {
     private func ask(_ prompt: String) {
         text = prompt
         sendMessage()
+    }
+
+    private var isPeerChat: Bool {
+        #if APPSTORE
+        return false
+        #else
+        return state.peerChat != nil
+        #endif
     }
 
     private var tuneLabel: String {
@@ -1200,6 +1299,12 @@ struct IntegrationCardView: View {
             #else
             return true
             #endif
+        case "integration_lan":
+            #if APPSTORE
+            return false
+            #else
+            return appState.lanSnapshot.enabled
+            #endif
         case "integration_codex":
             #if APPSTORE
             return false
@@ -1282,6 +1387,15 @@ struct IntegrationCardView: View {
         task.id == "integration_notion" && appState.notionLoaded
     }
 
+    // Mochis: as soon as it is switched on
+    private var lanHasData: Bool {
+        #if APPSTORE
+        return false
+        #else
+        return task.id == "integration_lan" && appState.lanSnapshot.enabled
+        #endif
+    }
+
     // Spotify: once it has said what is playing
     private var spotifyHasData: Bool {
         #if APPSTORE
@@ -1339,6 +1453,11 @@ struct IntegrationCardView: View {
         } else if spotifyHasData {
             #if !APPSTORE
             SpotifyCardView(track: appState.spotifyNow!)
+                .transition(.opacity)
+            #endif
+        } else if lanHasData {
+            #if !APPSTORE
+            LanCardView()
                 .transition(.opacity)
             #endif
         } else if vsCodeSessionActive {

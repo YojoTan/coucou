@@ -126,6 +126,30 @@ final class OpenAICompatChat {
         }
     }
 
+    /// One question with no history (a paired Mochi asking this one).
+    static func oneShot(query: String) async -> LocalCLIChat.Reply {
+        guard isConfigured, let url = endpoint(baseURL) else {
+            return .init(text: "This Mochi has no chat engine set up.", isError: true)
+        }
+        let body: [String: Any] = ["model": model, "max_tokens": 2048, "stream": false,
+                                   "messages": [["role": "user", "content": query]]]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            return .init(text: "Could not build the request.", isError: true)
+        }
+        var req = URLRequest(url: url, timeoutInterval: 120)
+        req.httpMethod = "POST"
+        req.httpBody = data
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let key = KeychainStore.shared.get("openai-api-key"), !key.isEmpty {
+            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (respData, response) = try? await NoRedirectSession.shared.session.data(for: req),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let text = replyText((try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]), !text.isEmpty
+        else { return .init(text: "No answer.", isError: true) }
+        return .init(text: text, isError: false)
+    }
+
     private struct ContentError: Error { let message: String }
 
     private func buildUserContent(query: String, context: PromptContext?) -> Result<Any, ContentError> {

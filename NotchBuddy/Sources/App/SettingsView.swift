@@ -563,6 +563,14 @@ struct SettingsView: View {
                 }
                 .tabItem { Label("Integrations", systemImage: "square.grid.2x2") }
                 .tag("integrations")
+
+                #if !APPSTORE
+                settingsPane {
+                    LanSettingsSection(state: state)
+                }
+                .tabItem { Label("Mochis", systemImage: "dot.radiowaves.left.and.right") }
+                .tag("lan")
+                #endif
             }
 
             if !statusMessage.isEmpty {

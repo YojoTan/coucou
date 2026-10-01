@@ -14,6 +14,8 @@ struct LanWireTests {
     }
 
     static func main() throws {
+        // Unbuffered, so a crash still shows the last check that ran.
+        setvbuf(stdout, nil, _IONBF, 0)
         let keys = LanWire.derive(shared: Data(repeating: 0x11, count: 32), th: Data(repeating: 0x22, count: 32))
         check(LanWire.hex(keys.c2s) == "79e710446fec5c1a25ca933ae813742df85a90d1c6dece6c53a2685334615be7", "c2s matches Windows")
         check(LanWire.hex(keys.s2c) == "56dc67ea8dda757573d99b394936dfbd514aef17be380a46b392d44e72ede183", "s2c matches Windows")
@@ -42,12 +44,9 @@ struct LanWireTests {
         let serverFD = fds[1]
         let result = ServerBox()
         let done = DispatchSemaphore(value: 0)
-        Thread.detachNewThread {
-            if let (ch, mode) = try? LanWire.accept(fd: serverFD, me: b, name: "Laura", trusted: { _ in false }),
-               let got = try? ch.recv() {
-                try? ch.send(["echo": got["text"] ?? ""])
-                result.set(code: ch.code, mode: mode)
-            }
+        // A @Sendable closure: not tied to main()'s actor, so it may run elsewhere.
+        DispatchQueue.global().async { @Sendable in
+            serverSide(fd: serverFD, key: b, result: result)
             done.signal()
         }
         let ch = try LanWire.connect(fd: fds[0], me: a, name: "Jhon", mode: "pair", expect: nil)
@@ -60,6 +59,14 @@ struct LanWireTests {
 
         if failures > 0 { print("\(failures) failure(s)"); exit(1) }
         print("all LAN wire tests passed")
+    }
+}
+
+nonisolated func serverSide(fd: Int32, key: Curve25519.Signing.PrivateKey, result: ServerBox) {
+    if let (ch, mode) = try? LanWire.accept(fd: fd, me: key, name: "Laura", trusted: { _ in false }),
+       let got = try? ch.recv() {
+        try? ch.send(["echo": got["text"] as? String ?? ""])
+        result.set(code: ch.code, mode: mode)
     }
 }
 

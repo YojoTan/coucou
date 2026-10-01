@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 // MARK: - DesktopMochi — Mochi out of the notch, as a desktop companion
 // Turned on in Settings › Extras, or by dragging Mochi out of the island and
@@ -32,6 +33,9 @@ extension Notification.Name {
     static let petHop = Notification.Name("coucou.petHop")
     /// The pet teleports: sparkles (object: true on arrival, false on leaving).
     static let petTeleport = Notification.Name("coucou.petTeleport")
+    /// A file is being dragged over the pet / was dropped on it.
+    static let petHungry = Notification.Name("coucou.petHungry")
+    static let petGulp = Notification.Name("coucou.petGulp")
 }
 
 /// Which side of the pet the bubble is on.
@@ -63,6 +67,15 @@ final class DesktopMochi {
 
     /// The pet's centre in global AppKit coordinates (for its eyes).
     private(set) var center: CGPoint = .zero
+    private var watches: [AnyCancellable] = []
+    private var outOfSight = false
+    private var awaitingReply: Int? = nil
+    var dragging = false
+
+    var petPanel: NSPanel? { panel }
+    var isVisible: Bool { panel?.isVisible == true && !outOfSight }
+    /// Moving on its own (a hop, a throw) or being dragged.
+    var busy: Bool { flight != nil || PetBrain.shared.flying || dragging }
 
     static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
     static var follows: Bool { UserDefaults.standard.object(forKey: followKey) as? Bool ?? true }
@@ -101,7 +114,9 @@ final class DesktopMochi {
             p.hasShadow = false
             p.level = .floating
             p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            p.acceptsMouseMovedEvents = true
             let drag = PetDragView(frame: NSRect(x: 0, y: 0, width: s, height: s))
+            drag.registerForDraggedTypes([.fileURL])
             drag.toolTip = String(localized: "Click: Mochi's menu (island, chat, worktrees…) · Double click: back to the notch")
             let host = NSHostingView(rootView: DesktopMochiView().environmentObject(AppState.shared))
             host.frame = drag.bounds
@@ -110,7 +125,7 @@ final class DesktopMochi {
             p.contentView = drag
             panel = p
 
-            let b = PetPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 40),
+            let b = PetPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 110),
                              styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             b.backgroundColor = .clear
             b.isOpaque = false
@@ -132,7 +147,10 @@ final class DesktopMochi {
         }
         panel.setFrameOrigin(origin)
         panel.orderFrontRegardless()
+        outOfSight = false
         moved()
+        watch()
+        PetBrain.shared.start()
         if timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
                 MainActor.assumeIsolated { DesktopMochi.shared.tick() }
@@ -142,6 +160,9 @@ final class DesktopMochi {
 
     private func hide() {
         PetMenu.shared.close()
+        PetBrain.shared.stop()
+        PetHUD.shared.hideApproval()
+        watches = []
         panel?.orderOut(nil)
         bubble?.orderOut(nil)
         timer?.invalidate()
@@ -161,6 +182,7 @@ final class DesktopMochi {
             UserDefaults.standard.set(all, forKey: Self.positionKey)
         }
         placeBubble()
+        PetHUD.shared.place()
     }
 
     /// The bubble goes on whichever side has room.
@@ -183,7 +205,8 @@ final class DesktopMochi {
 
     /// The cursor settled on another screen (1.2 s): hop over to the same spot there.
     private func tick() {
-        guard Self.follows, flight == nil, let panel, let current = panel.screen, NSScreen.screens.count > 1,
+        PetHUD.shared.refreshSquad()
+        guard Self.follows, !busy, PetBrain.shared.peek == nil, let panel, let current = panel.screen, NSScreen.screens.count > 1,
               let target = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }),
               target.displayID != current.displayID
         else { otherScreen = nil; return }
@@ -196,17 +219,18 @@ final class DesktopMochi {
         travel(to: savedOrigin(on: target))
     }
 
-    /// Off to another spot: a hop in an arc, or a teleport when it's far.
-    private func travel(to: NSPoint) {
+    /// Off to another spot: a hop in an arc (`lift` overrides its height; a small
+    /// one reads as walking), or a teleport when it's far.
+    func travel(to: NSPoint, allowTeleport: Bool = true, lift: CGFloat? = nil) {
         guard let panel else { return }
         let from = panel.frame.origin
         let distance = hypot(to.x - from.x, to.y - from.y)
-        if distance > 1400 { teleport(to: to); return }
+        if allowTeleport && distance > 1400 { teleport(to: to); return }
         flightFrom = from
         flightTo = to
         flightStart = CACurrentMediaTime()
-        flightDuration = 0.45 + min(0.4, Double(distance) / 3000)
-        flightLift = min(150, 40 + distance * 0.12)
+        flightDuration = lift.map { _ in 0.35 + min(1.2, Double(distance) / 260) } ?? (0.45 + min(0.4, Double(distance) / 3000))
+        flightLift = lift ?? min(150, 40 + distance * 0.12)
         NotificationCenter.default.post(name: .petHop, object: nil)
         flight?.invalidate()
         flight = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { _ in
@@ -250,6 +274,105 @@ final class DesktopMochi {
         })
     }
 
+    /// A short slide (into a peek, out of it): no hop, no sound.
+    func glide(to: NSPoint) {
+        guard let panel else { return }
+        flightFrom = panel.frame.origin
+        flightTo = to
+        flightStart = CACurrentMediaTime()
+        flightDuration = 0.28
+        flightLift = 0
+        flight?.invalidate()
+        flight = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { _ in
+            MainActor.assumeIsolated { DesktopMochi.shared.flightStep() }
+        }
+    }
+
+    /// Out of sight for a presentation or on request, without turning the pet off.
+    func setOutOfSight(_ hidden: Bool) {
+        guard hidden != outOfSight, let panel else { return }
+        outOfSight = hidden
+        if hidden { PetMenu.shared.close(); panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+    }
+
+    // MARK: Reacting to Coucou
+
+    private func watch() {
+        guard watches.isEmpty else { return }
+        let state = AppState.shared
+        watches.append(state.$compactToast.sink { t in
+            if t != nil { MainActor.assumeIsolated { PetBrain.shared.news() } }
+        })
+        watches.append(state.$pendingApproval.sink { a in
+            MainActor.assumeIsolated {
+                if a != nil {
+                    PetHUD.shared.showApproval()
+                    NotificationCenter.default.post(name: .petHop, object: nil)
+                } else {
+                    PetHUD.shared.hideApproval()
+                }
+            }
+        })
+        #if !APPSTORE
+        watches.append(state.$lanPrompt.sink { p in
+            MainActor.assumeIsolated {
+                switch p {
+                case .file(_, let peer, let name, _)?: PetHUD.shared.visit(from: peer, saying: String(localized: "\(peer) brought you \(name) 📦"))
+                case .message(let peer, _, _)?: PetHUD.shared.visit(from: peer, saying: String(localized: "\(peer) left you a message ✉️"))
+                default: break
+                }
+            }
+        })
+        #endif
+        watches.append(state.$chatHistory.sink { history in
+            MainActor.assumeIsolated { DesktopMochi.shared.replyArrived(history) }
+        })
+    }
+
+    /// The pet's menu asked something: the answer shows in its bubble.
+    func ask(_ text: String) {
+        let state = AppState.shared
+        state.promptContext = nil
+        state.chatHistory.append(ChatMessage(role: .user, content: text))
+        awaitingReply = state.chatHistory.count
+        state.stateOverride = .thinking
+        state.petSay(String(localized: "Thinking…"), seconds: 30)
+        Task { await ClaudeService.shared.chat(query: text, context: nil, state: state) }
+    }
+
+    private func replyArrived(_ history: [ChatMessage]) {
+        guard let n = awaitingReply, history.count > n, let last = history.last, last.role == .assistant else { return }
+        awaitingReply = nil
+        AppState.shared.petSay(String(last.content.prefix(280)), seconds: 14)
+        PetBrain.shared.news()
+    }
+
+    /// A file dropped on the pet: it gulps it, and the island asks what to do with it.
+    func dropped(_ url: URL) {
+        let state = AppState.shared
+        let name = url.lastPathComponent
+        state.droppedFile = DroppedFile(url: url, name: name)
+        state.promptContext = .file(name: name, fileURL: url)
+        NotificationCenter.default.post(name: .petGulp, object: nil)
+        SoundEngine.shared.play("gulp")
+        let inbox = HookServer.supportDir.appendingPathComponent("inbox")
+        Task.detached {
+            try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            let dest = inbox.appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: dest)
+            if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
+                await MainActor.run {
+                    state.droppedFile = DroppedFile(url: dest, name: name)
+                    state.promptContext = .file(name: name, fileURL: dest)
+                }
+            }
+        }
+        bringIslandHere()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            NotificationCenter.default.post(name: .hookExpand, object: IslandView.choose)
+        }
+    }
+
     /// The island to the pet's screen, without opening it (a menu choice opens what it needs).
     func bringIslandHere() {
         if let id = panel?.screen?.displayID { NotificationCenter.default.post(name: .petBringIsland, object: id) }
@@ -270,10 +393,12 @@ final class DesktopMochi {
     }
 }
 
-/// A panel that never takes focus from the app you're in.
+/// A panel that never takes focus from the app you're in, and may sit half off
+/// the screen (peeking).
 private final class PetPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 /// Takes every mouse event over the pet: drag to move, click to open, double click to dock.
@@ -282,20 +407,67 @@ private final class PetDragView: NSView {
     private var origin: NSPoint = .zero
     private var dragged = false
 
+    private var samples: [(t: Double, p: NSPoint)] = []
+
     override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    // Hovering: petting is a few quick back-and-forths over Mochi.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        MainActor.assumeIsolated { PetBrain.shared.strokeOverPet(at: NSEvent.mouseLocation.x) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        MainActor.assumeIsolated { PetBrain.shared.cursorLeftPet() }
+    }
 
     override func mouseDown(with event: NSEvent) {
         start = NSEvent.mouseLocation
         origin = window?.frame.origin ?? .zero
         dragged = false
+        samples = [(CACurrentMediaTime(), start)]
+        MainActor.assumeIsolated {
+            PetBrain.shared.grabbed()
+            DesktopMochi.shared.dragging = true
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
         let p = NSEvent.mouseLocation
         if hypot(p.x - start.x, p.y - start.y) > 3 { dragged = true }
         window?.setFrameOrigin(NSPoint(x: origin.x + p.x - start.x, y: origin.y + p.y - start.y))
+        samples.append((CACurrentMediaTime(), p))
+        if samples.count > 8 { samples.removeFirst() }
         MainActor.assumeIsolated { DesktopMochi.shared.moved(save: false) }
+    }
+
+    /// How fast the drag was going when let go (last ~0.1 s).
+    private var releaseVelocity: CGVector {
+        let now = CACurrentMediaTime()
+        let recent = samples.filter { now - $0.t < 0.1 }
+        guard let a = recent.first, let b = recent.last, b.t > a.t else { return .zero }
+        return CGVector(dx: (b.p.x - a.p.x) / CGFloat(b.t - a.t), dy: (b.p.y - a.p.y) / CGFloat(b.t - a.t))
+    }
+
+    // Files dropped on Mochi.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        MainActor.assumeIsolated { NotificationCenter.default.post(name: .petHungry, object: nil) }
+        return .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let url = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL])?.first else { return false }
+        var dir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &dir), !dir.boolValue else { return false }
+        MainActor.assumeIsolated { DesktopMochi.shared.dropped(url) }
+        return true
     }
 
     private var pendingClick: DispatchWorkItem?
@@ -308,8 +480,10 @@ private final class PetDragView: NSView {
     override func mouseUp(with event: NSEvent) {
         MainActor.assumeIsolated {
             pendingClick?.cancel()
+            DesktopMochi.shared.dragging = false
             if dragged {
                 DesktopMochi.shared.moved()
+                PetBrain.shared.released(velocity: releaseVelocity)
             } else if event.clickCount >= 2 {
                 PetMenu.shared.close()
                 DesktopMochi.shared.dock()
@@ -349,7 +523,10 @@ private struct DesktopMochiView: View {
                 let now = timeline.date.timeIntervalSinceReferenceDate
                 let c = DesktopMochi.shared.center
                 let mouse = NSEvent.mouseLocation
-                if engine.glance == nil {
+                if let side = PetBrain.shared.peek {
+                    engine.lookX = side == .left ? 0.85 : -0.85      // peeking: eyes on the screen
+                    engine.lookY = 0.1
+                } else if engine.glance == nil {
                     engine.lookX = max(-1, min(1, (mouse.x - c.x) / 320))
                     engine.lookY = max(-1, min(1, (mouse.y - c.y) / 260))
                 }
@@ -370,6 +547,23 @@ private struct DesktopMochiView: View {
             engine.squash()
             engine.eyeOverride = .happy
             engine.eyeOverrideUntil = CACurrentMediaTime() + 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .petBump)) { _ in engine.squash() }
+        .onReceive(NotificationCenter.default.publisher(for: .petPetted)) { _ in
+            engine.emit(.heart, count: 5)
+            engine.eyeOverride = .happy
+            engine.eyeOverrideUntil = CACurrentMediaTime() + 1.6
+            engine.anim("blush", keys: [TweenKey(target: 1, duration: 200, ease: Ease.out),
+                                        TweenKey(target: 1, duration: 900, ease: Ease.lin),
+                                        TweenKey(target: 0, duration: 500, ease: Ease.inOut)])
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .petHungry)) { _ in
+            engine.triggerEmote(.surprised, silent: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .petGulp)) { _ in
+            engine.squash()
+            engine.eyeOverride = .happy
+            engine.eyeOverrideUntil = CACurrentMediaTime() + 1.2
         }
         .onReceive(NotificationCenter.default.publisher(for: .petTeleport)) { n in
             engine.emit(.spark, count: 10)
@@ -395,7 +589,15 @@ private struct PetBubbleView: View {
     var body: some View {
         HStack {
             if !leftSide { Spacer(minLength: 0).frame(width: 0) }
-            if let t = state.compactToast {
+            if let say = state.petSays {
+                Text(verbatim: say.text).font(.system(size: 11.5, weight: .medium)).foregroundColor(.white)
+                    .lineLimit(5).multilineTextAlignment(.leading)
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.88)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.12)))
+                    .frame(maxWidth: 250, alignment: leftSide ? .trailing : .leading)
+                    .transition(.scale(scale: 0.6, anchor: leftSide ? .trailing : .leading).combined(with: .opacity))
+            } else if state.pendingApproval == nil, let t = state.compactToast {
                 HStack(spacing: 6) {
                     if let icon = t.icon {
                         Image(systemName: icon).font(.system(size: 10, weight: .bold)).foregroundColor(Color(hex: t.color))
@@ -414,5 +616,6 @@ private struct PetBubbleView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: leftSide ? .trailing : .leading)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: state.compactToast?.id)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: state.petSays?.id)
     }
 }

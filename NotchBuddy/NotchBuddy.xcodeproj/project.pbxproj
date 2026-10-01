@@ -20,6 +20,7 @@
 		0C1B9A6094A52E72D1F4AC0C /* DiscordCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3972F2087300B2227803BB /* DiscordCall.swift */; };
 		0D68A4C4E3422487DB7B2262 /* IslandScreenGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BC1357785CA1B099A33969 /* IslandScreenGeometry.swift */; };
 		0DC2682FAFF17F0A45E4A1A5 /* LanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0CCB26D1079838E92C7986 /* LanViews.swift */; };
+		0E5F63FA763808149C3745E8 /* PetBrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB93D168C8F8A3344B73AF8 /* PetBrain.swift */; };
 		0E83C1DD4D20E7FB7A904450 /* VercelPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71718D1B87A39A4879DD2A9D /* VercelPoller.swift */; };
 		0E9CE475EC53C67DAB00F8E5 /* BotEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4540F630F8BA04AFFFA3979 /* BotEngine.swift */; };
 		118FC4AE0AC74D84B4A134D8 /* VercelPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71718D1B87A39A4879DD2A9D /* VercelPoller.swift */; };
@@ -68,6 +69,7 @@
 		6806928BAA41F0E39F23ECBE /* LanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0CCB26D1079838E92C7986 /* LanViews.swift */; };
 		68A950E3C23FD612639D9776 /* IslandViewContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA02B08886939FF6FE0475DD /* IslandViewContent.swift */; };
 		68D98B368AEA770DD3821297 /* MochiAccessories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DCB3AB863B942AE9664137 /* MochiAccessories.swift */; };
+		71593AE5A286F02CA4E1C389 /* PetHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9399B3D4167A054B93C6CE98 /* PetHUD.swift */; };
 		7864114D9E157246A8CC31CC /* MochiPet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD54D680BBAD6D8E4D0742DB /* MochiPet.swift */; };
 		78B3C6814431B2DD9D1F4949 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE21C2B315D37AA70ED45E9 /* SoundEngine.swift */; };
 		78FCEDC8F78B683AB10E6529 /* NotionPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE03E03D1804B0B92C5C2DAD /* NotionPoller.swift */; };
@@ -92,6 +94,7 @@
 		9DD56C95ECABDDCE23652D50 /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D8DD79C3DD9BBC584B3CB2 /* HookServer.swift */; };
 		9E5FB4F5F21D6ACCC36145A0 /* DiscordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8140E8FA49BA58EDBC405C77 /* DiscordViews.swift */; };
 		9FD8B5D986B868D6053326D3 /* LanWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0ADA7B10867E971DAD5D608 /* LanWire.swift */; };
+		A17BB5AF7ADA7A1C8BB842D2 /* PetBrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB93D168C8F8A3344B73AF8 /* PetBrain.swift */; };
 		A2012BA0A2244F3C3C1CC2C8 /* Worktrees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EB5FC4A5492DE9662986F87 /* Worktrees.swift */; };
 		A492E5A30420864F1E4A6758 /* LanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4DE6B291D473363896BD26 /* LanService.swift */; };
 		A74B560053C45BC2514E4153 /* IdleMicroAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CF58C0FC4572C43B02F1395 /* IdleMicroAnimation.swift */; };
@@ -129,6 +132,7 @@
 		F06EE0A97CB77096A337AA8B /* sounds in Resources */ = {isa = PBXBuildFile; fileRef = C066E2B991AA4F56B2724263 /* sounds */; };
 		F31FEF653AE0DC893EF8729E /* DiscordCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3972F2087300B2227803BB /* DiscordCall.swift */; };
 		F710279CF23CA3CFED9E6A2A /* LanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4DE6B291D473363896BD26 /* LanService.swift */; };
+		F96D69522908AAF88C39B3B5 /* PetHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9399B3D4167A054B93C6CE98 /* PetHUD.swift */; };
 		FA1D79CA40AE911719E71D7F /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E86C0F4781F9FEE122C4B92 /* AppLanguage.swift */; };
 		FAD78D74C6906D4EC8AA4101 /* UploadSequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */; };
 		FBBC4CDE82B5886A83A27D7A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 506824380E9C80B9BC6DCE72 /* Assets.xcassets */; };
@@ -173,11 +177,13 @@
 		8CF58C0FC4572C43B02F1395 /* IdleMicroAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleMicroAnimation.swift; sourceTree = "<group>"; };
 		8D3CE3617E9D336DDBA10F7A /* IslandTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandTypes.swift; sourceTree = "<group>"; };
 		92DCB3AB863B942AE9664137 /* MochiAccessories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MochiAccessories.swift; sourceTree = "<group>"; };
+		9399B3D4167A054B93C6CE98 /* PetHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetHUD.swift; sourceTree = "<group>"; };
 		9652E439DC39211615D166D5 /* CustomMochis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomMochis.swift; sourceTree = "<group>"; };
 		9F0CCB26D1079838E92C7986 /* LanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanViews.swift; sourceTree = "<group>"; };
 		A14A61070D293AB4BBA303F7 /* NotchBuddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchBuddy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A29F4C0B02BE91654D02AA0C /* BotCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotCanvasView.swift; sourceTree = "<group>"; };
 		A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeService.swift; sourceTree = "<group>"; };
+		ACB93D168C8F8A3344B73AF8 /* PetBrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetBrain.swift; sourceTree = "<group>"; };
 		AD817BE09ACCD6A3DBAE2CA1 /* LocalCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCLI.swift; sourceTree = "<group>"; };
 		ADE0C176218952428930F8A1 /* WorktreesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreesViews.swift; sourceTree = "<group>"; };
 		AFAB8CC7BBB92F4BCE9AD8B6 /* ChatTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTuning.swift; sourceTree = "<group>"; };
@@ -269,6 +275,8 @@
 				05D7609E8B2522F3FB882E60 /* OpenAICompatChat.swift */,
 				3706FE519606B07252B9437C /* OpencodePlugin.swift */,
 				EDEE538EE8CA2630BD8988C8 /* OrcaPoller.swift */,
+				ACB93D168C8F8A3344B73AF8 /* PetBrain.swift */,
+				9399B3D4167A054B93C6CE98 /* PetHUD.swift */,
 				3C74DEA5157322D8D3418C5D /* PetMenu.swift */,
 				61B5FDDE03F5F711146937E2 /* ResendPoller.swift */,
 				D20332682E827B037009FC39 /* SessionJump.swift */,
@@ -503,6 +511,8 @@
 				FDC8A73D5943CB250D11CF6F /* OpenAICompatChat.swift in Sources */,
 				AEA4F50D59E76723971300BE /* OpencodePlugin.swift in Sources */,
 				95CFAA3CC03100A405D1F02F /* OrcaPoller.swift in Sources */,
+				A17BB5AF7ADA7A1C8BB842D2 /* PetBrain.swift in Sources */,
+				F96D69522908AAF88C39B3B5 /* PetHUD.swift in Sources */,
 				4B92A4DDD40C87A758E89A00 /* PetMenu.swift in Sources */,
 				967B525F7D3837F31D740D18 /* ResendPoller.swift in Sources */,
 				60A3448532E7EC90AC72E62A /* SessionJump.swift in Sources */,
@@ -569,6 +579,8 @@
 				920D71B67E1B4AF50F14A9E1 /* OpenAICompatChat.swift in Sources */,
 				BE1ED626210B92EFA01F2E84 /* OpencodePlugin.swift in Sources */,
 				1C2596352DA39F4C08B066CB /* OrcaPoller.swift in Sources */,
+				0E5F63FA763808149C3745E8 /* PetBrain.swift in Sources */,
+				71593AE5A286F02CA4E1C389 /* PetHUD.swift in Sources */,
 				EE1D727CE5CE86584F760BF6 /* PetMenu.swift in Sources */,
 				EB23ED9F1C12EA8B54A76A91 /* ResendPoller.swift in Sources */,
 				8066FDB6567CAF58CC5AA32C /* SessionJump.swift in Sources */,

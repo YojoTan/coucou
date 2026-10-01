@@ -265,3 +265,39 @@ select option {
   background: rgba(245, 165, 36, 0.13);
   color: #fbc06a;
 }
+
+/* Tabs (General · Chat · Agents · Integrations) */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  align-self: flex-start;
+}
+
+.tabs .tab {
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font: 500 12.5px var(--font);
+  padding: 5px 14px;
+  border-radius: 7px;
+  cursor: default;
+}
+
+.tabs .tab:hover {
+  color: var(--ink);
+}
+
+.tabs .tab.on {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--ink);
+}
+
+.tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}

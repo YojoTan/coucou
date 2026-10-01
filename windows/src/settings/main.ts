@@ -729,20 +729,41 @@ async function main() {
   for (const k of keys) present[k] = (await Bridge.secretPresent(k)) ?? false;
 
   clear(root);
+  // Tabs, as in upstream PR #33: the window had grown into one long scroll.
+  const tabs: [string, string, HTMLElement[]][] = [
+    ["general", t("General"), [generalSection()]],
+    ["chat", t("Chat"), [chatSection(), apiSection(hasKey)]],
+    ["agents", t("Agents"), [claudeSection(status), hooksSection("codex", codexStatus), opencodeSection()]],
+    ["integrations", t("Integrations"), [integrationsSection(present)]],
+  ];
+  const bar = h("div", { class: "tabs", role: "tablist" });
+  const panes = h("div", { class: "tab-panes" });
+  let current = "general";
+  try {
+    current = localStorage.getItem("coucou.settings-tab") ?? "general";
+  } catch { /* no storage: start on General */ }
+  if (!tabs.some(([id]) => id === current)) current = "general";
+  const show = (id: string) => {
+    current = id;
+    try { localStorage.setItem("coucou.settings-tab", id); } catch { /* fine */ }
+    for (const b of bar.children) (b as HTMLElement).classList.toggle("on", (b as HTMLElement).dataset.tab === id);
+    for (const p of panes.children) (p as HTMLElement).style.display = (p as HTMLElement).dataset.tab === id ? "" : "none";
+  };
+  for (const [id, label, sections] of tabs) {
+    bar.append(h("button", { class: "tab", role: "tab", "data-tab": id, text: label, onclick: () => show(id) }));
+    const pane = h("div", { class: "tab-pane", "data-tab": id }, ...sections);
+    panes.append(pane);
+  }
   root.append(
     h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
-    claudeSection(status),
-    hooksSection("codex", codexStatus),
-    opencodeSection(),
-    chatSection(),
-    apiSection(hasKey),
-    integrationsSection(present),
-    generalSection(),
+    bar,
+    panes,
     h("div", {
       class: "hint",
       text: t("No telemetry. Network requests only go to the services you configure yourself."),
     }),
   );
+  show(current);
 
   void onEvent<Settings>("settings-changed", (s) => {
     settings = { ...settings, ...s };

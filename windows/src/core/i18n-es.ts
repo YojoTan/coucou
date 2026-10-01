@@ -156,7 +156,11 @@ export const ES: Record<string, string> = {
 
   // ── Settings: integrations and general ────────────────────────────────────
   "Integrations": "Integraciones",
+  "Agents": "Agentes",
   "Instance URL": "URL de la instancia",
+  "Secret key": "Clave secreta",
+  "Token": "Token",
+  "Integration token": "Token de integración",
   "Pick up to {max} pills to show next to Mochi — {used}/{max} in use. Keys are stored in the Windows Credential Manager, never on disk.":
     "Elige hasta {max} píldoras para mostrar junto a Mochi ({used}/{max} en uso). Las claves se guardan en el Administrador de credenciales de Windows, nunca en disco.",
   "Save": "Guardar",

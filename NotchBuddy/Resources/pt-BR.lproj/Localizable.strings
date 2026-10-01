@@ -272,3 +272,16 @@
 "Too large to send (512 MB at most)." = "Grande demais para enviar (512 MB no máximo).";
 "They declined the file." = "Recusou o arquivo.";
 "The transfer failed." = "A transferência falhou.";
+
+/* Orca: questions, gates, terminal jump */
+"%lld worktrees need permission" = "%lld worktrees pedem permissão";
+"Decision gate" = "Decisão pendente";
+"A worker is asking" = "Um worker está perguntando";
+"Answer" = "Resposta";
+"Sending…" = "Enviando…";
+"Later" = "Depois";
+"1 question waiting" = "1 pergunta aguardando";
+"%lld questions waiting" = "%lld perguntas aguardando";
+"Open changes in Orca" = "Abrir alterações no Orca";
+"Show this terminal in Orca" = "Mostrar este terminal no Orca";
+"Orca's command-line tool wasn't found." = "A ferramenta de linha de comando do Orca não foi encontrada.";

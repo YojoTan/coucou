@@ -105,6 +105,9 @@ struct BotCanvasView: View {
         .task(id: idleAnimationsEligible) {
             await runIdleAnimations()
         }
+        #if !APPSTORE
+        .background(MusicSync(engine: engine, active: state.focusTask?.id == "integration_spotify"))
+        #endif
     }
 
     private var idleAnimationsEligible: Bool {
@@ -212,8 +215,44 @@ struct MiniBotCanvasView: View {
                 engine.eyeOverrideUntil = .greatestFiniteMagnitude
             }
         }
+        #if !APPSTORE
+        .background {
+            if task.id == "integration_spotify" { MusicSync(engine: engine, active: true) }
+        }
+        #endif
     }
 }
+
+#if !APPSTORE
+/// Spotify's play state into a Mochi: headphones while a track is loaded, the
+/// dance while it plays (not with Reduce Motion). Only the Spotify Mochis carry
+/// one, so the other pills don't re-render on every track change.
+struct MusicSync: View {
+    @ObservedObject private var state = AppState.shared
+    let engine: BotEngine
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Color.clear
+            .onAppear { apply(previous: nil) }
+            .onChange(of: state.spotifyNow) { old, _ in apply(previous: old) }
+            .onChange(of: active) { _, _ in apply(previous: nil) }
+            .onChange(of: reduceMotion) { _, _ in apply(previous: nil) }
+    }
+
+    private func apply(previous: SpotifyTrack?) {
+        let track = state.spotifyNow
+        engine.wantsHeadphones = active && track != nil
+        let playing = active && track?.playing == true && !reduceMotion
+        // The beat starts over on play and on a new track.
+        if playing && (!engine.musicPlaying || (previous != nil && previous?.title != track?.title)) {
+            engine.musicStart()
+        }
+        engine.musicPlaying = playing
+    }
+}
+#endif
 
 // MARK: - CGColor from hex string
 

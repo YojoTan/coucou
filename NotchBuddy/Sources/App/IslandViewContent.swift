@@ -276,28 +276,76 @@ struct ApprovalView: View {
 
 // MARK: - Question
 
+// What an Orca worker asks its Run, or a pending decision gate (OrcaPoller).
+// The answer leaves only on a click; Orca's refusal is shown as is.
 struct QuestionView: View {
     @ObservedObject var state: AppState
+    @State private var text = ""
+    @State private var sending = false
+    @State private var error: String? = nil
 
     var body: some View {
         ZStack {
             CardBackground(wash: .cyan)
             VStack(alignment: .leading, spacing: 5) {
-                AgentWho(task: state.focusTask, label: "Claude Code is asking a question")
-                Text("Which search engine to use?")
-                    .font(.system(size: 15, weight: .semibold))
-                HStack(spacing: 8) {
-                    ForEach(["Postgres full-text", "Meilisearch", "Algolia"], id: \.self) { opt in
-                        SecondaryButton(opt) { /* answer */ }
-                    }
-                }
+                #if !APPSTORE
+                if let ask = state.orcaAsk { content(ask) }
+                #endif
             }
             .padding(.leading, 116)
             .padding(.trailing, 16)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        #if !APPSTORE
+        .onChange(of: state.orcaAsk?.id) { _, _ in text = ""; error = nil; sending = false }
+        #endif
     }
+
+    #if !APPSTORE
+    @ViewBuilder private func content(_ ask: OrcaAsk) -> some View {
+        AgentWho(task: state.tasks.first { $0.id == OrcaPoller.taskId },
+                 label: ask.kind == .gate ? "Decision gate" : "A worker is asking")
+        Text(verbatim: ask.text)
+            .font(.system(size: 13.5, weight: .semibold))
+            .lineLimit(2)
+        if let error {
+            Text(verbatim: error).font(.system(size: 11)).foregroundColor(Color(hex: "#F87171")).lineLimit(2)
+        }
+        if ask.options.isEmpty {
+            HStack(spacing: 8) {
+                MailField(label: String(localized: "Answer"), placeholder: "", text: $text)
+                    .onSubmit { send(ask, text) }
+                PrimaryButton(sending ? "Sending…" : "Send") { send(ask, text) }
+            }
+        } else {
+            HStack(spacing: 8) {
+                ForEach(ask.options.prefix(4), id: \.self) { opt in
+                    SecondaryButton(opt) { send(ask, opt) }
+                }
+            }
+        }
+        Button("Later") { close() }
+            .font(.system(size: 11)).foregroundColor(Color(hex: "#8E939C")).buttonStyle(.plain)
+    }
+
+    private func send(_ ask: OrcaAsk, _ answer: String) {
+        let answer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !answer.isEmpty, !sending else { return }
+        sending = true
+        error = nil
+        OrcaPoller.answer(ask, answer) { err in
+            sending = false
+            if let err { error = err } else { close() }
+        }
+    }
+
+    private func close() {
+        state.orcaAsk = nil
+        state.isPinned = false
+        state.view = state.tasks.isEmpty ? .empty : .overview
+    }
+    #endif
 }
 
 // MARK: - Error
@@ -1447,7 +1495,7 @@ struct IntegrationCardView: View {
                 .transition(.opacity)
         } else if orcaHasData {
             #if !APPSTORE
-            OrcaCardView(worktrees: appState.orcaWorktrees)
+            OrcaCardView(worktrees: appState.orcaWorktrees, asks: appState.orcaAsks)
                 .transition(.opacity)
             #endif
         } else if spotifyHasData {
@@ -3286,6 +3334,7 @@ extension Color {
 #if !APPSTORE
 struct OrcaCardView: View {
     let worktrees: [OrcaWorktree]
+    let asks: [OrcaAsk]
 
     private func color(_ status: String) -> Color {
         switch status {
@@ -3306,32 +3355,72 @@ struct OrcaCardView: View {
         }
     }
 
+    /// The top row's second line: what its agent is doing or last said.
+    private func detail(_ w: OrcaWorktree) -> String {
+        switch w.status {
+        case "permission", "working": return [w.tool, w.prompt].filter { !$0.isEmpty }.joined(separator: " · ")
+        default: return w.lastMessage.isEmpty ? w.prompt : w.lastMessage
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Circle().fill(Color(hex: "#8B5CF6")).frame(width: 7, height: 7)
                 Text("Orca").font(.system(size: 12, weight: .semibold)).foregroundColor(Color(hex: "#F5F6F8"))
                 Text("Worktrees").font(.system(size: 11)).foregroundColor(Color(hex: "#8E939C"))
+                if worktrees.count > 3 {
+                    Text(verbatim: "+\(worktrees.count - 3)").font(.system(size: 11)).foregroundColor(Color(hex: "#5F646D"))
+                }
                 Spacer(minLength: 2)
             }
             .padding(.top, 6)
-            ForEach(worktrees.prefix(3)) { w in
-                HStack(spacing: 6) {
-                    Circle().fill(color(w.status)).frame(width: 5, height: 5)
-                    Text(w.name.isEmpty ? w.repo : w.name)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color(hex: "#E8E9EC"))
-                        .lineLimit(1).truncationMode(.tail)
-                    Text(label(w.status))
-                        .font(.system(size: 10.5))
+            ForEach(Array(worktrees.prefix(3).enumerated()), id: \.element.id) { i, w in
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Circle().fill(color(w.status)).frame(width: 5, height: 5)
+                        Text(w.name.isEmpty ? w.repo : w.name)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(hex: "#E8E9EC"))
+                            .lineLimit(1).truncationMode(.tail)
+                        Text(label(w.status))
+                            .font(.system(size: 10.5))
+                            .foregroundColor(Color(hex: "#8E939C"))
+                            .lineLimit(1)
+                        Spacer(minLength: 2)
+                        Button { OrcaPoller.openChanges(w) } label: {
+                            Image(systemName: "plus.forwardslash.minus").font(.system(size: 9.5))
+                        }
+                        .buttonStyle(.plain)
                         .foregroundColor(Color(hex: "#8E939C"))
-                        .lineLimit(1)
+                        .help(Text("Open changes in Orca"))
+                    }
+                    if i == 0, !detail(w).isEmpty {
+                        Text(verbatim: detail(w))
+                            .font(.system(size: 10.5))
+                            .foregroundColor(Color(hex: "#8E939C"))
+                            .lineLimit(1).truncationMode(.tail)
+                            .padding(.leading, 11)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { OrcaPoller.focus(w) }
+                .help(Text("Show this terminal in Orca"))
+            }
+            HStack(spacing: 12) {
+                Button("Open Orca") { OrcaPoller.openOrca() }
+                    .foregroundColor(Color(hex: "#8B5CF6"))
+                if let ask = asks.first {
+                    Button(asks.count == 1 ? "1 question waiting" : "\(asks.count) questions waiting") {
+                        AppState.shared.orcaAsk = ask
+                        AppState.shared.isPinned = true
+                        NotificationCenter.default.post(name: .hookExpand, object: IslandView.question)
+                    }
+                    .foregroundColor(Color(hex: "#22D3EE"))
                 }
             }
-            Button("Open Orca") { OrcaPoller.openOrca() }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color(hex: "#8B5CF6"))
-                .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .medium))
+            .buttonStyle(.plain)
         }
         .padding(.leading, 108)
         .padding(.trailing, 36)

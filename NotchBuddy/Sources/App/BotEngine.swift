@@ -31,7 +31,7 @@ struct Tween {
 // MARK: - Particle
 
 struct Particle {
-    enum ParticleType { case heart, star, spark, sweat, z }
+    enum ParticleType { case heart, star, spark, sweat, z, note }
     var type: ParticleType
     var x, y, vx, vy: CGFloat
     var age: Double        // seconds
@@ -252,6 +252,30 @@ final class BotEngine: ObservableObject {
     // Mini wandering look (random, ignores mouse)
     var miniLookTarget: CGPoint = .zero
     var miniLookNextTime: Double = 0
+
+    // Music (Spotify pill): headphones on, and a dance on a steady beat while
+    // playing. Spotify gives no tempo or beat to other apps, so the beat is a
+    // fixed groove restarted on each track (musicStart), not the song's own.
+    var wantsHeadphones = false
+    var musicPlaying = false
+    var headphones: CGFloat = 0      // 0→1, eases in and out
+    var groove: CGFloat = 0          // 0→1, how much Mochi dances
+    var whistle: CGFloat = 0         // 0→1, the puckered mouth: 8 beats of every 16
+    var bpm: Double = 112
+    var beatT0: Double = CACurrentMediaTime()
+    private var lastBeat = -1
+    private var waveStarts: [Double] = []   // CACurrentMediaTime() of each sound wave
+    // The dance, applied on top of the pose in draw (never fed back into it).
+    var danceOy: CGFloat = 0
+    var danceTilt: CGFloat = 0
+    var danceSx: CGFloat = 1
+    var danceSy: CGFloat = 1
+
+    /// A new track (or play after a stop): the beat starts again from here.
+    func musicStart() {
+        beatT0 = CACurrentMediaTime()
+        lastBeat = -1
+    }
 
     // MARK: - Public API
 
@@ -727,6 +751,8 @@ final class BotEngine: ObservableObject {
             doMiniBehaviorLoop()
         }
 
+        updateDance(now: now, dt: dt)
+
         // Smooth look
         let kLook = CGFloat(1 - pow(0.0025, dt))
         let kGen  = CGFloat(1 - pow(0.0008, dt))
@@ -780,6 +806,75 @@ final class BotEngine: ObservableObject {
         lastTime = now
     }
 
+    private func updateDance(now: Double, dt: Double) {
+        let k = CGFloat(1 - pow(0.03, dt))
+        headphones += ((wantsHeadphones ? 1 : 0) - headphones) * k
+        groove += ((musicPlaying ? 1 : 0) - groove) * k
+        waveStarts.removeAll { now - $0 > 1.1 }
+        let beats = max(0, (now - beatT0) * bpm / 60)
+        // Bars of 16 beats: 8 dancing, then 8 whistling along.
+        let whistling = musicPlaying && Int(beats) % 16 >= 8
+        whistle += ((whistling ? 1 : 0) - whistle) * CGFloat(1 - pow(0.002, dt))
+        guard groove > 0.005 else {
+            danceOy = 0; danceTilt = 0; danceSx = 1; danceSy = 1
+            return
+        }
+        let phase = CGFloat(beats.truncatingRemainder(dividingBy: 1))
+        let hit = pow(1 - phase, 3)                       // sharp on the beat, then decays
+        let b = CGFloat(beats)
+        danceOy   = -abs(sin(.pi * b)) * 0.075 * groove     // a hop per beat
+        danceTilt = sin(.pi * b / 2) * 0.085 * groove       // sway, one side per beat
+        danceSy   = 1 - hit * 0.07 * groove                 // squash as it lands
+        danceSx   = 1 + hit * 0.05 * groove
+        tgPitch  += (hit * 0.10 - 0.03) * groove            // nod with the beat
+        tgYaw    *= 1 - 0.6 * groove                        // eyes mostly forward while vibing
+
+        let beat = Int(beats)
+        guard beat != lastBeat, musicPlaying else { return }
+        lastBeat = beat
+        waveStarts.append(now)
+        if whistling {
+            // Eyes shut in bliss, a note out of the mouth on every beat.
+            if eyeOverride == nil || eyeOverride == permanentEye || eyeOverride == .happy {
+                eyeOverride = .happy
+                eyeOverrideUntil = now + 60 / bpm + 0.05
+            }
+            if !isMini { emitNote(fromMouth: true) }
+        } else {
+            // Dancing: two beats of blissed-out eyes every 8; a note from the side every 4.
+            if beat % 8 == 4, eyeOverride == nil || eyeOverride == permanentEye {
+                eyeOverride = .happy
+                eyeOverrideUntil = now + 2 * 60 / bpm
+            }
+            if !isMini && beat % 4 == 2 { emitNote(fromMouth: false) }
+        }
+    }
+
+    private func emitNote(fromMouth: Bool) {
+        let side: CGFloat = fromMouth ? 1 : (Bool.random() ? 1 : -1)
+        particles.append(Particle(
+            type: .note,
+            // Particle units are R·1.3 from the body centre; the mouth sits low and a bit right.
+            x: fromMouth ? 0.2 : side * CGFloat.random(in: 0.55...0.75),
+            y: fromMouth ? 0.2 : -0.55,
+            vx: side * (fromMouth ? CGFloat.random(in: 0.35...0.55) : CGFloat.random(in: 0.08...0.2)),
+            vy: -CGFloat.random(in: 0.3...0.5),
+            age: 0, life: 1.6, rot: side * 0.2, size: 0.15 + CGFloat.random(in: 0...0.06)
+        ))
+    }
+
+    /// The whistling "o", low on the face and turned with the gaze.
+    private func drawWhistleMouth(ctx: GraphicsContext, path: Path, R: CGFloat, rx: CGFloat, ry: CGFloat) {
+        var c = ctx
+        c.clip(to: path)
+        let beats = max(0, (CACurrentMediaTime() - beatT0) * bpm / 60)
+        let pulse = 1 + 0.18 * pow(1 - CGFloat(beats.truncatingRemainder(dividingBy: 1)), 2)
+        let w = R * 0.13 * whistle * pulse, h = R * 0.16 * whistle * pulse
+        let x = sin(yaw) * rx * 0.8 + R * 0.07, y = ry * 0.46
+        let mouth = Path(ellipseIn: CGRect(x: x - w / 2, y: y - h / 2, width: w, height: h))
+        c.fill(mouth, with: .color(Color(cgColor: isMini ? MochiConst.miniInk : MochiConst.ink)))
+    }
+
     // MARK: - Draw
 
     func draw(context: GraphicsContext, size: CGSize) {
@@ -792,12 +887,14 @@ final class BotEngine: ObservableObject {
         let cx = W / 2 + ox * R
         // particleOverhang shifts the bot body down in canvas coords so hearts can fly into
         // the extended canvas above without clipping (BotPlacement compensates with position offset)
-        let cy = H / 2 + particleOverhang / 2 + oy * R + R * 0.06
+        let cy = H / 2 + particleOverhang / 2 + (oy + danceOy) * R + R * 0.06
 
         var ctx = context
         ctx.translateBy(x: cx, y: cy)
-        if tilt != 0 { ctx.rotate(by: .radians(tilt)) }
-        ctx.scaleBy(x: sx, y: sy)
+        let tiltNow = tilt + danceTilt
+        if tiltNow != 0 { ctx.rotate(by: .radians(tiltNow)) }
+        ctx.scaleBy(x: sx * danceSx, y: sy * danceSy)
+        let bodySpace = ctx   // before blush and eyes clip ctx to the body
 
         // Body path (superellipse for Mochi, morph to rect for upload)
         let bodyPath = mochiPath(rx: rx, ry: ry, morph: morph, R: R)
@@ -813,6 +910,13 @@ final class BotEngine: ObservableObject {
 
         // Eyes
         drawEyes(ctx: &ctx, path: bodyPath, R: R, rx: rx, ry: ry)
+
+        if whistle > 0.02 && morph < 0.05 {
+            drawWhistleMouth(ctx: bodySpace, path: bodyPath, R: R, rx: rx, ry: ry)
+        }
+        if headphones > 0.01 && morph < 0.05 {
+            drawHeadphones(ctx: bodySpace, R: R, rx: rx, ry: ry)
+        }
 
         // Mouth hole — dark pill cutout inside the box face
         // Spec: left/right margins 0.10R, top margin 0.08R from box top (-0.94R)
@@ -873,7 +977,7 @@ final class BotEngine: ObservableObject {
         let rx = R * 1.14
         let ry = R * 0.88
         let cx = W / 2 + ox * R
-        let cy = H / 2 + particleOverhang / 2 + oy * R + R * 0.06
+        let cy = H / 2 + particleOverhang / 2 + (oy + danceOy) * R + R * 0.06
 
         let now = CACurrentMediaTime()
         let bodyH = 2 * ry   // full body height
@@ -967,7 +1071,11 @@ final class BotEngine: ObservableObject {
         let rx = R * 1.14
         let ry = R * 0.88
         let cx = W / 2 + ox * R
-        let cy = H / 2 + particleOverhang / 2 + oy * R + R * 0.06
+        let cy = H / 2 + particleOverhang / 2 + (oy + danceOy) * R + R * 0.06
+
+        if !waveStarts.isEmpty && groove > 0.01 {
+            drawSoundWaves(context: context, R: R, rx: rx, cx: cx, cy: cy)
+        }
 
         // Badge — hidden while morphing to mailbox
         if let badge = badge, badgeS > 0.01, morph < 0.25 {
@@ -976,6 +1084,59 @@ final class BotEngine: ObservableObject {
 
         // Particles
         drawParticles(context: context, size: size, R: R, cx: cx, cy: cy)
+    }
+
+    // MARK: - Music extras
+
+    /// Headband over the top of the head and a cup on each side, in body space
+    /// so they hop, sway and squash with Mochi.
+    private func drawHeadphones(ctx: GraphicsContext, R: CGFloat, rx: CGFloat, ry: CGFloat) {
+        var c = ctx
+        c.opacity = Double(min(1, headphones))
+        let drop = (1 - headphones) * R * 0.35          // they slide down onto the head
+        c.translateBy(x: 0, y: -drop)
+        let band = Path { p in
+            p.move(to: CGPoint(x: -rx * 0.97, y: -ry * 0.18))
+            p.addCurve(to: CGPoint(x: rx * 0.97, y: -ry * 0.18),
+                       control1: CGPoint(x: -rx * 0.95, y: -ry * 1.45),
+                       control2: CGPoint(x: rx * 0.95, y: -ry * 1.45))
+        }
+        let bandW = max(1.5, R * 0.11)
+        c.stroke(band, with: .color(Color(hex: "#23262D")), style: StrokeStyle(lineWidth: bandW, lineCap: .round))
+        c.stroke(band, with: .color(Color.white.opacity(0.16)), style: StrokeStyle(lineWidth: max(0.6, bandW * 0.3), lineCap: .round))
+        let cw = R * 0.30, ch = R * 0.56
+        for sd in [-1.0, 1.0] {
+            let x = CGFloat(sd) * rx * 0.97
+            let rect = CGRect(x: x - cw / 2, y: -ry * 0.22, width: cw, height: ch)
+            let cup = Path(roundedRect: rect, cornerRadius: cw * 0.45)
+            c.fill(cup, with: .linearGradient(
+                Gradient(colors: [Color(hex: "#3A3E47"), Color(hex: "#16181D")]),
+                startPoint: CGPoint(x: rect.midX, y: rect.minY), endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
+            c.stroke(cup, with: .color(Color.white.opacity(0.14)), lineWidth: max(0.5, R * 0.025))
+            // A small green light on the outer side of each cup.
+            let dot = Path(ellipseIn: CGRect(x: x - cw * 0.14, y: rect.midY - cw * 0.14, width: cw * 0.28, height: cw * 0.28))
+            c.fill(dot, with: .color(Color(hex: "#1DB954").opacity(0.55 + 0.45 * Double(groove))))
+        }
+    }
+
+    /// Arcs on both sides, one pair per beat, spreading out and fading.
+    private func drawSoundWaves(context: GraphicsContext, R: CGFloat, rx: CGFloat, cx: CGFloat, cy: CGFloat) {
+        let now = CACurrentMediaTime()
+        for start in waveStarts {
+            let k = CGFloat((now - start) / 1.1)
+            guard k >= 0, k < 1 else { continue }
+            let radius = rx * (1.12 + 0.42 * k)
+            let alpha = Double((1 - k) * (1 - k) * 0.55 * groove)
+            for sd in [-1.0, 1.0] {
+                let mid: Double = sd > 0 ? 0 : 180
+                let arc = Path { p in
+                    p.addArc(center: CGPoint(x: cx, y: cy), radius: radius,
+                             startAngle: .degrees(mid - 28), endAngle: .degrees(mid + 28), clockwise: false)
+                }
+                context.stroke(arc, with: .color(Color(hex: "#1DB954").opacity(alpha)),
+                               style: StrokeStyle(lineWidth: max(1, R * 0.05 * (1 - k * 0.5)), lineCap: .round))
+            }
+        }
     }
 
     // MARK: - Private draw helpers
@@ -1345,6 +1506,11 @@ final class BotEngine: ObservableObject {
                 drop.addQuadCurve(to: CGPoint(x: 0, y: sz*0.6), control: CGPoint(x: sz*0.8, y: sz*0.2))
                 drop.addQuadCurve(to: CGPoint(x: 0, y: -sz), control: CGPoint(x: -sz*0.8, y: sz*0.2))
                 pctx.fill(drop, with: .color(Color(hex: "#7CC7FF")))
+            case .note:
+                pctx.rotate(by: .radians(p.rot + sin(CGFloat(p.age) * 5) * 0.25))
+                pctx.draw(Text(verbatim: p.size > 0.185 ? "♫" : "♪")
+                            .font(.system(size: sz * 2.2, weight: .bold))
+                            .foregroundColor(.white), at: .zero)
             case .z:
                 pctx.draw(Text("z").font(.system(size: sz*1.9, weight: .bold)).foregroundColor(Color(red: 0.82, green: 0.86, blue: 0.92)),
                           at: .zero)

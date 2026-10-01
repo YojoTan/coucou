@@ -238,6 +238,8 @@ final class HookServer: @unchecked Sendable {
                 session.summary = String(last.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(220))
             }
             session.state = .finished
+            MochiPet.sessionFinished()
+            MochiVoice.say(String(localized: "Done with \(projectName)"))
             #if !APPSTORE
             DiscordWebhook.notify("discord-post-finished",
                                   "✅ **\(projectName)** — \(agent.displayName) finished" + (session.summary.map { "\n> \($0)" } ?? ""))

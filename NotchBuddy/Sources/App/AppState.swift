@@ -4,8 +4,19 @@ import Combine
 
 // Integration pills — always-present, never purged
 extension AgentTask {
-    /// All available integration pills. Claude is always active; others are opt-in (max 4).
-    static let integrationAgents: [AgentTask] = [
+    /// All available integration pills: the built-in ones, then the user's custom Mochis.
+    /// Claude is always active; others are opt-in (max 4).
+    static var integrationAgents: [AgentTask] {
+        #if APPSTORE
+        builtInAgents
+        #else
+        builtInAgents + CustomMochis.all.map {
+            AgentTask(id: $0.id, name: $0.name, color: $0.color, state: .idle, steps: [], source: .n8n, isIntegration: true)
+        }
+        #endif
+    }
+
+    static let builtInAgents: [AgentTask] = [
         AgentTask(id: "integration_claude",  name: "VS Code",   color: "#F5F6F8", state: .idle, steps: [], source: .claudeCode, isIntegration: true),
         AgentTask(id: "integration_codex",   name: "Codex",     color: "#10A37F", state: .idle, steps: [], source: .codex, isIntegration: true),
         AgentTask(id: "integration_opencode", name: "opencode", color: "#F59E0B", state: .idle, steps: [], source: .opencode, isIntegration: true),
@@ -20,12 +31,20 @@ extension AgentTask {
         AgentTask(id: "integration_spotify", name: "Spotify",   color: "#1DB954", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_lan",     name: "Mochis",    color: "#F472B6", state: .idle, steps: [], source: .n8n, isIntegration: true),
         AgentTask(id: "integration_discord", name: "Discord",   color: "#5865F2", state: .idle, steps: [], source: .n8n, isIntegration: true),
+        AgentTask(id: "integration_calendar", name: "Calendar", color: "#FF6B6B", state: .idle, steps: [], source: .n8n, isIntegration: true),
+        AgentTask(id: "integration_system",  name: "Mac",       color: "#94A3B8", state: .idle, steps: [], source: .n8n, isIntegration: true),
+        AgentTask(id: "integration_weather", name: "Weather",   color: "#38BDF8", state: .idle, steps: [], source: .n8n, isIntegration: true),
     ]
 
     /// IDs that can be toggled (VS Code is always on and excluded from this list)
-    static let toggleableIntegrationIds: [String] = [
+    static var toggleableIntegrationIds: [String] {
+        builtInToggleable + integrationAgents.map(\.id).filter { $0.hasPrefix("custom_") }
+    }
+
+    static let builtInToggleable: [String] = [
         "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
         "integration_notion", "integration_calcom", "integration_stripe", "integration_orca", "integration_spotify", "integration_lan", "integration_discord",
+        "integration_calendar", "integration_system", "integration_weather",
     ]
 
 }
@@ -45,9 +64,18 @@ final class AppState: ObservableObject {
     /// What the compact island says right now (showToast).
     @Published var compactToast: CompactToast? = nil
 
+    /// Mochi's mode, from a Focus automation in Shortcuts (SetMochiModeIntent).
+    @Published var focusMode: FocusMode = FocusMode(rawValue: UserDefaults.standard.string(forKey: "focus-mode") ?? "") ?? .normal {
+        didSet {
+            UserDefaults.standard.set(focusMode.rawValue, forKey: "focus-mode")
+            if focusMode.silences { toastQueue.removeAll(); compactToast = nil }
+        }
+    }
+
     /// Shows a line in the compact island — revealing it if hidden — then clears it.
     /// Toasts queue: each gets its time on screen.
     func showToast(_ text: String, color: String, icon: String? = nil, seconds: Double = 3.5) {
+        guard !focusMode.silences else { return }   // Do Not Disturb means it
         toastQueue.append(CompactToast(text: text, color: color, icon: icon))
         toastQueue = Array(toastQueue.suffix(4))
         if compactToast == nil { nextToast(seconds) }
@@ -219,6 +247,18 @@ final class AppState: ObservableObject {
     @Published var discordTranscript: String? = nil
     @Published var discordTalkingMuted = false
     @Published var discordEvent: DiscordEvent? = nil
+    /// Custom Mochis' latest news (CustomMochis.push), by pill id.
+    @Published var customStatus: [String: CustomStatus] = [:]
+    /// Calendar, Mac and weather pills (Extras).
+    @Published var calendarNext: CalendarEvent? = nil
+    @Published var calendarError: String? = nil
+    @Published var system: SystemSnapshot? = nil
+    @Published var weather: WeatherNow? = nil
+    @Published var weatherError: String? = nil
+    /// Levels, streaks and trophies (MochiPet).
+    @Published var pet = MochiPet.load()
+    /// A level-up or trophy, for Mochi to celebrate (MochiExtrasSync).
+    @Published var petEvent: UUID? = nil
     @Published var discordNotes: [DiscordNote] = []
     /// Mochis on the network (LanService): the peers, what one of them asks,
     /// and who the chat is writing to.

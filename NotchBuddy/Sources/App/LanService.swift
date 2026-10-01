@@ -217,8 +217,34 @@ final class LanService: @unchecked Sendable {
     }
 
     @MainActor private static func show(_ snap: LanSnapshot) {
-        if AppState.shared.lanSnapshot != snap { AppState.shared.lanSnapshot = snap }
+        let state = AppState.shared
+        let before = state.lanSnapshot
+        if before != snap { state.lanSnapshot = snap }
+        announce(before: before.peers, after: snap.peers)
     }
+
+    /// Paired Mochis coming and going, as compact toasts. A peer has to have been
+    /// away (or around) 30 s before it's announced again, so a lost beacon or two
+    /// doesn't make it blink.
+    @MainActor private static func announce(before: [LanPeer], after: [LanPeer]) {
+        let now = Date()
+        let was = Dictionary(before.map { ($0.id, $0.online) }, uniquingKeysWith: { a, _ in a })
+        for p in after where p.paired {
+            let wasOnline = was[p.id] ?? false
+            guard p.online != wasOnline else { continue }
+            let since = now.timeIntervalSince(changedAt[p.id] ?? .distantPast)
+            changedAt[p.id] = now
+            guard since > 30 else { continue }
+            let color = IslandConst.colorForProject(p.name)
+            if p.online {
+                AppState.shared.showToast(String(localized: "\(p.name) is online"), color: color, icon: "dot.radiowaves.left.and.right")
+            } else {
+                AppState.shared.showToast(String(localized: "\(p.name) went offline"), color: "#8E939C", icon: "wifi.slash")
+            }
+        }
+    }
+
+    @MainActor private static var changedAt: [String: Date] = [:]
 
     private func prompt(_ p: LanPrompt) {
         DispatchQueue.main.async { Self.raise(p) }
@@ -321,6 +347,7 @@ final class LanService: @unchecked Sendable {
         broadcast.sin_port = Self.udpPort.bigEndian
 
         var lastBeacon = Date.distantPast
+        var lastReply: [String: Date] = [:]
         var buf = [UInt8](repeating: 0, count: 1500)
         while alive(gen) {
             if Date().timeIntervalSince(lastBeacon) >= 4, let b = beacon() {
@@ -336,14 +363,18 @@ final class LanService: @unchecked Sendable {
             if n > 0 {
                 let own = lock.withLock { me.map { LanWire.id(of: $0.publicKey.rawRepresentation) } ?? "" }
                 if let b = Self.parseBeacon(Data(buf[0..<n]), ownId: own) {
-                    let isNew: Bool = lock.withLock {
+                    lock.withLock {
                         let old = seen[b.id]
                         seen[b.id] = Seen(name: b.name, addr: from.sin_addr, port: b.port, key: b.key, at: Date())
                         changed = old == nil || old?.name != b.name || old?.port != b.port || old?.addr.s_addr != from.sin_addr.s_addr
-                        return old == nil
                     }
-                    // Answer a newcomer straight away so it sees us without waiting.
-                    if isNew, let mine = beacon() {
+                    // Answer every beacon straight back, at most once per beacon period
+                    // per peer: a unicast reply finds its way even when our broadcast
+                    // doesn't reach them (Windows often broadcasts out of a virtual
+                    // adapter), so one working direction is enough for both to see
+                    // each other.
+                    if Date().timeIntervalSince(lastReply[b.id] ?? .distantPast) >= 4, let mine = beacon() {
+                        lastReply[b.id] = Date()
                         var back = from
                         back.sin_port = Self.udpPort.bigEndian
                         send(mine, to: back)

@@ -76,6 +76,7 @@ final class KeychainStore: @unchecked Sendable {
         "discord-client-id", "discord-client-secret",
         "discord-access-token", "discord-refresh-token",
         "discord-webhook",
+        "custom-mochi-token",
     ]
 
     private init() {

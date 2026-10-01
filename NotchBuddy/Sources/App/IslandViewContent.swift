@@ -662,6 +662,7 @@ struct ChooseView: View {
         state.noteMessage = String(localized: "Waiting for \(name) to accept \(fileName)…")
         state.view = .note
         Task {
+            NotificationCenter.default.post(name: .botTravel, object: nil)
             let result = await LanService.run { try LanService.shared.sendFile(id: id, url: url) }
             switch result {
             case .success: state.noteMessage = String(localized: "\(fileName) sent to \(name) ✓")
@@ -1059,6 +1060,7 @@ struct PromptView: View {
         #if !APPSTORE
         if let peer = state.peerChat {
             let id = peer.id, name = peer.name, asking = peer.asking
+            if !asking { NotificationCenter.default.post(name: .botTravel, object: nil) }
             Task {
                 let result = await LanService.run { () throws -> String in
                     if asking { return try LanService.shared.ask(id: id, text: query) }
@@ -1373,6 +1375,14 @@ struct IntegrationCardView: View {
             #else
             return NSWorkspace.shared.urlForApplication(withBundleIdentifier: DiscordService.bundleId) != nil
             #endif
+        case "integration_calendar", "integration_system", "integration_weather":
+            #if APPSTORE
+            return false
+            #else
+            return true
+            #endif
+        case let id where id.hasPrefix("custom_"):
+            return true
         case "integration_codex":
             #if APPSTORE
             return false
@@ -1473,6 +1483,22 @@ struct IntegrationCardView: View {
         #endif
     }
 
+    // Extras: custom Mochis, calendar, Mac, weather — always a card of their own
+    private var extrasCard: AnyView? {
+        #if APPSTORE
+        return nil
+        #else
+        switch task.id {
+        case CalendarMochi.taskId: return AnyView(CalendarCardView(state: appState))
+        case SystemMochi.taskId: return AnyView(SystemCardView(state: appState))
+        case WeatherMochi.taskId: return AnyView(WeatherCardView(state: appState))
+        case let id where id.hasPrefix("custom_"):
+            return CustomMochis.all.first { $0.id == id }.map { AnyView(CustomCardView(mochi: $0, state: appState)) }
+        default: return nil
+        }
+        #endif
+    }
+
     // Discord: while the app runs
     private var discordHasData: Bool {
         #if APPSTORE
@@ -1532,6 +1558,8 @@ struct IntegrationCardView: View {
             SpotifyCardView(track: appState.spotifyNow!)
                 .transition(.opacity)
             #endif
+        } else if let card = extrasCard {
+            card.transition(.opacity)
         } else if discordHasData {
             #if !APPSTORE
             DiscordCardView(state: appState)

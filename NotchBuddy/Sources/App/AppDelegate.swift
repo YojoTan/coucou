@@ -75,6 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OrcaPoller.shared.start()
         SpotifyWatcher.shared.start()
         DiscordService.shared.start()
+        CustomMochiRunner.shared.start()
+        CalendarMochi.shared.start()
+        SystemMochi.shared.start()
+        WeatherMochi.shared.start()
         LanService.shared.apply()
         #endif
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings),

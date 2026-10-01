@@ -27,8 +27,11 @@ macOS Keychain). `id` = the first 8 bytes of SHA-256(public key), in lowercase h
 
 ## Discovery — UDP 47801
 
-While on, every 4 s, a beacon goes to `255.255.255.255:47801`, and straight back
-to any new peer heard:
+While on, every 4 s, a beacon goes to `255.255.255.255:47801`; and every beacon
+heard is answered straight back to its sender (unicast), at most once per 4 s per
+peer. The unicast answer is what keeps two Mochis in sight of each other when
+one side's broadcast gets lost — Windows often sends `255.255.255.255` out of a
+virtual adapter (WSL, Hyper-V, VPN) — since one working direction is then enough:
 
 ```json
 {"coucou":1,"id":"<16 hex>","name":"<≤40 chars>","port":<tcp port>,"key":"<base64 Ed25519 public key>"}

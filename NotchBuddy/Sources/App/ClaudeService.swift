@@ -238,17 +238,12 @@ final class ClaudeService {
         if let effort { body["output_config"] = ["effort": effort] }
 
         do {
-            let send = { (body: [String: Any]) async throws -> Data in
-                official
-                    ? try await self.callAPI(body: body, key: key ?? "", beta: "web-search-2025-03-05")
-                    : try await self.callCompat(url: url, body: body, key: key)
-            }
             let data: Data
             do {
-                data = try await send(body)
+                data = try await sendTurn(official: official, url: url, body: body, key: key)
             } catch where effort != nil && (error.localizedDescription.contains("effort") || error.localizedDescription.contains("output_config")) {
                 body["output_config"] = nil
-                data = try await send(body)
+                data = try await sendTurn(official: official, url: url, body: body, key: key)
             }
             await handleChatResult(data, state: state)
         } catch {
@@ -309,6 +304,14 @@ final class ClaudeService {
     }
 
     // MARK: - API call
+
+    /// One Messages request, to Anthropic or to the compatible endpoint.
+    private func sendTurn(official: Bool, url: URL, body: [String: Any], key: String?) async throws -> Data {
+        if official {
+            return try await callAPI(body: body, key: key ?? "", beta: "web-search-2025-03-05")
+        }
+        return try await callCompat(url: url, body: body, key: key)
+    }
 
     /// Same request to an Anthropic-compatible endpoint: no beta, key optional and
     /// sent both ways gateways read it, redirects refused (the key must not follow).

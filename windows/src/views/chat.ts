@@ -4,7 +4,7 @@
 import { t } from "../core/i18n";
 import { h, svg, clear } from "./dom";
 import { ICONS } from "./icons";
-import { Bridge, type ChatContext } from "../core/bridge";
+import { Bridge, type ChatChoices, type ChatContext, type ChatTuning } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State, type ChatMessage } from "../core/state";
 import type { ViewHost } from "./views";
@@ -58,6 +58,35 @@ const CODE_EXT = /\.(rs|ts|tsx|js|jsx|py|swift|go|java|kt|c|cc|cpp|h|cs|rb|php|s
 /** Longest clipboard text attached to one question (Rust caps it again). */
 const MAX_CLIP = 20_000;
 
+// ── The chat's own model and effort ───────────────────────────────────────────
+// Picked here, not in Settings: a lighter model or less thinking for a quick
+// answer. Remembered per engine on this PC; Rust checks both before use.
+
+const TUNING_KEY = "coucou.chat-tuning";
+const EFFORT_LABELS: Record<string, string> = {
+  low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max",
+};
+
+function loadTunings(): Record<string, ChatTuning> {
+  try {
+    const v = JSON.parse(localStorage.getItem(TUNING_KEY) ?? "{}");
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveTuning(engine: string, tuning: ChatTuning) {
+  try {
+    const all = loadTunings();
+    if (!tuning.model && !tuning.effort) delete all[engine];
+    else all[engine] = tuning;
+    localStorage.setItem(TUNING_KEY, JSON.stringify(all));
+  } catch {
+    /* storage blocked: the choice lasts for this page only */
+  }
+}
+
 export function buildPrompt(onHeightChange: () => void): ViewHost {
   const chipRow = h("div", { class: "chip-row" });
   const log = h("div", { class: "chat-log" });
@@ -71,14 +100,114 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   // Attaches what is on the clipboard — read only on this click, shown as a
   // chip that can be removed before sending.
   const clipBtn = h("button", { class: "clip-btn", title: t("Ask about the clipboard") }, svg(ICONS.clipboard, 14));
-  const bar = h("div", { class: "chat-bar" }, clipBtn, input, send);
+  const tuneLabel = h("span", { text: t("Default") });
+  const tuneBtn = h("button", { class: "tune-btn", title: t("Model and effort for this chat") }, svg(ICONS.sliders, 11), tuneLabel);
+  const bar = h("div", { class: "chat-bar" }, clipBtn, tuneBtn, input, send);
   const suggestRow = h("div", { class: "suggest-row" });
+  const tuneRow = h("div", { class: "tune-row" });
 
   const el = h(
     "div",
     { class: "view" },
-    h("div", { class: "card wash chat-card" }, h("div", { class: "chat-body" }, chipRow, suggestRow, log, bar)),
+    h("div", { class: "card wash chat-card" }, h("div", { class: "chat-body" }, chipRow, suggestRow, log, tuneRow, bar)),
   );
+
+  // Which engine answers, what its menus offer, and what this chat picked.
+  let engine = "";
+  let choices: ChatChoices | null = null;
+  let tuning: ChatTuning = { model: null, effort: null };
+
+  function labelFor(model: string | null): string {
+    if (!model) return t("Default");
+    const known = choices?.models.find((m) => m.id === model)?.label ?? model;
+    return known.length > 16 ? `${known.slice(0, 15)}…` : known;
+  }
+
+  function showTuning() {
+    const effort = tuning.effort ? t(EFFORT_LABELS[tuning.effort] ?? tuning.effort) : "";
+    tuneLabel.textContent = effort ? `${labelFor(tuning.model)} · ${effort}` : labelFor(tuning.model);
+    tuneBtn.classList.toggle("on", !!(tuning.model || tuning.effort));
+  }
+
+  async function refreshEngine() {
+    const now = (await Bridge.chatEngineActive()) ?? "";
+    if (now !== engine) {
+      engine = now;
+      choices = null;
+      tuneRow.classList.remove("open");
+    }
+    tuning = loadTunings()[engine] ?? { model: null, effort: null };
+    showTuning();
+  }
+
+  function renderTuneRow() {
+    clear(tuneRow);
+    if (!choices) {
+      tuneRow.append(h("span", { class: "tune-hint", text: "…" }));
+      return;
+    }
+    const c = choices;
+    const modelSel = h("select", { class: "tune-select" }) as HTMLSelectElement;
+    const def = c.defaultLabel ? `${t("Default")} (${c.defaultLabel})` : t("Default");
+    modelSel.append(h("option", { value: "", text: def }));
+    for (const m of c.models) modelSel.append(h("option", { value: m.id, text: m.label }));
+    modelSel.append(h("option", { value: "__other", text: t("Other…") }));
+    const other = h("input", { type: "text", class: "tune-other", placeholder: t("model name"), spellcheck: "false" }) as HTMLInputElement;
+    const custom = !!tuning.model && !c.models.some((m) => m.id === tuning.model);
+    modelSel.value = custom ? "__other" : (tuning.model ?? "");
+    other.value = custom ? (tuning.model ?? "") : "";
+    other.style.display = custom ? "" : "none";
+
+    const commit = () => {
+      saveTuning(engine, tuning);
+      showTuning();
+    };
+    modelSel.addEventListener("change", () => {
+      if (modelSel.value === "__other") {
+        other.style.display = "";
+        other.focus();
+        return;
+      }
+      other.style.display = "none";
+      tuning = { ...tuning, model: modelSel.value || null };
+      commit();
+    });
+    other.addEventListener("change", () => {
+      const v = other.value.trim();
+      tuning = { ...tuning, model: v || null };
+      commit();
+    });
+    other.addEventListener("keydown", (e) => e.stopPropagation());
+
+    tuneRow.append(h("span", { class: "tune-hint", text: t("Model") }), modelSel, other);
+    if (c.efforts.length) {
+      const effortSel = h("select", { class: "tune-select" }) as HTMLSelectElement;
+      effortSel.append(h("option", { value: "", text: t("Default") }));
+      for (const e of c.efforts) effortSel.append(h("option", { value: e, text: t(EFFORT_LABELS[e] ?? e) }));
+      effortSel.value = tuning.effort && c.efforts.includes(tuning.effort) ? tuning.effort : "";
+      effortSel.addEventListener("change", () => {
+        tuning = { ...tuning, effort: effortSel.value || null };
+        commit();
+      });
+      tuneRow.append(h("span", { class: "tune-hint", text: t("Effort") }), effortSel);
+    }
+  }
+
+  tuneBtn.addEventListener("click", async () => {
+    const open = !tuneRow.classList.contains("open");
+    tuneRow.classList.toggle("open", open);
+    tuneBtn.classList.toggle("active", open);
+    onHeightChange();
+    if (!open) return;
+    await refreshEngine();
+    tuneRow.classList.add("open");
+    renderTuneRow();
+    if (!choices) {
+      choices = (await Bridge.chatChoices()) ?? { engine, defaultLabel: "", models: [], efforts: [] };
+      renderTuneRow();
+      showTuning();
+    }
+  });
   (el.querySelector(".card") as HTMLElement).style.setProperty("--wash", "rgba(99,102,241,0.5)");
 
   let sending = false;
@@ -122,7 +251,9 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     chipRow.dataset.label = "";
 
     try {
-      const reply = await Bridge.chatSend(sendQuery, context);
+      if (!engine) await refreshEngine();
+      const picked = tuning.model || tuning.effort ? tuning : null;
+      const reply = await Bridge.chatSend(sendQuery, context, picked);
       State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
       State.stateOverride = null;
       Sound.play("finish");
@@ -202,6 +333,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       input.disabled = sending;
     },
     focus() {
+      void refreshEngine();
       input.focus();
       input.select();
     },

@@ -2,6 +2,8 @@
 // Drawn on a 24×24 grid so they read at the same optical size.
 
 export const ICONS = {
+  // slider.horizontal.3 (the chat's model and effort)
+  sliders: "M3 6h9.2a2.6 2.6 0 0 1 5 0H21v2h-3.8a2.6 2.6 0 0 1-5 0H3V6zm11.7-.4a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zM3 16h3.8a2.6 2.6 0 0 1 5 0H21v2h-9.2a2.6 2.6 0 0 1-5 0H3v-2zm6.3-.4a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z",
   // play.fill / pause.fill / backward.end.fill / forward.end.fill (Spotify pill)
   play: "M7 4.5v15l12.5-7.5L7 4.5z",
   pause: "M6.5 4.5h4v15h-4zm7 0h4v15h-4z",

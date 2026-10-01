@@ -987,6 +987,75 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 12px;
 }
 
+/* The chat's model and effort: a pill in the bar, a row of menus above it. */
+.tune-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 150px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: transparent;
+  color: var(--dim);
+  font: 500 10.5px var(--font);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.tune-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tune-btn:hover,
+.tune-btn.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+.tune-btn.on {
+  color: #a5b4fc;
+}
+
+.tune-row {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tune-row.open {
+  display: flex;
+}
+
+.tune-hint {
+  font: 400 10.5px var(--font);
+  color: var(--dim);
+}
+
+.tune-select,
+.tune-other {
+  font: 400 11px var(--font);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 2px 6px;
+  max-width: 190px;
+}
+
+.tune-other {
+  width: 140px;
+}
+
+/* The native menu opens on the system's own surface: keep its text readable. */
+.tune-select option {
+  background: #1c1d21;
+  color: #e8e9ec;
+}
+
 .chat-input {
   flex: 1 1 auto;
   min-width: 0;

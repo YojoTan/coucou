@@ -119,6 +119,7 @@ pub async fn send(
     model: &str,
     query: String,
     context: Option<ChatContext>,
+    effort: Option<&str>,
 ) -> Result<ChatReply, String> {
     // Each target has its own key; a custom endpoint may need none at all.
     let key = match target {
@@ -179,7 +180,20 @@ pub async fn send(
         body["fallbacks"] = json!("default");
     }
 
-    let response = match call(target, key.as_deref(), &body).await {
+    // The effort picked in the chat. A model or a gateway that doesn't take it
+    // says so in a 400; the turn is then sent again without it.
+    if let Some(effort) = effort {
+        body["output_config"] = json!({ "effort": effort });
+    }
+    let mut result = call(target, key.as_deref(), &body).await;
+    if effort.is_some() && result.as_ref().is_err_and(|e| e.contains("effort") || e.contains("output_config")) {
+        if let Some(map) = body.as_object_mut() {
+            map.remove("output_config");
+        }
+        result = call(target, key.as_deref(), &body).await;
+    }
+
+    let response = match result {
         Ok(v) => v,
         Err(err) => {
             chat.pop(); // keep the history consistent with what the model saw
@@ -267,6 +281,41 @@ async fn call(target: &Target, key: Option<&str>, body: &Value) -> Result<Value,
         return Err(format!("{who} {status}: {detail}"));
     }
     serde_json::from_str(&text).map_err(|e| format!("Bad API response: {e}"))
+}
+
+/// The models a target offers (`GET …/v1/models`), for the chat's model menu.
+/// Empty when the server has no such list.
+pub async fn models(target: &Target) -> Vec<crate::tuning::Choice> {
+    let (url, key) = match target {
+        Target::Official => ("https://api.anthropic.com/v1/models?limit=100".to_string(), secrets::get("anthropic-api-key")),
+        Target::Custom(messages) => (
+            format!("{}/models", messages.trim_end_matches("/messages")),
+            secrets::get("anthropic-compat-key"),
+        ),
+    };
+    if matches!(target, Target::Official) && key.is_none() {
+        return Vec::new();
+    }
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(6))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return Vec::new();
+    };
+    let mut request = client.get(&url).header("anthropic-version", ANTHROPIC_VERSION);
+    if let Some(key) = key {
+        request = request.header("x-api-key", key.clone());
+        if matches!(target, Target::Custom(_)) {
+            request = request.header("authorization", format!("Bearer {key}"));
+        }
+    }
+    match request.send().await {
+        Ok(r) if r.status().is_success() => {
+            r.json::<Value>().await.map(|v| crate::tuning::parse_models(&v)).unwrap_or_default()
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The canonical path of `path` when it is a regular file inside the inbox.
@@ -392,13 +441,14 @@ Connection: close
         });
         let chat = super::Chat::default();
         let target = super::Target::Custom(custom_endpoint(&format!("http://127.0.0.1:{port}")).unwrap());
-        let reply = tauri::async_runtime::block_on(super::send(&chat, &target, "glm-4.6", "hi".into(), None)).unwrap();
+        let reply = tauri::async_runtime::block_on(super::send(&chat, &target, "glm-4.6", "hi".into(), None, Some("low"))).unwrap();
         assert_eq!(reply.text, "hola desde el gateway");
         let (request_line, version, body) = server.join().unwrap();
         assert!(request_line.starts_with("POST /v1/messages"));
         assert!(version, "anthropic-version is sent");
         let body: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(body["model"], "glm-4.6");
+        assert_eq!(body["output_config"]["effort"], "low", "the chat's effort rides along");
         assert!(body.get("tools").is_none() && body.get("fallbacks").is_none(), "web search and fallbacks are Anthropic's own");
     }
 

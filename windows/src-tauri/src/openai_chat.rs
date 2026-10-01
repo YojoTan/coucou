@@ -138,6 +138,7 @@ pub async fn send(
     model: &str,
     query: String,
     context: Option<ChatContext>,
+    effort: Option<&str>,
 ) -> Result<ChatReply, String> {
     if base.trim().is_empty() {
         return Err("Set the endpoint URL in Settings → Chat (for example http://localhost:11434/v1 for Ollama).".into());
@@ -154,31 +155,48 @@ pub async fn send(
     let user = json!({ "role": "user", "content": content });
     messages.push(user.clone());
 
-    let body = json!({
+    let mut body = json!({
         "model": model.trim(),
         "messages": messages,
         "max_tokens": MAX_TOKENS,
         "stream": false,
     });
+    // The chat's effort, for reasoning models; dropped if the server refuses it.
+    if let Some(effort) = effort {
+        body["reasoning_effort"] = json!(effort);
+    }
 
     let client = reqwest::Client::builder()
         .timeout(TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())?;
-    let mut request = client.post(&url).json(&body);
-    if let Some(key) = crate::secrets::get("openai-api-key") {
-        request = request.bearer_auth(key);
-    }
-    let response = request.send().await.map_err(|e| {
+    let key = crate::secrets::get("openai-api-key");
+    let post = |body: &Value| {
+        let mut request = client.post(&url).json(body);
+        if let Some(key) = &key {
+            request = request.bearer_auth(key);
+        }
+        request.send()
+    };
+    let connect = |e: reqwest::Error| {
         if e.is_connect() {
             format!("Can't reach {url} — is the server running?")
         } else {
             format!("Network error: {e}")
         }
-    })?;
-    let status = response.status();
-    let raw = response.text().await.map_err(|e| e.to_string())?;
+    };
+    let mut response = post(&body).await.map_err(connect)?;
+    let mut status = response.status();
+    let mut raw = response.text().await.map_err(|e| e.to_string())?;
+    if effort.is_some() && status.as_u16() == 400 && raw.contains("reasoning") {
+        if let Some(map) = body.as_object_mut() {
+            map.remove("reasoning_effort");
+        }
+        response = post(&body).await.map_err(connect)?;
+        status = response.status();
+        raw = response.text().await.map_err(|e| e.to_string())?;
+    }
     let parsed = serde_json::from_str::<Value>(&raw).ok();
 
     if !status.is_success() {
@@ -198,6 +216,29 @@ pub async fn send(
     history.push(user);
     history.push(json!({ "role": "assistant", "content": text }));
     Ok(ChatReply { text: text.trim().to_string() })
+}
+
+/// The server's models (`GET {base}/models`), for the chat's model menu.
+pub async fn models(base: &str) -> Vec<crate::tuning::Choice> {
+    let Ok(url) = endpoint(base) else { return Vec::new() };
+    let url = format!("{}/models", url.trim_end_matches("/chat/completions"));
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(6))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return Vec::new();
+    };
+    let mut request = client.get(&url);
+    if let Some(key) = crate::secrets::get("openai-api-key") {
+        request = request.bearer_auth(key);
+    }
+    match request.send().await {
+        Ok(r) if r.status().is_success() => {
+            r.json::<Value>().await.map(|v| crate::tuning::parse_models(&v)).unwrap_or_default()
+        }
+        _ => Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -264,9 +305,9 @@ mod tests {
 
         let chat = OpenAiChat::default();
         let base = format!("http://127.0.0.1:{port}/v1");
-        let one = tauri::async_runtime::block_on(send(&chat, &base, "llama3.2", "hi".into(), None)).unwrap();
+        let one = tauri::async_runtime::block_on(send(&chat, &base, "llama3.2", "hi".into(), None, None)).unwrap();
         assert_eq!(one.text, "hola");
-        let two = tauri::async_runtime::block_on(send(&chat, &base, "llama3.2", "still there?".into(), None)).unwrap();
+        let two = tauri::async_runtime::block_on(send(&chat, &base, "llama3.2", "still there?".into(), None, None)).unwrap();
         assert_eq!(two.text, "sigo aqui");
 
         let bodies = server.join().unwrap();

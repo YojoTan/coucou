@@ -20,6 +20,7 @@ mod pipe;
 mod secrets;
 mod settings;
 mod transcript;
+mod tuning;
 mod tray;
 mod win_user;
 
@@ -367,17 +368,32 @@ async fn chat_send(
     openai: State<'_, OpenAiChat>,
     query: String,
     context: Option<ChatContext>,
+    tuning: Option<tuning::ChatTuning>,
 ) -> Result<ChatReply, String> {
     only(&webview, island::WINDOW_LABEL, "chat_send")?;
     let s = shared.settings.lock().unwrap().clone();
+    // The chat's own model and effort (tuning.rs) win over Settings for this
+    // message; the server they go to is still the one Settings chose.
+    let tuning = tuning.unwrap_or_default();
+    let pick = |configured: &str| tuning.model().map(str::to_string).unwrap_or_else(|| configured.to_string());
     match resolve_engine(&s) {
-        Backend::Api => claude::send(&chat, &claude::Target::Official, &s.model, query, context).await,
+        Backend::Api => {
+            let effort = tuning.effort_for(tuning::efforts("api"));
+            claude::send(&chat, &claude::Target::Official, &pick(&s.model), query, context, effort).await
+        }
         Backend::AnthropicCompat => {
             let target = claude::Target::Custom(claude::custom_endpoint(&s.anthropic_base_url)?);
-            claude::send(&chat, &target, &s.anthropic_model, query, context).await
+            let effort = tuning.effort_for(tuning::efforts("anthropic"));
+            claude::send(&chat, &target, &pick(&s.anthropic_model), query, context, effort).await
         }
-        Backend::Cli(engine) => cli_chat::send(&cli, engine, &s.cli_model, query, context).await,
-        Backend::OpenAi => openai_chat::send(&openai, &s.openai_base_url, &s.openai_model, query, context).await,
+        Backend::Cli(engine) => {
+            let effort = tuning.effort_for(tuning::cli_efforts(engine));
+            cli_chat::send(&cli, engine, &pick(&s.cli_model), query, context, effort).await
+        }
+        Backend::OpenAi => {
+            let effort = tuning.effort_for(tuning::efforts("openai"));
+            openai_chat::send(&openai, &s.openai_base_url, &pick(&s.openai_model), query, context, effort).await
+        }
         Backend::None => Err(
             "No chat engine yet: install Claude Code (or Codex, Gemini CLI, opencode), or add an Anthropic API key in Settings → Chat."
                 .into(),
@@ -531,6 +547,31 @@ fn opencode_apply(webview: Webview, install: bool) -> Result<String, String> {
 #[tauri::command]
 async fn chat_engines() -> Vec<EngineInfo> {
     tauri::async_runtime::spawn_blocking(cli_chat::detect).await.unwrap_or_default()
+}
+
+/// What the chat's model and effort menus offer for the engine answering now:
+/// the server's own model list when it has one.
+#[tauri::command]
+async fn chat_choices(shared: State<'_, Shared>) -> Result<tuning::Choices, String> {
+    let s = shared.settings.lock().unwrap().clone();
+    let (engine, default_label, models) = match resolve_engine(&s) {
+        Backend::Api => ("api".to_string(), s.model.clone(), claude::models(&claude::Target::Official).await),
+        Backend::AnthropicCompat => {
+            let models = match claude::custom_endpoint(&s.anthropic_base_url) {
+                Ok(url) => claude::models(&claude::Target::Custom(url)).await,
+                Err(_) => Vec::new(),
+            };
+            ("anthropic".to_string(), s.anthropic_model.clone(), models)
+        }
+        Backend::OpenAi => ("openai".to_string(), s.openai_model.clone(), openai_chat::models(&s.openai_base_url).await),
+        Backend::Cli(e) => {
+            let models = if e == Engine::Claude { tuning::claude_cli_models() } else { Vec::new() };
+            (e.id().to_string(), s.cli_model.clone(), models)
+        }
+        Backend::None => (String::new(), String::new(), Vec::new()),
+    };
+    let efforts = tuning::efforts(&engine).to_vec();
+    Ok(tuning::Choices { engine, default_label, models, efforts })
 }
 
 /// The engine "auto" resolves to right now, for the island's badge and Settings.
@@ -748,6 +789,7 @@ pub fn run() {
             attach_window,
             focus_session,
             media_control,
+            chat_choices,
             opencode_status,
             opencode_plugin_text,
             opencode_apply,

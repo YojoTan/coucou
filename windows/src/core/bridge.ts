@@ -82,8 +82,10 @@ export const Bridge = {
 
   // ── Chat, files, secrets ──────────────────────────────────────────────────
   /** One chat turn. The API key and any file bytes never leave Rust. */
-  chatSend: (query: string, context: ChatContext | null) =>
-    callOrThrow<{ text: string }>("chat_send", { query, context }),
+  chatSend: (query: string, context: ChatContext | null, tuning: ChatTuning | null = null) =>
+    callOrThrow<{ text: string }>("chat_send", { query, context, tuning }),
+  /** Model and effort menus for the engine answering now (tuning.rs). */
+  chatChoices: () => call<ChatChoices>("chat_choices"),
   chatReset: () => call<void>("chat_reset"),
   /** Clipboard text — only ever read on an explicit click in the chat. */
   clipboardText: () => call<string | null>("clipboard_text"),
@@ -158,6 +160,19 @@ export interface PluginStatus {
   outdated: boolean;
   foreign: boolean;
   opencodeFound: boolean;
+}
+
+/** The chat's own model and effort; null fields mean "as in Settings". */
+export interface ChatTuning {
+  model: string | null;
+  effort: string | null;
+}
+
+export interface ChatChoices {
+  engine: string;
+  defaultLabel: string;
+  models: { id: string; label: string }[];
+  efforts: string[];
 }
 
 export interface AttachedWindow {

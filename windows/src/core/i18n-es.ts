@@ -231,4 +231,15 @@ export const ES: Record<string, string> = {
   "LiteLLM (this PC)": "LiteLLM (este equipo)",
   "Anthropic's Messages API on another server: a gateway like LiteLLM, or a provider that offers it. Its own key — your Anthropic key never goes there. https only, except servers on this PC. No web search.": "La API Messages de Anthropic en otro servidor: un gateway como LiteLLM o un proveedor que la ofrezca. Usa su propia clave: tu clave de Anthropic nunca va allí. Solo https, salvo servidores en este equipo. Sin búsqueda web.",
   "Set a model for the endpoint in Settings → Chat.": "Indica un modelo para el endpoint en Ajustes → Chat.",
+
+  // ── Chat model and effort ─────────────────────────────────────────────────
+  "Model and effort for this chat": "Modelo y esfuerzo de este chat",
+  "Default": "Predeterminado",
+  "Other…": "Otro…",
+  "Effort": "Esfuerzo",
+  "Low": "Bajo",
+  "Medium": "Medio",
+  "High": "Alto",
+  "Extra high": "Muy alto",
+  "Max": "Máximo",
 };

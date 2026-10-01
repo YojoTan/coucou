@@ -176,13 +176,15 @@ impl CliChat {
     }
 }
 
-/// One chat turn through `engine`. `model` is optional: empty means the CLI's own default.
+/// One chat turn through `engine`. `model` is optional: empty means the CLI's own
+/// default. `effort` was checked against what this CLI takes (tuning.rs).
 pub async fn send(
     chat: &CliChat,
     engine: Engine,
     model: &str,
     query: String,
     context: Option<ChatContext>,
+    effort: Option<&str>,
 ) -> Result<ChatReply, String> {
     let exe = locate(engine).ok_or_else(|| {
         format!("{} isn't installed. Pick another engine in Settings → Chat.", engine.label())
@@ -201,7 +203,7 @@ pub async fn send(
         (c.claude_session.clone(), c.turns.clone(), first)
     };
 
-    let plan = build_plan(engine, model.trim(), &query, if first { context.as_ref() } else { None }, resume.as_deref(), &turns);
+    let plan = build_plan(engine, model.trim(), effort, &query, if first { context.as_ref() } else { None }, resume.as_deref(), &turns);
     let outcome = match plan {
         Ok(plan) => {
             let dir = work_dir();
@@ -308,6 +310,7 @@ fn transcript(turns: &[(String, String)]) -> String {
 fn build_plan(
     engine: Engine,
     model: &str,
+    effort: Option<&str>,
     query: &str,
     context: Option<&ChatContext>,
     resume: Option<&str>,
@@ -340,6 +343,10 @@ fn build_plan(
             if !model.is_empty() {
                 args.push("--model".into());
                 args.push(model.into());
+            }
+            if let Some(effort) = effort {
+                args.push("--effort".into());
+                args.push(effort.into());
             }
             if let Some(id) = resume {
                 args.push("--resume".into());
@@ -390,6 +397,10 @@ fn build_plan(
             if !model.is_empty() {
                 args.push("--model".into());
                 args.push(model.into());
+            }
+            if let Some(effort) = effort {
+                args.push("-c".into());
+                args.push(format!("model_reasoning_effort=\"{effort}\""));
             }
             if let Some(f) = file.as_ref().filter(|f| f.is_image) {
                 args.push("--image".into());
@@ -745,7 +756,7 @@ mod tests {
 
     #[test]
     fn claude_runs_read_only_and_takes_the_prompt_on_stdin() {
-        let plan = build_plan(Engine::Claude, "", "--help me", None, Some("s1"), &[]).unwrap();
+        let plan = build_plan(Engine::Claude, "", None, "--help me", None, Some("s1"), &[]).unwrap();
         let joined = plan.args.join(" ");
         assert!(joined.contains("--tools Read,WebSearch,WebFetch"));
         assert!(joined.contains("--allowedTools Read,WebSearch,WebFetch"));
@@ -757,16 +768,27 @@ mod tests {
 
     #[test]
     fn codex_is_sandboxed_read_only_and_opencode_ends_options_before_the_message() {
-        let codex = build_plan(Engine::Codex, "", "hi", None, None, &[]).unwrap();
+        let codex = build_plan(Engine::Codex, "", None, "hi", None, None, &[]).unwrap();
         let joined = codex.args.join(" ");
         assert!(joined.contains("--sandbox read-only"));
         assert!(joined.contains("features.shell_tool=false"));
         assert_eq!(codex.args.last().map(String::as_str), Some("-"));
 
-        let oc = build_plan(Engine::Opencode, "", "-rf", None, None, &[]).unwrap();
+        let oc = build_plan(Engine::Opencode, "", None, "-rf", None, None, &[]).unwrap();
         let dash = oc.args.iter().position(|a| a == "--").unwrap();
         assert_eq!(dash, oc.args.len() - 2);
         assert!(oc.args.last().unwrap().starts_with("You are Mochi"));
+    }
+
+    #[test]
+    fn the_chat_effort_becomes_each_cli_flag() {
+        let claude = build_plan(Engine::Claude, "haiku", Some("low"), "q", None, None, &[]).unwrap();
+        let at = claude.args.iter().position(|a| a == "--effort").unwrap();
+        assert_eq!(claude.args[at + 1], "low");
+        let at = claude.args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(claude.args[at + 1], "haiku");
+        let codex = build_plan(Engine::Codex, "", Some("medium"), "q", None, None, &[]).unwrap();
+        assert!(codex.args.contains(&"model_reasoning_effort=\"medium\"".to_string()));
     }
 
     #[test]
@@ -783,10 +805,10 @@ mod tests {
     #[ignore]
     fn live_claude_code_keeps_the_conversation() {
         let chat = CliChat::default();
-        let first = tauri::async_runtime::block_on(send(&chat, Engine::Claude, "", "Remember the word 'albaricoque'. Reply only: ok".into(), None))
+        let first = tauri::async_runtime::block_on(send(&chat, Engine::Claude, "", "Remember the word 'albaricoque'. Reply only: ok".into(), None, None))
             .expect("first turn");
         assert!(!first.text.is_empty());
-        let second = tauri::async_runtime::block_on(send(&chat, Engine::Claude, "", "Which word did I ask you to remember? Reply with the word only.".into(), None))
+        let second = tauri::async_runtime::block_on(send(&chat, Engine::Claude, "", "Which word did I ask you to remember? Reply with the word only.".into(), None, None))
             .expect("second turn");
         assert!(second.text.to_lowercase().contains("albaricoque"), "got: {}", second.text);
     }
@@ -794,6 +816,6 @@ mod tests {
     #[test]
     fn a_file_outside_the_inbox_is_refused() {
         let ctx = ChatContext::File { name: "win.ini".into(), path: r"C:\Windows\win.ini".into(), note: None };
-        assert!(build_plan(Engine::Claude, "", "q", Some(&ctx), None, &[]).is_err());
+        assert!(build_plan(Engine::Claude, "", None, "q", Some(&ctx), None, &[]).is_err());
     }
 }
